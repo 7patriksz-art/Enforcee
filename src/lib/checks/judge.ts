@@ -3,10 +3,10 @@ import { z } from 'zod';
 import type { CostEntry, EvidenceSpan, Rule, RuleResult, Verdict } from '../types';
 import { priceOf } from '../cost';
 
-export const JUDGE_VERSION = 'judge@1.0.0';
+export const JUDGE_VERSION = 'judge@1.1.0';
 
 /** Configurable so we can move models without a code change. */
-export const JUDGE_MODEL = process.env.ENFORCIO_JUDGE_MODEL ?? 'claude-sonnet-4-5';
+export const JUDGE_MODEL = process.env.ENFORCIO_JUDGE_MODEL ?? 'claude-haiku-4-5';
 /** Independent samples per audit. Odd numbers give a clean majority. */
 export const JUDGE_SAMPLES = Number(process.env.ENFORCIO_JUDGE_SAMPLES ?? 3);
 
@@ -120,7 +120,17 @@ export interface JudgeOptions {
   model?: string;
   samples?: number;
   /** Injected in tests so the engine can be exercised without network or spend. */
-  transport?: (prompt: string, system: string, model: string) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+  transport?: (
+    prompt: string,
+    system: string,
+    model: string
+  ) => Promise<{
+    text: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  }>;
 }
 
 export interface JudgeOutcome {
@@ -144,20 +154,30 @@ export async function runJudge(rules: Rule[], output: string, opts: JudgeOptions
         model: m,
         max_tokens: 4096,
         temperature: 1,
-        system: s,
-        messages: [{ role: 'user', content: p }],
+        // Every self-consistency sample sends the identical prompt, so the first
+        // call writes the cache and the rest read it at a tenth of input price.
+        system: [{ type: 'text', text: s, cache_control: { type: 'ephemeral' } }],
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: p, cache_control: { type: 'ephemeral' } }] },
+        ],
       });
       const text = msg.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');
-      return { text, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
+      return {
+        text,
+        inputTokens: msg.usage.input_tokens,
+        outputTokens: msg.usage.output_tokens,
+        cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0,
+      };
     });
 
   const samplesOut: Map<string, z.infer<typeof JudgedRule>>[] = [];
 
   for (let i = 0; i < samples; i++) {
-    let raw: { text: string; inputTokens: number; outputTokens: number };
+    let raw: Awaited<ReturnType<typeof call>>;
     try {
       raw = await call(prompt, SYSTEM, model);
     } catch {
@@ -167,7 +187,14 @@ export async function runJudge(rules: Rule[], output: string, opts: JudgeOptions
       model,
       inputTokens: raw.inputTokens,
       outputTokens: raw.outputTokens,
-      usd: priceOf(model, raw.inputTokens, raw.outputTokens),
+      cacheReadTokens: raw.cacheReadTokens ?? 0,
+      cacheWriteTokens: raw.cacheWriteTokens ?? 0,
+      usd: priceOf(model, {
+        inputTokens: raw.inputTokens,
+        outputTokens: raw.outputTokens,
+        cacheReadTokens: raw.cacheReadTokens ?? 0,
+        cacheWriteTokens: raw.cacheWriteTokens ?? 0,
+      }),
       purpose: `judge sample ${i + 1}/${samples}`,
     });
 

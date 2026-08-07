@@ -133,6 +133,8 @@ export interface CostEntry {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   usd: number;
   purpose: string;
 }
