@@ -1,4 +1,4 @@
-import { parseRuleset, PARSER_VERSION } from './rules/parse';
+import { parseRuleset, isUnenforceable, PARSER_VERSION } from './rules/parse';
 import { runDeterministic, DETERMINISTIC_VERSION } from './checks/deterministic';
 import { runJudge, JUDGE_VERSION, type JudgeOptions } from './checks/judge';
 import { runHealth } from './checks/health';
@@ -55,8 +55,25 @@ export async function runAudit(input: AuditInput): Promise<AuditOutcome> {
 
   for (const rule of rules) {
     const det = runDeterministic(rule, input.output);
-    if (det) results.push(det);
-    else forJudge.push(rule);
+    if (det) {
+      results.push(det);
+      continue;
+    }
+    // A rule nobody could adjudicate should not be handed to a model and dressed up
+    // as a verdict. Saying so costs nothing and is the honest answer.
+    if (isUnenforceable(rule.text)) {
+      results.push({
+        ruleId: rule.id,
+        verdict: 'UNVERIFIABLE',
+        method: 'structural',
+        evidence: [],
+        rationale:
+          'This rule is too vague to pass or fail. Enforcio will not manufacture a verdict for it — rewrite it as something checkable.',
+        engaged: false,
+      });
+      continue;
+    }
+    forJudge.push(rule);
   }
 
   let cost: CostEntry[] = [];

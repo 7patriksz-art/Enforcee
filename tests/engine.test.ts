@@ -383,3 +383,19 @@ describe('contradiction detection', () => {
     expect(f.some((x) => x.code === 'duplicate')).toBe(true);
   });
 });
+
+describe('unenforceable rules never reach the judge', () => {
+  it('marks a vague rule UNVERIFIABLE without any model call', async () => {
+    const { receipt, totalUsd } = await runAudit({
+      ruleset: '- Be helpful.\n- Use good judgment.\n- Adopt a warm tone.\n',
+      output: 'Hello there.',
+      judge: { transport: async () => { throw new Error('the judge must not be called for vague rules'); } },
+    });
+    expect(totalUsd).toBe(0);
+    const vague = receipt.results.filter((r) => r.method === 'structural');
+    expect(vague).toHaveLength(2);
+    for (const v of vague) expect(v.verdict).toBe('UNVERIFIABLE');
+    // "Adopt a warm tone" is vague to a human but checkable in principle, so it still goes to the judge.
+    expect(receipt.results.some((r) => r.method === 'judged')).toBe(true);
+  });
+});
