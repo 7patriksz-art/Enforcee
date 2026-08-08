@@ -10,3 +10,7 @@ next-env.d.ts
 # Built by scripts/pack-cli.mjs
 npm-dist/
 *.tgz
+.env*
+!.env.example
+*.pem
+.enforcee/licence

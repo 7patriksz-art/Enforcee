@@ -196,6 +196,138 @@ function findDuplicates(text, artifact = "ruleset") {
   return counts;
 }
 
+// src/lib/checks/safe-regex.ts
+var MAX_REGEX_INPUT = 4e4;
+var QUANTIFIER = /[*+]|\{\d*,\d*\}|\{\d+,\}/;
+function quantifiedGroupBodies(pattern) {
+  const bodies = [];
+  const stack = [];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "\\") {
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === "]") inClass = false;
+      continue;
+    }
+    if (c === "[") {
+      inClass = true;
+      continue;
+    }
+    if (c === "(") {
+      stack.push(i);
+      continue;
+    }
+    if (c === ")") {
+      const open = stack.pop();
+      if (open === void 0) continue;
+      const after = pattern.slice(i + 1, i + 8);
+      if (QUANTIFIER.test(after.slice(0, 1)) || /^\{\d*,\d*\}/.test(after) || /^\{\d+,\}/.test(after)) {
+        bodies.push(pattern.slice(open + 1, i));
+      }
+    }
+  }
+  return bodies;
+}
+function hasInnerRepetition(body) {
+  let inClass = false;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "\\") {
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === "]") inClass = false;
+      continue;
+    }
+    if (c === "[") {
+      inClass = true;
+      continue;
+    }
+    if (c === "*" || c === "+") return true;
+    if (c === "{" && /^\{\d*,\d*\}/.test(body.slice(i))) return true;
+    if (c === "?" && i > 0) {
+      const prev = body[i - 1];
+      if (prev !== "*" && prev !== "+" && prev !== "?" && prev !== "(") return true;
+    }
+  }
+  return false;
+}
+function hasAmbiguousAlternation(body) {
+  let depth = 0;
+  let inClass = false;
+  const branches = [];
+  let current = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "\\") {
+      current += c + (body[i + 1] ?? "");
+      i++;
+      continue;
+    }
+    if (inClass) {
+      current += c;
+      if (c === "]") inClass = false;
+      continue;
+    }
+    if (c === "[") {
+      inClass = true;
+      current += c;
+      continue;
+    }
+    if (c === "(") depth++;
+    if (c === ")") depth--;
+    if (c === "|" && depth === 0) {
+      branches.push(current);
+      current = "";
+      continue;
+    }
+    current += c;
+  }
+  branches.push(current);
+  if (branches.length < 2) return false;
+  const heads = branches.map((b) => b.trim().slice(0, 2));
+  return new Set(heads).size < heads.length;
+}
+function checkRegexSafety(source) {
+  if (source.length > 200) {
+    return { safe: false, reason: "the pattern is longer than 200 characters" };
+  }
+  for (const body of quantifiedGroupBodies(source)) {
+    if (hasInnerRepetition(body)) {
+      return {
+        safe: false,
+        reason: "it repeats a group that already repeats \u2014 a shape that can take exponential time on ordinary input"
+      };
+    }
+    if (hasAmbiguousAlternation(body)) {
+      return {
+        safe: false,
+        reason: "it repeats a group whose alternatives can match the same text, which can take exponential time"
+      };
+    }
+  }
+  return { safe: true };
+}
+function safeCompile(source, flags) {
+  const verdict = checkRegexSafety(source);
+  if (!verdict.safe) {
+    return { error: `This pattern was not run because ${verdict.reason}. Rewrite it more simply and it will be checked.` };
+  }
+  try {
+    return { re: new RegExp(source, flags) };
+  } catch {
+    return { error: "This pattern is not valid regular-expression syntax, so it could not be checked." };
+  }
+}
+function boundInput(text) {
+  return text.length <= MAX_REGEX_INPUT ? { text, truncated: false } : { text: text.slice(0, MAX_REGEX_INPUT), truncated: true };
+}
+
 // src/lib/checks/deterministic.ts
 var DETERMINISTIC_VERSION = "det@1.0.0";
 function span(output, start, length) {
@@ -216,12 +348,11 @@ function findAll(haystack, needle, caseSensitive, limit = 5) {
 }
 function regexSpans(output, pattern, flags, limit = 5) {
   const f = flags.includes("g") ? flags : flags + "g";
-  let re;
-  try {
-    re = new RegExp(pattern, f);
-  } catch {
-    return [];
-  }
+  const compiled = safeCompile(pattern, f);
+  if ("error" in compiled) return null;
+  const re = compiled.re;
+  const { text: output_ } = boundInput(output);
+  output = output_;
   const spans = [];
   let m;
   let guard = 0;
@@ -236,7 +367,7 @@ function regexSpans(output, pattern, flags, limit = 5) {
 }
 var EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{FE0F}\u{1F900}-\u{1F9FF}]/gu;
 function openingFences(output) {
-  const all = regexSpans(output, "^[ \\t]*```[a-zA-Z0-9+#_-]*", "gm", 200);
+  const all = regexSpans(output, "^[ \\t]*```[a-zA-Z0-9+#_-]*", "gm", 200) ?? [];
   return all.filter((_, i) => i % 2 === 0).map((s) => {
     const lead = s.quote.length - s.quote.trimStart().length;
     return { start: s.start + lead, end: s.end, quote: s.quote.slice(lead) };
@@ -278,6 +409,10 @@ function guessLanguage(s) {
   if (bestScore < 3 || bestScore < second * 1.6) return null;
   return best;
 }
+function refusalReason(pattern) {
+  const v = checkRegexSafety(pattern);
+  return `This rule was not checked because ${v.reason ?? "its pattern could not be run safely"}. Rewriting the pattern more simply will get it checked \u2014 we would rather tell you than report a pass we did not earn.`;
+}
 function res(rule, verdict, rationale, evidence, engaged) {
   return { ruleId: rule.id, verdict, method: "deterministic", evidence, rationale, engaged };
 }
@@ -304,16 +439,18 @@ function runDeterministic(rule, output) {
     }
     case "forbidden_regex": {
       const hits = regexSpans(output, c.pattern, c.flags);
+      if (hits === null) return res(rule, "UNVERIFIABLE", refusalReason(c.pattern), [], false);
       if (hits.length) return res(rule, "VIOLATED", `Forbidden pattern /${c.pattern}/ matched ${hits.length}\xD7.`, hits, true);
       return res(rule, "FOLLOWED", `Forbidden pattern /${c.pattern}/ never matches.`, [], false);
     }
     case "required_regex": {
       const hits = regexSpans(output, c.pattern, c.flags);
+      if (hits === null) return res(rule, "UNVERIFIABLE", refusalReason(c.pattern), [], false);
       if (hits.length) return res(rule, "FOLLOWED", `Required pattern /${c.pattern}/ matched.`, hits, true);
       return res(rule, "VIOLATED", `Required pattern /${c.pattern}/ never matches.`, [], true);
     }
     case "no_emoji": {
-      const hits = regexSpans(output, EMOJI_RE.source, "gu");
+      const hits = regexSpans(output, EMOJI_RE.source, "gu") ?? [];
       if (hits.length) return res(rule, "VIOLATED", `${hits.length} emoji found.`, hits, true);
       return res(rule, "FOLLOWED", "No emoji in the output.", [], false);
     }
@@ -346,11 +483,11 @@ function runDeterministic(rule, output) {
       }
     }
     case "format_markdown_table": {
-      const hits = regexSpans(output, "^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$", "gm", 2);
+      const hits = regexSpans(output, "^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$", "gm", 2) ?? [];
       return hits.length ? res(rule, "FOLLOWED", "A markdown table is present.", hits, true) : res(rule, "VIOLATED", "No markdown table found.", [], true);
     }
     case "format_code_fence": {
-      const hits = regexSpans(output, "```[\\s\\S]*?```", "g", 3);
+      const hits = regexSpans(output, "```[\\s\\S]*?```", "g", 3) ?? [];
       return hits.length ? res(rule, "FOLLOWED", `${hits.length} fenced code block(s) present.`, hits, true) : res(rule, "VIOLATED", "No fenced code block found.", [], true);
     }
     case "code_fence_language": {
@@ -373,7 +510,7 @@ function runDeterministic(rule, output) {
       return res(rule, "VIOLATED", `Required heading "${c.heading}" is missing.`, [], true);
     }
     case "citation_required": {
-      const links = regexSpans(output, "\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+", "g", 5);
+      const links = regexSpans(output, "\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+", "g", 5) ?? [];
       return links.length ? res(rule, "FOLLOWED", `${links.length} citation/link found.`, links, true) : res(rule, "VIOLATED", "No citations or links found in the output.", [], true);
     }
     case "language": {
@@ -8988,9 +9125,30 @@ function runHealth(rules, rulesetText, totalTokens, opts = {}) {
       });
     }
   }
+  const PAIR_LIMIT = 400;
+  const MAX_PAIR_FINDINGS = 200;
   const subjects = new Map(rules.map((r) => [r.id, subjectWords(r.text)]));
-  for (let i = 0; i < rules.length; i++) {
-    for (let j = i + 1; j < rules.length; j++) {
+  const analysed = Math.min(rules.length, PAIR_LIMIT);
+  if (rules.length > PAIR_LIMIT) {
+    findings.push({
+      code: "ruleset_too_large",
+      severity: "warn",
+      ruleIds: [],
+      message: `This ruleset has ${rules.length} rules. Contradiction and duplicate detection compares every pair, so it was limited to the first ${PAIR_LIMIT} \u2014 the rest were not compared against each other. A ruleset this size is also very unlikely to be followed: adherence drops sharply with length, so the more useful fix is splitting it.`
+    });
+  }
+  let pairFindings = 0;
+  outer: for (let i = 0; i < analysed; i++) {
+    for (let j = i + 1; j < analysed; j++) {
+      if (pairFindings >= MAX_PAIR_FINDINGS) {
+        findings.push({
+          code: "pair_findings_truncated",
+          severity: "info",
+          ruleIds: [],
+          message: `Stopped after ${MAX_PAIR_FINDINGS} contradiction and duplicate findings. There are almost certainly more; fixing these will make the next pass more useful.`
+        });
+        break outer;
+      }
       const a = rules[i];
       const b = rules[j];
       const aNeg = NEGATIVE.test(a.text);
@@ -9009,6 +9167,7 @@ function runHealth(rules, rulesetText, totalTokens, opts = {}) {
           ruleIds: [a.id, b.id],
           message: `These two rules point in opposite directions about "${shared.join('", "')}". The model will silently pick one, and you will not be told which.`
         });
+        pairFindings++;
         continue;
       }
       const sim = similarity(a.normalized, b.normalized);
@@ -9019,6 +9178,7 @@ function runHealth(rules, rulesetText, totalTokens, opts = {}) {
           ruleIds: [a.id, b.id],
           message: `These rules overlap heavily (${Math.round(sim * 100)}% word overlap). Consider merging them.`
         });
+        pairFindings++;
       }
     }
   }
@@ -9168,14 +9328,34 @@ async function runAudit(input) {
 var POLICY_VERSION = "policy@1.0.0";
 var DANGEROUS = [
   {
-    re: "rm\\s+(-[a-zA-Z]*\\s+)*-?[a-zA-Z]*[rf][a-zA-Z]*\\s+(/|~|\\$HOME|\\.\\.)(\\s|$|/)",
+    // Linear by construction. The previous form used -?[a-zA-Z]*[rf][a-zA-Z]*, which
+    // backtracks catastrophically: 120,000 characters of flags took 15.7s, exceeding the
+    // 10s hook timeout — and a timed-out hook is treated as a NON-BLOCKING error, so every
+    // deny rule after it was skipped. A slow guard is an absent guard.
+    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["'\u2018\u2019]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["'\u2018\u2019]?\\s|["'\u2018\u2019]?$|/)`,
     tool: "Bash",
     label: "recursive delete of a filesystem root, home directory or parent directory",
     on: true,
     severity: "deny"
   },
+  {
+    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["'\u2018\u2019]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b`,
+    tool: "Bash",
+    label: "recursive delete of a system directory",
+    on: true,
+    severity: "deny"
+  },
   { re: "rm\\s+-[a-z]*r[a-z]*f|rm\\s+-[a-z]*f[a-z]*r", tool: "Bash", label: "recursive force delete", on: true, severity: "warn" },
-  { re: "git\\s+push\\s+.*(--force(?!-with-lease)|\\s-f\\b)", tool: "Bash", label: "force push", on: true, severity: "deny" },
+  {
+    // `git push -f` — the form almost everyone actually types — walked straight through
+    // the previous pattern, while /install claimed "force-push denied". Also covers
+    // clustered short flags (-uf), long forms, refspec forcing (+main), and -c prefixes.
+    re: "git\\s+(?:\\S+\\s+)*?push\\b(?!.*--force-with-lease).*?(?:--force\\b|\\s-[a-zA-Z]*f[a-zA-Z]*\\b|\\s\\+[\\w./-]+)",
+    tool: "Bash",
+    label: "force push",
+    on: true,
+    severity: "deny"
+  },
   { re: "git\\s+reset\\s+--hard", tool: "Bash", label: "hard reset, which discards uncommitted work", on: true, severity: "warn" },
   { re: "git\\s+clean\\s+-[a-z]*f", tool: "Bash", label: "force clean", on: true, severity: "warn" },
   { re: "\\b(drop|truncate)\\s+(table|database|schema)\\b", tool: "Bash", label: "destructive SQL", on: true, severity: "deny" },
@@ -9188,7 +9368,15 @@ var DANGEROUS = [
   },
   { re: "\\b(npm|yarn|pnpm)\\s+publish\\b", tool: "Bash", label: "package publish", on: true, severity: "deny" },
   { re: "\\b(vercel|netlify|fly|railway)\\s+deploy\\b|\\bvercel\\s+--prod\\b", tool: "Bash", label: "production deploy", on: true, severity: "deny" },
-  { re: "\\b(curl|wget)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z)?sh", tool: "Bash", label: "pipe-to-shell install", on: true, severity: "deny" },
+  {
+    // Previously [^|]*, which could not cross an intermediate pipe: `curl x | tee f | sh`
+    // and `curl x > f && sh f` both walked through. Now covers redirect-then-run too.
+    re: "\\b(?:curl|wget)\\b[\\s\\S]{0,200}?(?:\\|[\\s\\S]{0,80}?\\b(?:ba|z|k)?sh\\b|>\\s*\\S{1,80}[\\s\\S]{0,40}?(?:;|&&)\\s*(?:sudo\\s+)?(?:ba|z|k)?sh\\b)",
+    tool: "Bash",
+    label: "pipe-to-shell install",
+    on: true,
+    severity: "deny"
+  },
   { re: "\\bchmod\\s+(-R\\s+)?777\\b", tool: "Bash", label: "world-writable permissions", on: true, severity: "warn" },
   { re: "\\bgit\\s+commit\\b", tool: "Bash", label: "commit", on: false, severity: "warn" },
   { re: "\\bgit\\s+push\\b", tool: "Bash", label: "push", on: false, severity: "warn" },
@@ -9262,6 +9450,39 @@ function proposeDenyRules(rules) {
     flags: "i",
     reason: "Keys and .env files should not pass through a model context.",
     basis: "Enforcee standing library of sensitive paths",
+    defaultOn: true,
+    severity: "deny"
+  });
+  push({
+    id: pid("secret-paths-bash"),
+    rule: "Never read secrets and key material through the shell either.",
+    tool: "Bash",
+    pattern: "\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|\\.)\\b[^\\n]{0,120}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)",
+    flags: "i",
+    reason: "Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.",
+    basis: "Enforcee standing library of sensitive paths",
+    defaultOn: true,
+    severity: "deny"
+  });
+  push({
+    id: pid("guard-self-protection"),
+    rule: "Never modify or delete the guard, its policy, or its ledger.",
+    tool: "Write|Edit",
+    pattern: "(^|/)\\.enforcee/|(^|/)\\.claude/settings(\\.local)?\\.json$",
+    flags: "i",
+    reason: "This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.",
+    basis: "Enforcee standing library \u2014 guard integrity",
+    defaultOn: true,
+    severity: "deny"
+  });
+  push({
+    id: pid("guard-self-protection-bash"),
+    rule: "Never modify or delete the guard through the shell.",
+    tool: "Bash",
+    pattern: "\\b(rm|mv|truncate|shred|unlink|tee|dd)\\b[^\\n]{0,120}?\\.(enforcee|claude)/|>\\s*[^\\n]{0,80}?\\.(enforcee|claude)/",
+    flags: "i",
+    reason: "This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.",
+    basis: "Enforcee standing library \u2014 guard integrity",
     defaultOn: true,
     severity: "deny"
   });

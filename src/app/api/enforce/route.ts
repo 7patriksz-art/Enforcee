@@ -34,9 +34,22 @@ export async function POST(req: Request) {
   const access = await getAccess();
 
   if (!chosen) {
+    // The preview shows WHAT would be blocked and WHY. It does not ship the compiled
+    // pattern, because `pattern` + `flags` + `tool` is the entire policy file — handing
+    // those to an anonymous caller made the paid guard free to anyone who read the
+    // network tab. Free still sees every rule, its severity and its basis, which is what
+    // makes the case; it just does not get the artefact.
+    const preview = access.entitlements.guard
+      ? proposals
+      : proposals.map(({ pattern, flags, ...rest }) => ({
+          ...rest,
+          // Enough shape to be legible, not enough to reconstruct.
+          patternPreview: `${pattern.slice(0, 18)}${pattern.length > 18 ? '…' : ''}`,
+        }));
+
     return NextResponse.json(
       {
-        proposals,
+        proposals: preview,
         ruleCount: rules.length,
         canInstall: access.entitlements.guard,
         plan: access.plan,

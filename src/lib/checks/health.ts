@@ -87,10 +87,42 @@ export function runHealth(
   }
 
   // 2. Contradictions and 3. near-duplicates.
-  const subjects = new Map(rules.map((r) => [r.id, subjectWords(r.text)]));
+  //
+  // This comparison is inherently pairwise, so it is quadratic in the rule count, and
+  // both the work and the output need a ceiling. A 120 KB ruleset — inside our own
+  // documented input cap — parses to ~1,650 rules, which is 1.4 million pair findings,
+  // a 233 MB receipt and an out-of-memory kill. Measured, not theorised.
+  //
+  // Two separate bounds, because they fail differently: PAIR_LIMIT bounds the CPU,
+  // MAX_PAIR_FINDINGS bounds the response. Both report what they skipped — a silent cap
+  // would read as "your ruleset is clean" when it means "we stopped looking".
+  const PAIR_LIMIT = 400;
+  const MAX_PAIR_FINDINGS = 200;
 
-  for (let i = 0; i < rules.length; i++) {
-    for (let j = i + 1; j < rules.length; j++) {
+  const subjects = new Map(rules.map((r) => [r.id, subjectWords(r.text)]));
+  const analysed = Math.min(rules.length, PAIR_LIMIT);
+
+  if (rules.length > PAIR_LIMIT) {
+    findings.push({
+      code: 'ruleset_too_large',
+      severity: 'warn',
+      ruleIds: [],
+      message: `This ruleset has ${rules.length} rules. Contradiction and duplicate detection compares every pair, so it was limited to the first ${PAIR_LIMIT} — the rest were not compared against each other. A ruleset this size is also very unlikely to be followed: adherence drops sharply with length, so the more useful fix is splitting it.`,
+    });
+  }
+
+  let pairFindings = 0;
+  outer: for (let i = 0; i < analysed; i++) {
+    for (let j = i + 1; j < analysed; j++) {
+      if (pairFindings >= MAX_PAIR_FINDINGS) {
+        findings.push({
+          code: 'pair_findings_truncated',
+          severity: 'info',
+          ruleIds: [],
+          message: `Stopped after ${MAX_PAIR_FINDINGS} contradiction and duplicate findings. There are almost certainly more; fixing these will make the next pass more useful.`,
+        });
+        break outer;
+      }
       const a = rules[i];
       const b = rules[j];
 
@@ -115,6 +147,7 @@ export function runHealth(
           ruleIds: [a.id, b.id],
           message: `These two rules point in opposite directions about "${shared.join('", "')}". The model will silently pick one, and you will not be told which.`,
         });
+        pairFindings++;
         continue;
       }
 
@@ -126,6 +159,7 @@ export function runHealth(
           ruleIds: [a.id, b.id],
           message: `These rules overlap heavily (${Math.round(sim * 100)}% word overlap). Consider merging them.`,
         });
+        pairFindings++;
       }
     }
   }

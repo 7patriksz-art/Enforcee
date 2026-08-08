@@ -1,4 +1,5 @@
 import type { EvidenceSpan, Rule, RuleResult } from '../types';
+import { boundInput, checkRegexSafety, safeCompile } from './safe-regex';
 
 export const DETERMINISTIC_VERSION = 'det@1.0.0';
 
@@ -21,14 +22,22 @@ function findAll(haystack: string, needle: string, caseSensitive: boolean, limit
   return spans;
 }
 
-function regexSpans(output: string, pattern: string, flags: string, limit = 5): EvidenceSpan[] {
+/**
+ * Run a user-authored pattern, or decline.
+ *
+ * Returns `null` — distinct from an empty array — when the pattern was refused, so the
+ * caller can report UNVERIFIABLE with a reason instead of silently reporting "no match",
+ * which would be a false clean bill of health.
+ */
+function regexSpans(output: string, pattern: string, flags: string, limit = 5): EvidenceSpan[] | null {
   const f = flags.includes('g') ? flags : flags + 'g';
-  let re: RegExp;
-  try {
-    re = new RegExp(pattern, f);
-  } catch {
-    return [];
-  }
+  const compiled = safeCompile(pattern, f);
+  if ('error' in compiled) return null;
+  const re = compiled.re;
+  // Bound the haystack as well as the pattern. Belt and braces, because the cost of
+  // being wrong here is the whole deployment rather than one bad verdict.
+  const { text: output_ } = boundInput(output);
+  output = output_;
   const spans: EvidenceSpan[] = [];
   let m: RegExpExecArray | null;
   let guard = 0;
@@ -50,7 +59,7 @@ const EMOJI_RE =
  * Counting all of them would report a phantom untagged block for every real one.
  */
 export function openingFences(output: string): EvidenceSpan[] {
-  const all = regexSpans(output, '^[ \\t]*```[a-zA-Z0-9+#_-]*', 'gm', 200);
+  const all = regexSpans(output, '^[ \\t]*```[a-zA-Z0-9+#_-]*', 'gm', 200) ?? [];
   return all
     .filter((_, i) => i % 2 === 0)
     .map((s) => {
@@ -103,6 +112,11 @@ export function guessLanguage(s: string): string | null {
   return best;
 }
 
+function refusalReason(pattern: string): string {
+  const v = checkRegexSafety(pattern);
+  return `This rule was not checked because ${v.reason ?? 'its pattern could not be run safely'}. Rewriting the pattern more simply will get it checked — we would rather tell you than report a pass we did not earn.`;
+}
+
 function res(
   rule: Rule,
   verdict: RuleResult['verdict'],
@@ -149,18 +163,23 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
 
     case 'forbidden_regex': {
       const hits = regexSpans(output, c.pattern, c.flags);
+      // A refused pattern must never read as a pass. "We did not run it" and "it did not
+      // match" are different facts, and conflating them is the exact failure this product
+      // exists to catch.
+      if (hits === null) return res(rule, 'UNVERIFIABLE', refusalReason(c.pattern), [], false);
       if (hits.length) return res(rule, 'VIOLATED', `Forbidden pattern /${c.pattern}/ matched ${hits.length}×.`, hits, true);
       return res(rule, 'FOLLOWED', `Forbidden pattern /${c.pattern}/ never matches.`, [], false);
     }
 
     case 'required_regex': {
       const hits = regexSpans(output, c.pattern, c.flags);
+      if (hits === null) return res(rule, 'UNVERIFIABLE', refusalReason(c.pattern), [], false);
       if (hits.length) return res(rule, 'FOLLOWED', `Required pattern /${c.pattern}/ matched.`, hits, true);
       return res(rule, 'VIOLATED', `Required pattern /${c.pattern}/ never matches.`, [], true);
     }
 
     case 'no_emoji': {
-      const hits = regexSpans(output, EMOJI_RE.source, 'gu');
+      const hits = regexSpans(output, EMOJI_RE.source, 'gu') ?? [];
       if (hits.length) return res(rule, 'VIOLATED', `${hits.length} emoji found.`, hits, true);
       return res(rule, 'FOLLOWED', 'No emoji in the output.', [], false);
     }
@@ -207,14 +226,14 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
     }
 
     case 'format_markdown_table': {
-      const hits = regexSpans(output, '^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$', 'gm', 2);
+      const hits = regexSpans(output, '^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$', 'gm', 2) ?? [];
       return hits.length
         ? res(rule, 'FOLLOWED', 'A markdown table is present.', hits, true)
         : res(rule, 'VIOLATED', 'No markdown table found.', [], true);
     }
 
     case 'format_code_fence': {
-      const hits = regexSpans(output, '```[\\s\\S]*?```', 'g', 3);
+      const hits = regexSpans(output, '```[\\s\\S]*?```', 'g', 3) ?? [];
       return hits.length
         ? res(rule, 'FOLLOWED', `${hits.length} fenced code block(s) present.`, hits, true)
         : res(rule, 'VIOLATED', 'No fenced code block found.', [], true);
@@ -244,7 +263,7 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
     }
 
     case 'citation_required': {
-      const links = regexSpans(output, '\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+', 'g', 5);
+      const links = regexSpans(output, '\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+', 'g', 5) ?? [];
       return links.length
         ? res(rule, 'FOLLOWED', `${links.length} citation/link found.`, links, true)
         : res(rule, 'VIOLATED', 'No citations or links found in the output.', [], true);

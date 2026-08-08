@@ -51,14 +51,34 @@ export interface Proposal extends DenyRule {
  */
 const DANGEROUS: { re: string; tool: string; label: string; on: boolean; severity: 'deny' | 'warn' }[] = [
   {
-    re: 'rm\\s+(-[a-zA-Z]*\\s+)*-?[a-zA-Z]*[rf][a-zA-Z]*\\s+(/|~|\\$HOME|\\.\\.)(\\s|$|/)',
+    // Linear by construction. The previous form used -?[a-zA-Z]*[rf][a-zA-Z]*, which
+    // backtracks catastrophically: 120,000 characters of flags took 15.7s, exceeding the
+    // 10s hook timeout — and a timed-out hook is treated as a NON-BLOCKING error, so every
+    // deny rule after it was skipped. A slow guard is an absent guard.
+    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["\'‘’]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["\'‘’]?\\s|["\'‘’]?$|/)',
     tool: 'Bash',
     label: 'recursive delete of a filesystem root, home directory or parent directory',
     on: true,
     severity: 'deny',
   },
+  {
+    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["\'‘’]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b',
+    tool: 'Bash',
+    label: 'recursive delete of a system directory',
+    on: true,
+    severity: 'deny',
+  },
   { re: 'rm\\s+-[a-z]*r[a-z]*f|rm\\s+-[a-z]*f[a-z]*r', tool: 'Bash', label: 'recursive force delete', on: true, severity: 'warn' },
-  { re: 'git\\s+push\\s+.*(--force(?!-with-lease)|\\s-f\\b)', tool: 'Bash', label: 'force push', on: true, severity: 'deny' },
+  {
+    // `git push -f` — the form almost everyone actually types — walked straight through
+    // the previous pattern, while /install claimed "force-push denied". Also covers
+    // clustered short flags (-uf), long forms, refspec forcing (+main), and -c prefixes.
+    re: 'git\\s+(?:\\S+\\s+)*?push\\b(?!.*--force-with-lease).*?(?:--force\\b|\\s-[a-zA-Z]*f[a-zA-Z]*\\b|\\s\\+[\\w./-]+)',
+    tool: 'Bash',
+    label: 'force push',
+    on: true,
+    severity: 'deny',
+  },
   { re: 'git\\s+reset\\s+--hard', tool: 'Bash', label: 'hard reset, which discards uncommitted work', on: true, severity: 'warn' },
   { re: 'git\\s+clean\\s+-[a-z]*f', tool: 'Bash', label: 'force clean', on: true, severity: 'warn' },
   { re: '\\b(drop|truncate)\\s+(table|database|schema)\\b', tool: 'Bash', label: 'destructive SQL', on: true, severity: 'deny' },
@@ -71,7 +91,15 @@ const DANGEROUS: { re: string; tool: string; label: string; on: boolean; severit
   },
   { re: '\\b(npm|yarn|pnpm)\\s+publish\\b', tool: 'Bash', label: 'package publish', on: true, severity: 'deny' },
   { re: '\\b(vercel|netlify|fly|railway)\\s+deploy\\b|\\bvercel\\s+--prod\\b', tool: 'Bash', label: 'production deploy', on: true, severity: 'deny' },
-  { re: '\\b(curl|wget)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z)?sh', tool: 'Bash', label: 'pipe-to-shell install', on: true, severity: 'deny' },
+  {
+    // Previously [^|]*, which could not cross an intermediate pipe: `curl x | tee f | sh`
+    // and `curl x > f && sh f` both walked through. Now covers redirect-then-run too.
+    re: '\\b(?:curl|wget)\\b[\\s\\S]{0,200}?(?:\\|[\\s\\S]{0,80}?\\b(?:ba|z|k)?sh\\b|>\\s*\\S{1,80}[\\s\\S]{0,40}?(?:;|&&)\\s*(?:sudo\\s+)?(?:ba|z|k)?sh\\b)',
+    tool: 'Bash',
+    label: 'pipe-to-shell install',
+    on: true,
+    severity: 'deny',
+  },
   { re: '\\bchmod\\s+(-R\\s+)?777\\b', tool: 'Bash', label: 'world-writable permissions', on: true, severity: 'warn' },
   { re: '\\bgit\\s+commit\\b', tool: 'Bash', label: 'commit', on: false, severity: 'warn' },
   { re: '\\bgit\\s+push\\b', tool: 'Bash', label: 'push', on: false, severity: 'warn' },
@@ -165,6 +193,54 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     flags: 'i',
     reason: 'Keys and .env files should not pass through a model context.',
     basis: 'Enforcee standing library of sensitive paths',
+    defaultOn: true,
+    severity: 'deny',
+  });
+
+  // The same rule, for the shell. Scoping secrets to Read/Write/Edit left `cat .env` wide
+  // open — and that is not an adversarial bypass, it is the ordinary next move for a model
+  // that was just denied on Read. The bypass a first-time user finds by accident is worth
+  // more attention than the one requiring deliberate evasion.
+  push({
+    id: pid('secret-paths-bash'),
+    rule: 'Never read secrets and key material through the shell either.',
+    tool: 'Bash',
+    pattern:
+      '\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|\\.)\\b[^\\n]{0,120}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)',
+    flags: 'i',
+    reason: 'Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.',
+    basis: 'Enforcee standing library of sensitive paths',
+    defaultOn: true,
+    severity: 'deny',
+  });
+
+  // A guard that can be switched off by the thing it guards is decoration. This matters
+  // most in exactly the situation the escalation ladder exists for: a model that has been
+  // blocked twice and is looking for another way through. "Edit the config" is the obvious
+  // next move, and nothing stopped it.
+  push({
+    id: pid('guard-self-protection'),
+    rule: 'Never modify or delete the guard, its policy, or its ledger.',
+    tool: 'Write|Edit',
+    pattern: '(^|/)\\.enforcee/|(^|/)\\.claude/settings(\\.local)?\\.json$',
+    flags: 'i',
+    reason:
+      'This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.',
+    basis: 'Enforcee standing library — guard integrity',
+    defaultOn: true,
+    severity: 'deny',
+  });
+
+  push({
+    id: pid('guard-self-protection-bash'),
+    rule: 'Never modify or delete the guard through the shell.',
+    tool: 'Bash',
+    pattern:
+      '\\b(rm|mv|truncate|shred|unlink|tee|dd)\\b[^\\n]{0,120}?\\.(enforcee|claude)/|>\\s*[^\\n]{0,80}?\\.(enforcee|claude)/',
+    flags: 'i',
+    reason:
+      'This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.',
+    basis: 'Enforcee standing library — guard integrity',
     defaultOn: true,
     severity: 'deny',
   });

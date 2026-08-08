@@ -123,7 +123,11 @@ export interface HealthFinding {
     | 'contradiction'
     | 'unenforceable'
     | 'buried'
-    | 'oversized';
+    | 'oversized'
+    /** Too many rules to compare every pair; analysis was bounded and says so. */
+    | 'ruleset_too_large'
+    /** Pair analysis stopped early. Never let a cap read as a clean bill of health. */
+    | 'pair_findings_truncated';
   severity: 'info' | 'warn' | 'error';
   ruleIds: string[];
   message: string;
