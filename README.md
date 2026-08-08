@@ -8,6 +8,10 @@ for the turn it stops appearing.
 
 Enforcee gives you an answer with evidence, and then stops the things it can stop.
 
+STOP FIGHTING YOUR AI TO ADVANCE YOUR PROJECT: memory files, system prompts, guards, skills, instructions, CLAUDE.md, MCPs, project docs - actively monitored, enforced, verified -. 
+
+BEST PART? -> The AI learns your preferences along the way and keeps iterating to your liking. Never works against your vision.
+
 ## Try it in twenty seconds
 
 No install, no account, no API key, no network call.
