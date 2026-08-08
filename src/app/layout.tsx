@@ -31,6 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/how-it-works" className="hover:text-ink transition-colors">
                 How it works
               </Link>
+              <Link href="/history" className="hover:text-ink transition-colors">
+                History
+              </Link>
               <Link
                 href="/audit"
                 className="rounded-md bg-ink px-3 py-1.5 text-[13px] font-medium text-white hover:bg-ink-soft transition-colors"

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { runAudit } from '@/lib/audit';
+import { persistAudit } from '@/lib/persist';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -42,13 +43,12 @@ export async function POST(req: Request) {
       previousDigest: previousDigest ?? null,
       deterministicOnly,
     });
+    const mode = deterministicOnly ? ('deterministic' as const) : ('full' as const);
+    // Storage is additive. A failure here must never break a completed audit.
+    const stored = await persistAudit({ receipt, ruleset, output, mode, totalUsd });
+
     return NextResponse.json(
-      {
-        receipt,
-        totalUsd,
-        judgeAvailable: hasKey,
-        mode: deterministicOnly ? 'deterministic' : 'full',
-      },
+      { receipt, totalUsd, judgeAvailable: hasKey, mode, stored },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
