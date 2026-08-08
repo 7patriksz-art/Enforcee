@@ -1,28 +1,164 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { PLANS, TRIAL_DAYS, yearlySaving, type Interval } from '@/lib/plans';
 
-const MATRIX: { label: string; free: string | boolean; builder: string | boolean; founder: string | boolean }[] = [
-  { label: 'Audits, on the web and in the CLI', free: 'Unlimited', builder: 'Unlimited', founder: 'Unlimited' },
-  { label: 'CLI without an account, a key or a network call', free: true, builder: true, founder: true },
-  { label: 'Evidence quotes and method badges', free: true, builder: true, founder: true },
-  { label: 'Ruleset health', free: true, builder: true, founder: true },
-  { label: 'Rules found in your conversation', free: 'First 3', builder: 'Unlimited', founder: 'Unlimited' },
-  { label: 'Receipts kept after you close the tab', free: false, builder: 'Forever', founder: 'Forever' },
-  { label: 'Per-rule track record over time', free: false, builder: true, founder: true },
-  { label: 'Drift alerts when a rule starts failing', free: false, builder: true, founder: true },
-  { label: 'The guard — blocks a command before it runs', free: false, builder: true, founder: true },
-  { label: 'Rules restored after context compaction', free: false, builder: true, founder: true },
-  { label: 'Retry-loop escalation', free: false, builder: true, founder: true },
-  { label: 'Judged layer on our key, not yours', free: false, builder: true, founder: true },
-  { label: 'Projects', free: '—', builder: '3', founder: 'Unlimited' },
-  { label: 'CI gate — a violation fails the PR', free: false, builder: false, founder: true },
-  { label: 'Bypasses recorded with a reason', free: false, builder: false, founder: true },
-  { label: 'Signed receipts for a client', free: false, builder: false, founder: true },
-  { label: 'REST API', free: false, builder: false, founder: true },
+interface Row {
+  label: string;
+  /** What the row actually means, in enough detail that nobody has to guess. */
+  detail: string;
+  free: string | boolean;
+  builder: string | boolean;
+  founder: string | boolean;
+}
+
+const MATRIX: Row[] = [
+  {
+    label: 'Audits, on the web and in the CLI',
+    detail:
+      'An audit takes your ruleset and one thing an AI produced, and returns a verdict for every rule you wrote: followed, violated, not applicable, or honestly unverifiable. There is no per-audit charge, no credit balance and no counter on any plan, including Free. Run it a hundred times a day if you want. A tool that charges you for checking more carefully is a tool that quietly teaches you to check less.',
+    free: 'Unlimited',
+    builder: 'Unlimited',
+    founder: 'Unlimited',
+  },
+  {
+    label: 'CLI without an account, a key or a network call',
+    detail:
+      'npx enforcee audit CLAUDE.md answer.md works on a laptop with the wifi switched off. No signup, no API key, no telemetry, no update ping — there is nothing to turn off because there is nothing there. About four fifths of a real ruleset is settled by code rather than by a model, so the diagnostic half of this product genuinely does not need us. It is also how you check our claims: run the same input twice, on two machines, and you get a byte-identical receipt.',
+    free: true,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Evidence quotes and method badges',
+    detail:
+      'Every verdict says how it was reached. Deterministic means code proved it and you can reproduce it offline. Judged means a model decided — and it had to return a quote copied character-for-character out of your own text, which we then locate programmatically in the source. A judged verdict whose quote we cannot find is thrown away and downgraded to unverifiable rather than shown to you. You never have to wonder which verdicts are proofs and which are opinions, because we never blur the two.',
+    free: true,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Coverage — the rules that left no trace',
+    detail:
+      'Coverage is the share of applicable rules that left any observable sign in the output. A rule with no trace at all is marked "no signal" rather than quietly counted as passed. This is the number that stops "we could not tell" from disguising itself as "it passed", and it is the single most useful figure on a receipt.',
+    free: true,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Ruleset health',
+    detail:
+      'Critiques your rules rather than the output: near-duplicates that are the same rule written twice, pairs that contradict each other so one must always fail, and rules too vague for anything to ever check. Most rulesets that people say "stopped working" were never checkable to begin with, and this is the fastest way to find that out.',
+    free: true,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Rules found in your conversation',
+    detail:
+      'Reads a conversation and proposes rules from things you already said — corrections, "stop doing X", "I would rather Y". Every candidate carries the exact sentence that produced it, at a verified position, and arrives switched off; nothing is ever enabled on your behalf. Free shows the first three and tells you plainly how many more it found. Builder and Founder hand you all of them.',
+    free: 'First 3',
+    builder: 'Unlimited',
+    founder: 'Unlimited',
+  },
+  {
+    label: 'Receipts kept after you close the tab',
+    detail:
+      'On Free nothing is written to our database at all — your audit is processed, returned, and discarded. That is not a teaser, it is the actual behaviour, and you can download the JSON yourself if you want to keep one. On paid, every receipt is stored and searchable, so you can reopen last Tuesday’s audit and see whether the rule that broke then is still breaking now.',
+    free: false,
+    builder: 'Forever',
+    founder: 'Forever',
+  },
+  {
+    label: 'Per-rule track record over time',
+    detail:
+      'Rules are identified by a hash of their normalised text, so a rule keeps its identity even after you reword it, reorder it or move it to a different file. That is what makes a sentence like "this rule failed 6 of your last 40 audits" possible at all. It is the question that actually changes what you write in your ruleset, and no single audit can answer it.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Drift alerts when a rule starts failing',
+    detail:
+      'A rule that held for weeks and then starts failing is the signal worth paying for — it usually means the model changed underneath you, or your ruleset grew a contradiction you have not noticed. Silent degradation is the exact failure this product exists to catch, and you cannot spot it by looking at one audit at a time.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'The guard — blocks a command before it runs',
+    detail:
+      'A hook that inspects a tool call before it executes and refuses the ones your rules forbid, handing the model your own rule text as the reason. Force-push denied, --force-with-lease allowed, rm -rf ./build warned, rm -rf / denied. This is the difference between finding out afterwards and it not happening. It runs on your machine, reads a policy in your own repo, and writes to a ledger you own — it never contacts us.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Rules restored after context compaction',
+    detail:
+      'When a long session compacts, what the model can see is rebuilt from a summary, and parts of your instructions can come back as a paraphrase of themselves. The guard re-supplies your ruleset at that moment, before the model acts again, so the rules you wrote are the rules in play rather than a lossy retelling of them.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Retry-loop escalation',
+    detail:
+      'A blocked model frequently tries the same thing again under a fresh call id. The guard counts attempts per session and escalates the refusal: by the second attempt it is firmer, by the fourth it tells the model to stop and wait for you. Without this, one block can turn into a loop that burns tokens and patience and ends with somebody uninstalling the guard.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Judged layer on our key, not yours',
+    detail:
+      'The minority of rules that code cannot settle are adjudicated by a model. On Free you supply your own API key for that part, and the request is between you and the provider. On paid there is no key to obtain, manage, rotate or leak, and no second bill arriving from somewhere else.',
+    free: false,
+    builder: true,
+    founder: true,
+  },
+  {
+    label: 'Projects',
+    detail:
+      'A project is a codebase with its own ruleset and its own compiled policy, kept separate from your others so a rule that belongs to one repository does not start firing in another. Builder covers three, which is most people. Founder is unlimited.',
+    free: '—',
+    builder: '3',
+    founder: 'Unlimited',
+  },
+  {
+    label: 'CI gate — a violation fails the PR',
+    detail:
+      'The same check that runs on your laptop runs in your pipeline and exits non-zero when a rule is violated, so a pull request fails instead of merging. This is the point where a rule stops being your personal preference and becomes something the team is actually held to — which is a different product from a thing you run when you happen to remember.',
+    free: false,
+    builder: false,
+    founder: true,
+  },
+  {
+    label: 'Bypasses recorded with a reason',
+    detail:
+      'Sometimes a rule genuinely has to be overridden, and that is fine. What is not fine is nobody knowing it happened. An override is recorded with the reason attached, so the exception is visible in the record rather than invisible in somebody’s memory.',
+    free: false,
+    builder: false,
+    founder: true,
+  },
+  {
+    label: 'Signed receipts for a client',
+    detail:
+      'An exportable, tamper-evident record of what was checked and what the verdict was. A receipt carries a hash of the ruleset, a hash of the output and a hash of itself, so anyone can recompute it and prove it was not edited after the fact — including somebody who has no reason to trust you. That is what makes it usable as evidence rather than as a screenshot.',
+    free: false,
+    builder: false,
+    founder: true,
+  },
+  {
+    label: 'REST API',
+    detail:
+      'Run audits from your own systems instead of from our interface — a review bot, an internal dashboard, a nightly job over yesterday’s outputs. Same engine, same receipts, same verdicts, with your own credentials.',
+    free: false,
+    builder: false,
+    founder: true,
+  },
 ];
 
 function Cell({ v }: { v: string | boolean }) {
@@ -31,10 +167,167 @@ function Cell({ v }: { v: string | boolean }) {
   return <span className="text-[12.5px] text-ink-mid">{v}</span>;
 }
 
+/**
+ * The explanation popover.
+ *
+ * Rendered fixed rather than absolute, because the table lives inside an overflow-x-auto
+ * container that would otherwise clip it on narrow screens. It repositions on scroll
+ * instead of closing, so a small nudge of the page does not dismiss what you were reading.
+ */
+function Explainer({
+  anchor,
+  row,
+  onClose,
+  onEnter,
+  onLeave,
+}: {
+  anchor: HTMLElement;
+  row: Row;
+  onClose: () => void;
+  onEnter: () => void;
+  onLeave: () => void;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const place = useCallback(() => {
+    const r = anchor.getBoundingClientRect();
+    const W = Math.min(360, window.innerWidth - 24);
+    const H = boxRef.current?.offsetHeight ?? 200;
+    let left = r.left - 8;
+    if (left + W > window.innerWidth - 12) left = window.innerWidth - W - 12;
+    if (left < 12) left = 12;
+    const above = r.bottom + H + 12 > window.innerHeight && r.top - H - 12 > 0;
+    setPos({ top: above ? r.top - H - 10 : r.bottom + 10, left, above });
+  }, [anchor]);
+
+  useEffect(() => {
+    place();
+    const onScroll = () => place();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!boxRef.current?.contains(t) && !anchor.contains(t)) onClose();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+    };
+  }, [place, onClose, anchor]);
+
+  return (
+    <div
+      ref={boxRef}
+      role="tooltip"
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      style={{
+        position: 'fixed',
+        top: pos?.top ?? -9999,
+        left: pos?.left ?? -9999,
+        width: Math.min(360, typeof window === 'undefined' ? 360 : window.innerWidth - 24),
+        opacity: pos ? 1 : 0,
+      }}
+      className="z-50 rounded-xl border border-ink/12 bg-white px-4 py-3.5 shadow-lg shadow-ink/10"
+    >
+      <div className="text-[13.5px] font-semibold leading-snug">{row.label}</div>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-mid">{row.detail}</p>
+      <div className="mt-3 flex items-center gap-3 border-t hairline pt-2.5 font-mono text-[10px] uppercase tracking-wide">
+        <Tick label="Free" v={row.free} />
+        <Tick label="Builder" v={row.builder} />
+        <Tick label="Founder" v={row.founder} />
+      </div>
+    </div>
+  );
+}
+
+function Tick({ label, v }: { label: string; v: string | boolean }) {
+  const on = v !== false;
+  return (
+    <span className={on ? 'text-ink' : 'text-paper-line'}>
+      {label} {v === true ? '✓' : v === false ? '—' : String(v)}
+    </span>
+  );
+}
+
+function InfoDot({
+  row,
+  open,
+  onHover,
+  onPin,
+  onLeave,
+}: {
+  row: Row;
+  open: boolean;
+  onHover: (el: HTMLElement, row: Row) => void;
+  onPin: (el: HTMLElement, row: Row) => void;
+  onLeave: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={`What "${row.label}" means`}
+      aria-expanded={open}
+      onClick={() => ref.current && onPin(ref.current, row)}
+      onMouseEnter={() => ref.current && onHover(ref.current, row)}
+      onMouseLeave={onLeave}
+      onFocus={() => ref.current && onHover(ref.current, row)}
+      className={clsx(
+        'ml-1.5 inline-grid h-[15px] w-[15px] shrink-0 translate-y-[1.5px] place-items-center rounded-full border font-mono text-[9.5px] leading-none transition-colors',
+        open
+          ? 'border-ink bg-ink text-white'
+          : 'border-ink/25 text-ink-light hover:border-ink/60 hover:text-ink'
+      )}
+    >
+      i
+    </button>
+  );
+}
+
 export default function Pricing() {
   const [interval, setInterval] = useState<Interval>('yearly');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Hover previews; a click pins it open so you can select the text or read it on a phone.
+  const [explain, setExplain] = useState<{ el: HTMLElement; row: Row; pinned: boolean } | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    // Long enough to move the pointer from the dot into the box without losing it.
+    closeTimer.current = setTimeout(() => setExplain((c) => (c?.pinned ? c : null)), 220);
+  }, [cancelClose]);
+
+  const onHover = useCallback(
+    (el: HTMLElement, row: Row) => {
+      cancelClose();
+      setExplain((c) => (c?.pinned && c.row.label !== row.label ? c : { el, row, pinned: c?.pinned ?? false }));
+    },
+    [cancelClose]
+  );
+
+  const onPin = useCallback(
+    (el: HTMLElement, row: Row) => {
+      cancelClose();
+      setExplain((c) => (c?.pinned && c.row.label === row.label ? null : { el, row, pinned: true }));
+    },
+    [cancelClose]
+  );
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
 
   async function checkout(plan: 'builder' | 'founder') {
     setBusy(plan);
@@ -196,7 +489,12 @@ export default function Pricing() {
       <section className="mt-14">
         <h2 className="font-display text-[24px] tracking-tight">Exactly what you get</h2>
         <p className="readable mt-2 mb-6 max-w-prose">
-          No asterisks. If a row says no, it means no — not &ldquo;limited&rdquo;.
+          No asterisks. If a row says no, it means no — not &ldquo;limited&rdquo;. Every feature carries an{' '}
+          <span className="inline-grid h-[15px] w-[15px] translate-y-[2px] place-items-center rounded-full border border-ink/25 font-mono text-[9.5px] leading-none text-ink-light">
+            i
+          </span>{' '}
+          that says in full what it actually does, because a feature name you have to guess at is a feature name we
+          chose for ourselves.
         </p>
         <div className="overflow-x-auto rounded-2xl border hairline">
           <table className="w-full min-w-[620px] text-left text-[13.5px]">
@@ -210,8 +508,17 @@ export default function Pricing() {
             </thead>
             <tbody className="divide-y hairline bg-white">
               {MATRIX.map((r) => (
-                <tr key={r.label}>
-                  <td className="px-4 py-2.5">{r.label}</td>
+                <tr key={r.label} className={clsx(explain?.row.label === r.label && 'bg-honey-pale/25')}>
+                  <td className="px-4 py-2.5">
+                    <span className="align-middle">{r.label}</span>
+                    <InfoDot
+                      row={r}
+                      open={explain?.row.label === r.label}
+                      onHover={onHover}
+                      onPin={onPin}
+                      onLeave={scheduleClose}
+                    />
+                  </td>
                   <td className="px-4 py-2.5 text-center"><Cell v={r.free} /></td>
                   <td className="bg-honey-pale/20 px-4 py-2.5 text-center"><Cell v={r.builder} /></td>
                   <td className="px-4 py-2.5 text-center"><Cell v={r.founder} /></td>
@@ -221,6 +528,17 @@ export default function Pricing() {
           </table>
         </div>
       </section>
+
+      {explain && (
+        <Explainer
+          key={explain.row.label}
+          anchor={explain.el}
+          row={explain.row}
+          onClose={() => setExplain(null)}
+          onEnter={cancelClose}
+          onLeave={scheduleClose}
+        />
+      )}
 
       <section className="mt-12 rounded-2xl border border-honey-line bg-honey-pale/40 px-6 py-6">
         <h2 className="font-display text-[22px] tracking-tight">What we will never charge for</h2>
