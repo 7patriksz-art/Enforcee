@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Callout, Clause, LegalShell } from '@/components/Legal';
 import { TRIAL_DAYS } from '@/lib/plans';
+import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Enforcee',
@@ -318,7 +319,7 @@ export default function Terms() {
           </li>
           <li>
             <strong>Talk to us first.</strong> Before anything formal, email{' '}
-            <a href="mailto:hello@enforcee.app" className="text-brand hover:underline">hello@enforcee.app</a>. Almost
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a>. Almost
             everything is a misunderstanding that a reply fixes.
           </li>
           <li>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Callout, Clause, DataTable, LegalShell } from '@/components/Legal';
+import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Enforcee',
@@ -36,7 +37,7 @@ export default function Privacy() {
         </p>
         <p>
           Contact for anything in this document, including any request to exercise your rights:{' '}
-          <a href="mailto:hello@enforcee.app" className="text-brand hover:underline">hello@enforcee.app</a>. We answer
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a>. We answer
           within 30 days, and usually far sooner.
         </p>
       </Clause>
@@ -166,7 +167,7 @@ export default function Privacy() {
         </ul>
         <p>
           No system is perfect. If you believe you have found a vulnerability, write to{' '}
-          <a href="mailto:hello@enforcee.app" className="text-brand hover:underline">hello@enforcee.app</a> before
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a> before
           disclosing it publicly, and we will work with you and credit you if you would like.
         </p>
       </Clause>

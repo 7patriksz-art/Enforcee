@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CONTACT_EMAIL } from '@/lib/contact';
 
 export function LegalShell({
   title,
@@ -20,7 +21,7 @@ export function LegalShell({
       <div className="mt-10 space-y-9">{children}</div>
       <div className="mt-14 border-t hairline pt-6 text-[13px] text-ink-mid">
         Questions about either document go to{' '}
-        <a href="mailto:hello@enforcee.app" className="text-brand hover:underline">hello@enforcee.app</a>. The other one
+        <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a>. The other one
         is here:{' '}
         <Link href="/privacy" className="text-brand hover:underline">Privacy</Link> ·{' '}
         <Link href="/terms" className="text-brand hover:underline">Terms</Link>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import './globals.css';
 import { SITE_URL } from '@/lib/site-url';
+import { CONTACT_EMAIL } from '@/lib/contact';
 
 const TITLE = 'Enforcee — stop fighting your own AI';
 const DESCRIPTION =
@@ -75,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/account" className="transition-colors hover:text-ink">Account</Link>
                 <Link href="/privacy" className="transition-colors hover:text-ink">Privacy</Link>
                 <Link href="/terms" className="transition-colors hover:text-ink">Terms</Link>
-                <a href="mailto:hello@enforcee.app" className="transition-colors hover:text-ink">Contact</a>
+                <a href={`mailto:${CONTACT_EMAIL}`} className="transition-colors hover:text-ink">Contact</a>
               </div>
             </div>
             <p className="mt-8 max-w-3xl border-t hairline pt-5 font-mono text-[11px] leading-relaxed text-skip">

@@ -4,6 +4,7 @@ import { getAccess } from '@/lib/entitlements';
 import { planById, TRIAL_DAYS } from '@/lib/plans';
 import { supabaseConfigured } from '@/lib/supabase/server';
 import Licence from './Licence';
+import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,7 +93,7 @@ export default async function Account() {
           <section className="rounded-2xl border hairline bg-paper-soft px-5 py-4">
             <div className="text-[13.5px] font-semibold">Changing or cancelling</div>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-mid">
-              Email <a href="mailto:hello@enforcee.app" className="text-brand hover:underline">hello@enforcee.app</a> and
+              Email <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a> and
               it is done the same day. You keep the paid features until the end of the period you already paid for, and
               auditing keeps working afterwards regardless.
             </p>
