@@ -3,6 +3,8 @@ import clsx from 'clsx';
 import { listCampaign, requireAdmin, type CampaignItem } from '@/lib/admin';
 import { supabaseConfigured } from '@/lib/supabase/server';
 import Board from './Board';
+import Capacity from './Capacity';
+import { getServiceSupabase } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,10 +44,17 @@ export default async function Admin() {
     );
   }
 
-  const items = await listCampaign();
+  const db = getServiceSupabase();
+  const [items, auditCount] = await Promise.all([
+    listCampaign(),
+    db
+      ? db.from('audits').select('id', { count: 'exact', head: true }).then((r) => r.count ?? 0)
+      : Promise.resolve(0),
+  ]);
 
   return (
     <Shell>
+      <Capacity auditCount={auditCount} />
       <Board items={items} lanes={LANES} />
     </Shell>
   );

@@ -45,9 +45,9 @@ export default function Home() {
 
         <div className="mt-10 grid max-w-3xl gap-x-8 gap-y-3 border-t hairline pt-6 sm:grid-cols-3">
           {[
-            ['80%', 'of a real ruleset decided with zero model calls'],
-            ['0', 'fabricated evidence spans across 48 verdicts'],
-            ['$0.006', 'measured cost of a full audit'],
+            ['4 in 5', 'of your rules answered instantly, by code, with no model in the loop'],
+            ['0', 'invented verdicts — every judged claim must quote your own output or it is thrown out'],
+            ['10 / 10', 'destructive commands stopped before they ran, in a live test'],
           ].map(([k, v]) => (
             <div key={k}>
               <div className="font-mono text-[26px] leading-none tracking-tight text-clay">{k}</div>
@@ -140,7 +140,7 @@ export default function Home() {
               },
               {
                 k: 'Most of it needs no model at all',
-                d: 'About 80% of a real ruleset is decided by code — reproducible, instant, free. That is why an audit costs six-tenths of a cent instead of a subscription, and why you can check the maths yourself.',
+                d: 'Four fifths of a real ruleset is settled by code — reproducible, instant, and yours free forever. You can rerun any of it offline and get the identical answer, which is the only kind of verdict worth having.',
               },
               {
                 k: 'Every rule has an identity',
@@ -188,6 +188,65 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Social proof ─────────────────────────────────────────────────── */}
+      <section className="border-b hairline bg-paper-soft">
+        <div className="mx-auto max-w-6xl px-5 py-16">
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay">not testimonials</p>
+          <h2 className="mt-4 max-w-[24ch] font-display text-[30px] leading-tight tracking-tight">
+            We launched this week. So here is the evidence instead.
+          </h2>
+          <p className="readable mt-4 max-w-prose">
+            No customer logos, no five-star quotes, no &ldquo;trusted by 10,000 developers&rdquo;. What we have is a
+            public record of people describing this exact problem, and a vendor that closed the ticket.
+          </p>
+
+          <div className="mt-9 grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                q: 'Currently the only workaround is to manually correct the model each time it violates a rule, which defeats the purpose of having persistent instructions in CLAUDE.md.',
+                who: 'phpmac',
+                where: 'anthropics/claude-code #59309',
+                url: 'https://github.com/anthropics/claude-code/issues/59309',
+              },
+              {
+                q: 'After compaction, the agent has the conversation but not the rules.',
+                who: 'kcarriedo',
+                where: 'same thread, independent reproduction',
+                url: 'https://github.com/anthropics/claude-code/issues/59309',
+              },
+              {
+                q: 'Any system where the rule is more fragile than the policy is going to leak.',
+                who: 'kcarriedo',
+                where: 'same thread',
+                url: 'https://github.com/anthropics/claude-code/issues/59309',
+              },
+            ].map((c) => (
+              <figure key={c.q} className="flex flex-col rounded-2xl border hairline bg-white px-5 py-5">
+                <blockquote className="text-[14.5px] leading-relaxed text-ink">&ldquo;{c.q}&rdquo;</blockquote>
+                <figcaption className="mt-auto pt-4 font-mono text-[11px] text-skip">
+                  <a href={c.url} target="_blank" rel="noreferrer" className="hover:text-ink">
+                    {c.who} · {c.where}
+                  </a>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-clay-line bg-clay-pale px-5 py-4">
+            <p className="text-[14.5px] leading-relaxed text-ink">
+              That thread names four earlier duplicates of itself, spanning months.{' '}
+              <span className="hi hi-clay font-semibold">It was closed as not planned.</span> Nobody is coming to fix
+              this inside the tool, which is why the answer has to sit beside it.
+            </p>
+          </div>
+
+          <p className="mt-6 max-w-prose font-mono text-[11px] leading-relaxed text-skip">
+            Quoted verbatim from a public GitHub thread and linked so you can read the whole argument yourself. These
+            people are describing a problem, not endorsing us — we have never spoken to them.
+          </p>
+        </div>
+      </section>
+
       {/* ── Verdict vocabulary ───────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-5 py-16">
         <h2 className="font-display text-[30px] leading-tight tracking-tight">What an audit gives you back</h2>
@@ -225,8 +284,8 @@ export default function Home() {
             Find out what your rules are actually doing.
           </h2>
           <p className="readable mx-auto mt-4 max-w-[52ch]">
-            Paste a ruleset and an answer. Twenty seconds, no account, and the deterministic half is free forever
-            because it costs us nothing to run.
+            Paste a ruleset and an answer. Twenty seconds, no account, no card. You will know inside a minute
+            whether the rules you have been writing for months are doing anything at all.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link href="/audit" className="rounded-xl bg-ink px-6 py-3 text-[15px] font-medium text-white hover:bg-ink-soft transition-colors">

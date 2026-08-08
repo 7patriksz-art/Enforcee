@@ -247,3 +247,63 @@ describe('policy compilation', () => {
     expect(a.rulesetHash).not.toBe(b.rulesetHash);
   });
 });
+
+describe('guard: retry-loop handling', () => {
+  // Documented behaviour on anthropics/claude-code#59309: a PreToolUse deny often makes the
+  // model retry with a fresh tool_use_id instead of changing approach. A guard that repeats
+  // the same one-line refusal turns that into a budget-burning loop, and then gets deleted.
+  function denyTwice(sessionId: string) {
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      session_id: sessionId,
+      tool_name: 'Bash',
+      tool_input: { command: 'git push --force origin main' },
+    };
+    return [runGuard(payload), runGuard(payload), runGuard(payload), runGuard(payload)];
+  }
+
+  it('escalates the refusal when the same rule is hit again', () => {
+    const [first, second] = denyTwice('loop-a');
+    const r1 = decision(first.stdout)!.hookSpecificOutput!.permissionDecisionReason!;
+    const r2 = decision(second.stdout)!.hookSpecificOutput!.permissionDecisionReason!;
+    expect(r1).not.toMatch(/attempt 2/i);
+    expect(r2).toMatch(/This is attempt 2/);
+    expect(r2).toMatch(/Do not reissue this command/);
+    expect(r2).toMatch(/npx enforcee guard/);
+  });
+
+  it('tells the model to stop and surface it to the user after four attempts', () => {
+    const runs = denyTwice('loop-b');
+    const last = decision(runs[3].stdout)!;
+    expect(last.hookSpecificOutput!.permissionDecisionReason).toMatch(/STOP\./);
+    expect(last.hookSpecificOutput!.permissionDecisionReason).toMatch(/wait for instructions/);
+    expect(last.systemMessage).toMatch(/blocked this same rule/i);
+  });
+
+  it('still denies every time — escalation never becomes permission', () => {
+    for (const r of denyTwice('loop-c')) {
+      expect(decision(r.stdout)!.hookSpecificOutput!.permissionDecision).toBe('deny');
+    }
+  });
+
+  it('counts attempts per session, not globally', () => {
+    denyTwice('loop-d');
+    const fresh = runGuard({
+      hook_event_name: 'PreToolUse',
+      session_id: 'loop-e-fresh',
+      tool_name: 'Bash',
+      tool_input: { command: 'git push --force origin main' },
+    });
+    expect(decision(fresh.stdout)!.hookSpecificOutput!.permissionDecisionReason).not.toMatch(/attempt 2/i);
+  });
+
+  it('records the attempt number in the ledger', () => {
+    denyTwice('loop-f');
+    const lines = readFileSync(join(project, '.enforcee', 'ledger.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .filter((e) => e.session === 'loop-f');
+    expect(lines.map((e) => e.attempt)).toEqual([1, 2, 3, 4]);
+  });
+});

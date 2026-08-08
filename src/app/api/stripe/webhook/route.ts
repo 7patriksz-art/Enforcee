@@ -38,7 +38,8 @@ export async function POST(req: Request) {
             email: s.customer_details?.email ?? null,
             stripe_customer_id: typeof s.customer === 'string' ? s.customer : null,
             stripe_subscription_id: typeof s.subscription === 'string' ? s.subscription : null,
-            plan: s.metadata?.plan ?? 'solo',
+            plan: s.metadata?.plan ?? 'builder',
+            interval: s.metadata?.interval ?? 'monthly',
             status: 'active',
           },
           { onConflict: 'stripe_subscription_id' }

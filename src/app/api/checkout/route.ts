@@ -6,7 +6,10 @@ import { getUser } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
-const Body = z.object({ plan: z.enum(['solo', 'team']), seats: z.number().int().min(1).max(200).optional() });
+const Body = z.object({
+  plan: z.enum(['builder', 'founder']),
+  interval: z.enum(['monthly', 'yearly']).default('monthly'),
+});
 
 export async function POST(req: Request) {
   const stripe = getStripe();
@@ -26,9 +29,12 @@ export async function POST(req: Request) {
   const plan = planById(parsed.data.plan);
   if (!plan) return NextResponse.json({ error: 'Unknown plan.' }, { status: 400 });
 
-  const price = stripePriceFor(plan);
+  const price = stripePriceFor(plan, parsed.data.interval);
   if (!price) {
-    return NextResponse.json({ error: `No Stripe price configured for ${plan.name}.` }, { status: 503 });
+    return NextResponse.json(
+      { error: `No Stripe price configured for ${plan.name} ${parsed.data.interval}.` },
+      { status: 503 }
+    );
   }
 
   // Sign-in is not required to pay. Making someone create an account before they can
@@ -38,14 +44,14 @@ export async function POST(req: Request) {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      line_items: [{ price, quantity: plan.id === 'team' ? Math.max(3, parsed.data.seats ?? 3) : 1 }],
+      line_items: [{ price, quantity: 1 }],
       allow_promotion_codes: true,
       success_url: `${siteUrl()}/pricing?checkout=done`,
       cancel_url: `${siteUrl()}/pricing?checkout=cancelled`,
       customer_email: user?.email ?? undefined,
       client_reference_id: user?.id ?? undefined,
-      subscription_data: { metadata: { plan: plan.id, user_id: user?.id ?? '' } },
-      metadata: { plan: plan.id, user_id: user?.id ?? '' },
+      subscription_data: { metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' } },
+      metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' },
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {

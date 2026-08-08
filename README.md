@@ -79,8 +79,8 @@ Stated up front, because the audience for this product is right to be skeptical.
 
 | | |
 |---|---|
-| Cost of a full 10-rule audit | **$0.0057**, 7 seconds |
-| Rules decided with no model call | **80%** on a realistic ruleset |
+| Time to a full 10-rule audit | **7 seconds** |
+| Rules decided with no model call | **4 in 5** on a realistic ruleset |
 | Gold-set judge accuracy (Haiku 4.5, 3 samples) | **94%** |
 | False accusations across 48 verdicts on 3 models | **0** |
 | Fabricated evidence spans | **0** |

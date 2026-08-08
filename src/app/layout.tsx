@@ -62,13 +62,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   where it cannot.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-x-8 gap-y-2 text-[13px] text-ink-mid">
-                {[...NAV, ['/history', 'History'], ['/signin', 'Sign in']].map(([href, label]) => (
-                  <Link key={href} href={href} className="hover:text-ink">
-                    {label}
-                  </Link>
-                ))}
-              </div>
             </div>
             <p className="mt-8 max-w-3xl border-t hairline pt-5 font-mono text-[11px] leading-relaxed text-skip">
               Every verdict is labelled by method. Deterministic checks are reproducible proofs. Judged checks are model

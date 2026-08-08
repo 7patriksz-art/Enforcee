@@ -56,6 +56,35 @@ function log(policyPath, entry) {
   }
 }
 
+/**
+ * Recent decisions from this session, newest last.
+ *
+ * Needed because of a documented behaviour: when a PreToolUse hook returns
+ * permissionDecision "deny", the model frequently retries with a fresh tool_use_id
+ * rather than changing approach. Left alone that becomes a loop that burns the user's
+ * budget and ends with them deleting the hook. So the guard has to notice it is being
+ * argued with and say so louder.
+ */
+function recentDenials(policyPath, sessionId, ruleId, limit = 60) {
+  try {
+    const p = join(dirname(policyPath), 'ledger.jsonl');
+    if (!existsSync(p)) return 0;
+    const lines = readFileSync(p, 'utf8').trim().split('\n');
+    let n = 0;
+    for (const line of lines.slice(-limit)) {
+      try {
+        const e = JSON.parse(line);
+        if (e.decision === 'DENY' && e.ruleId === ruleId && (!sessionId || e.session === sessionId)) n++;
+      } catch {
+        /* a half-written line is not worth failing over */
+      }
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
   process.exit(0);
@@ -131,6 +160,8 @@ function main() {
       const re = safeRe(rule.pattern, rule.flags);
       if (!re || !re.test(subject)) continue;
 
+      const priorDenials = recentDenials(policyPath, payload.session_id, rule.id);
+
       log(policyPath, {
         ...base,
         decision: 'DENY',
@@ -138,18 +169,38 @@ function main() {
         rule: rule.rule,
         tool: toolName,
         subject: subject.slice(0, 400),
+        attempt: priorDenials + 1,
       });
+
+      let reason =
+        `Blocked by Enforcee rule ${rule.id}: ${rule.rule}\n` +
+        (rule.reason ? `${rule.reason}\n` : '') +
+        `Matched /${rule.pattern}/ against the ${toolName} input.\n` +
+        `This is a hard rule from the user's own ruleset, not a preference. Retrying the same ` +
+        `command will produce the same block.`;
+
+      if (priorDenials >= 1) {
+        reason +=
+          `\n\nThis is attempt ${priorDenials + 1}. The rule has not changed and will not change on retry. ` +
+          `Do not reissue this command in any form. Either take a different approach, or stop and ask ` +
+          `the user to amend the rule in their ruleset and recompile with: npx enforcee guard <rules-file>`;
+      }
+      if (priorDenials >= 3) {
+        reason +=
+          `\n\nSTOP. Four or more attempts have now been blocked by this one rule. Continuing wastes the ` +
+          `user's budget. Report the block to the user and wait for instructions.`;
+      }
 
       return emit({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason:
-            `Blocked by Enforcee rule ${rule.id}: ${rule.rule}\n` +
-            (rule.reason ? `${rule.reason}\n` : '') +
-            `Matched /${rule.pattern}/ against the ${toolName} input. ` +
-            `This is a hard rule from your own ruleset, not a suggestion — change the approach rather than retrying.`,
+          permissionDecisionReason: reason,
         },
+        systemMessage:
+          priorDenials >= 2
+            ? `Enforcee has blocked this same rule ${priorDenials + 1} times. If the rule is wrong, edit it and rerun: npx enforcee guard <rules-file>`
+            : undefined,
       });
     }
 
