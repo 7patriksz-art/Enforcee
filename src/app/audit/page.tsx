@@ -11,6 +11,7 @@ interface AuditResponse {
   totalUsd: number;
   judgeAvailable: boolean;
   mode: 'deterministic' | 'full';
+  quotaNote?: string;
 }
 
 export default function AuditPage() {
@@ -109,13 +110,19 @@ export default function AuditPage() {
         {data && (
           <span className="font-mono text-[11px] text-skip">
             mode: {data.mode}
-            {!data.judgeAvailable && ' · no judge key configured on this deployment'}
+            {!data.judgeAvailable && ' · no judge configured on this deployment'}
           </span>
         )}
       </div>
 
       {error && (
         <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">{error}</p>
+      )}
+
+      {data?.quotaNote && (
+        <p className="mt-4 rounded-md border border-unknown-line bg-unknown-pale px-3 py-2 text-[12.5px] text-unknown">
+          {data.quotaNote}
+        </p>
       )}
 
       {data && (

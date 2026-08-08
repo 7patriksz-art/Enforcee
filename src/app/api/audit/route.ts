@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { runAudit } from '@/lib/audit';
 import { persistAudit } from '@/lib/persist';
+import { checkJudgeQuota } from '@/lib/quota';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -33,7 +34,19 @@ export async function POST(req: Request) {
   const { ruleset, output, artifact, previousDigest } = parsed.data;
   // Without a key we can still run Layer A, and we say so instead of failing.
   const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
-  const deterministicOnly = parsed.data.deterministicOnly ?? !hasKey;
+  let deterministicOnly = parsed.data.deterministicOnly ?? !hasKey;
+
+  // The judged path spends our budget on behalf of whoever called this endpoint, so it is
+  // metered. Exceeding the allowance degrades to a deterministic audit rather than an
+  // error — the user still gets four fifths of the answer.
+  let quotaNote: string | undefined;
+  if (!deterministicOnly) {
+    const quota = await checkJudgeQuota(req);
+    if (!quota.allowed) {
+      deterministicOnly = true;
+      quotaNote = quota.reason;
+    }
+  }
 
   try {
     const { receipt, totalUsd } = await runAudit({
@@ -48,7 +61,7 @@ export async function POST(req: Request) {
     const stored = await persistAudit({ receipt, ruleset, output, mode, totalUsd });
 
     return NextResponse.json(
-      { receipt, totalUsd, judgeAvailable: hasKey, mode, stored },
+      { receipt, totalUsd, judgeAvailable: hasKey, mode, stored, quotaNote },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
