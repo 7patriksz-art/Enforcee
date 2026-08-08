@@ -211,6 +211,32 @@ try {
     : bad(`guard exited ${e.status} without the expected message`);
 }
 
+
+// The guard command must actually produce a runnable hook, not just a policy file.
+// v0.1.0 shipped writing policy.json alone while telling the user to point their
+// settings at .enforcee/guard.mjs — a file it never created. The hook then silently
+// does nothing, which on a paid feature is the worst possible failure. Prove the file
+// lands, and prove the copy it lands is the real runner.
+try {
+  const tmp = join(OUT, '.packtest');
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  writeFileSync(join(tmp, 'RULES.md'), '- Never force-push.\n- Never delete the production database.\n');
+  execFileSync(process.execPath, [join(OUT, 'dist/enforcee.mjs'), 'guard', 'RULES.md'], {
+    cwd: tmp, encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, ENFORCEE_LICENCE: process.env.ENFORCEE_PACK_TEST_LICENCE ?? '' },
+  });
+  const wrote = existsSync(join(tmp, '.enforcee/guard.mjs'));
+  wrote && readFileSync(join(tmp, '.enforcee/guard.mjs'), 'utf8').includes('BEGIN PUBLIC KEY')
+    ? ok('guard writes a real runner next to the policy')
+    : bad('guard did not write .enforcee/guard.mjs — the hook would point at nothing');
+  rmSync(tmp, { recursive: true, force: true });
+} catch (e) {
+  // exit 3 is the unlicensed refusal, which is correct and not this check's business.
+  if (e.status === 3) ok('guard runner check skipped — no licence in this environment');
+  else bad(`guard runner check failed: ${(e.stderr ?? e.message ?? '').toString().slice(0, 120)}`);
+}
+
 console.log(
   problems.length === 0
     ? `\n  \x1b[32mReady.\x1b[0m  npm publish ./npm-dist\n`

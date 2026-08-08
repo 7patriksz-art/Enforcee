@@ -5,8 +5,9 @@
  * gesture, it is the product: about 80% of a real ruleset is decided by code, so the
  * useful half genuinely does not need a model or an account.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runAudit } from '../src/lib/audit';
 import { parseRuleset } from '../src/lib/rules/parse';
 import { proposeDenyRules, compilePolicy } from '../src/lib/enforce/policy';
@@ -211,8 +212,37 @@ async function main(): Promise<void> {
     );
     mkdirSync('.enforcee', { recursive: true });
     writeFileSync(join('.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));
+
+    // Ship the runner alongside the policy. Writing only policy.json and then telling the
+    // user to point their settings at .enforcee/guard.mjs left them wiring a hook to a
+    // file that was never created — the hook then fails silently, which for a *paid*
+    // guard means it looks installed and blocks nothing. Copy it, or say we could not.
+    let runner = false;
+    try {
+      // In the published package this file sits at dist/enforcee.mjs and the runner at
+      // guard/guard.mjs, i.e. one level up and across. Running from source, the same
+      // relative walk lands on the repo's guard/ directory.
+      const here = dirname(fileURLToPath(import.meta.url));
+      for (const candidate of [join(here, '..', 'guard', 'guard.mjs'), join(here, '..', '..', 'guard', 'guard.mjs')]) {
+        if (existsSync(candidate)) {
+          copyFileSync(candidate, join('.enforcee', 'guard.mjs'));
+          chmodSync(join('.enforcee', 'guard.mjs'), 0o755);
+          runner = true;
+          break;
+        }
+      }
+    } catch {
+      runner = false;
+    }
+
     console.log('');
     console.log(`  Wrote ${C.bold('.enforcee/policy.json')} — ${policy.deny.length} blocking, ${policy.warn.length} warning.`);
+    if (runner) {
+      console.log(`  Wrote ${C.bold('.enforcee/guard.mjs')} — the runner your hook points at.`);
+    } else {
+      console.log(C.yellow('  Could not find the guard runner to copy — the hook has nothing to run.'));
+      console.log(C.grey('  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself.'));
+    }
     console.log(C.grey(`  ${licenceMessage(lic)}`));
     console.log(C.grey('  Add the hook wiring with the installer from enforcee.vercel.app/install,'));
     console.log(C.grey('  or point .claude/settings.json at .enforcee/guard.mjs yourself.'));

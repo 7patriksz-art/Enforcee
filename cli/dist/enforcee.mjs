@@ -6,8 +6,9 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync2 } from "node:fs";
-import { join as join2 } from "node:path";
+import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync2, copyFileSync, chmodSync } from "node:fs";
+import { join as join2, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
 import { createHash } from "node:crypto";
@@ -10200,8 +10201,28 @@ async function main() {
     );
     mkdirSync(".enforcee", { recursive: true });
     writeFileSync(join2(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    let runner = false;
+    try {
+      const here = dirname(fileURLToPath(import.meta.url));
+      for (const candidate of [join2(here, "..", "guard", "guard.mjs"), join2(here, "..", "..", "guard", "guard.mjs")]) {
+        if (existsSync2(candidate)) {
+          copyFileSync(candidate, join2(".enforcee", "guard.mjs"));
+          chmodSync(join2(".enforcee", "guard.mjs"), 493);
+          runner = true;
+          break;
+        }
+      }
+    } catch {
+      runner = false;
+    }
     console.log("");
     console.log(`  Wrote ${C.bold(".enforcee/policy.json")} \u2014 ${policy.deny.length} blocking, ${policy.warn.length} warning.`);
+    if (runner) {
+      console.log(`  Wrote ${C.bold(".enforcee/guard.mjs")} \u2014 the runner your hook points at.`);
+    } else {
+      console.log(C.yellow("  Could not find the guard runner to copy \u2014 the hook has nothing to run."));
+      console.log(C.grey("  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself."));
+    }
     console.log(C.grey(`  ${licenceMessage(lic)}`));
     console.log(C.grey("  Add the hook wiring with the installer from enforcee.vercel.app/install,"));
     console.log(C.grey("  or point .claude/settings.json at .enforcee/guard.mjs yourself."));
