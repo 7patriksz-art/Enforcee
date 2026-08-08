@@ -1,0 +1,271 @@
+import { classify, normalize, ruleId } from './rules/parse';
+import type { CheckSpec } from './types';
+
+export const PREFERENCES_VERSION = 'prefs@1.0.0';
+
+/**
+ * Preference capture.
+ *
+ * Most rules are never written down. They get said once, in passing — "I hate when you
+ * open with a summary", "always use pnpm here", "stop apologising" — and then they decay
+ * out of the conversation and are gone. This module reads what someone actually said and
+ * proposes rules from it.
+ *
+ * Hard constraint, inherited from D-003: this is inference from natural language, so
+ * nothing it produces is ever enabled silently. Every candidate carries the verbatim
+ * sentence that produced it, at a real character offset, and arrives switched off.
+ * The user promotes it to a rule, or it stays a suggestion forever.
+ */
+
+export type Polarity = 'require' | 'forbid';
+export type Strength = 'strong' | 'medium' | 'weak';
+
+export interface PreferenceCandidate {
+  /** Stable id of the rule this would become, so re-running does not duplicate. */
+  id: string;
+  /** The rule, rewritten as an imperative the audit engine can actually check. */
+  rule: string;
+  polarity: Polarity;
+  strength: Strength;
+  /** Which pattern fired. Shown in the UI so the inference is inspectable. */
+  basis: string;
+  /** The user's own words, verbatim, at a verified offset. */
+  quote: string;
+  start: number;
+  end: number;
+  /** What the audit engine would do with this rule if promoted. */
+  check: CheckSpec['kind'];
+  /** True when an equivalent rule is already in the ruleset. */
+  alreadyCovered: boolean;
+}
+
+interface Pattern {
+  re: RegExp;
+  polarity: Polarity;
+  strength: Strength;
+  basis: string;
+  /** Turn the captured object into an imperative rule. */
+  rule: (object: string) => string;
+}
+
+const OBJ = "([^.!?;\\n]{3,120})";
+
+/**
+ * Ordered most-specific first. A correction ("stop doing X") is a far stronger signal
+ * than a stated taste ("I prefer X"), because the user is reacting to something that
+ * actually happened rather than describing themselves.
+ */
+const PATTERNS: Pattern[] = [
+  {
+    re: new RegExp(`\\b(?:stop|quit|cut it out with|no more)\\s+${OBJ}`, 'gi'),
+    polarity: 'forbid',
+    strength: 'strong',
+    basis: 'a correction — you told it to stop mid-conversation',
+    rule: (o) => frame(o, 'forbid'),
+  },
+  {
+    re: new RegExp(`\\b(?:don't|do not|never)\\s+${OBJ}`, 'gi'),
+    polarity: 'forbid',
+    strength: 'strong',
+    basis: 'a direct instruction',
+    rule: (o) => frame(o, 'forbid'),
+  },
+  {
+    re: new RegExp(`\\b(?:always|make sure (?:you|to)|be sure to|from now on)\\s+${OBJ}`, 'gi'),
+    polarity: 'require',
+    strength: 'strong',
+    basis: 'a direct instruction',
+    rule: (o) => frame(o, 'require'),
+  },
+  {
+    re: new RegExp(`\\bI\\s+(?:really\\s+)?(?:hate|can't stand|cannot stand|dislike|don't like|do not like)\\s+${OBJ}`, 'gi'),
+    polarity: 'forbid',
+    strength: 'medium',
+    basis: 'a stated dislike',
+    rule: (o) => frame(o, 'forbid'),
+  },
+  {
+    re: new RegExp(`\\bI\\s+(?:really\\s+)?(?:like|love|prefer|want|appreciate)\\s+(?:it when\\s+)?${OBJ}`, 'gi'),
+    polarity: 'require',
+    strength: 'medium',
+    basis: 'a stated preference',
+    rule: (o) => frame(o, 'require'),
+  },
+  {
+    re: new RegExp(`\\bI\\s+(?:would|'d)\\s+(?:never|rather not|prefer not to)\\s+${OBJ}`, 'gi'),
+    polarity: 'forbid',
+    strength: 'medium',
+    basis: 'a stated aversion',
+    rule: (o) => frame(o, 'forbid'),
+  },
+  {
+    re: new RegExp(`\\bI\\s+(?:would|'d)\\s+(?:rather|prefer to|always)\\s+${OBJ}`, 'gi'),
+    polarity: 'require',
+    strength: 'medium',
+    basis: 'a stated preference',
+    rule: (o) => frame(o, 'require'),
+  },
+  {
+    re: new RegExp(`\\b(?:instead of|rather than)\\s+[^,]{3,60},\\s*${OBJ}`, 'gi'),
+    polarity: 'require',
+    strength: 'medium',
+    basis: 'a substitution you asked for',
+    rule: (o) => frame(o, 'require'),
+  },
+  {
+    re: new RegExp(`\\bplease\\s+(?:don't|do not|stop)\\s+${OBJ}`, 'gi'),
+    polarity: 'forbid',
+    strength: 'strong',
+    basis: 'a direct request',
+    rule: (o) => frame(o, 'forbid'),
+  },
+];
+
+/**
+ * Cut a captured phrase down to the single clause the person actually meant.
+ *
+ * "use pnpm in this repo, never npm" is two rules, not one. Splitting here keeps each
+ * proposed rule to a single checkable claim, which is the whole point — a compound rule
+ * forces an all-or-nothing verdict and hides which half failed.
+ */
+function firstClause(raw: string): string {
+  return raw.split(/,\s*(?:and\s+)?(?:but\s+)?(?:never|not|no|don't|do not|avoid)\b/i)[0];
+}
+
+/** Trim leading filler and trailing politeness. Never stems — stemming produces "opene". */
+function tidy(raw: string): string {
+  return firstClause(raw)
+    .trim()
+    .replace(/^(?:that\s+|when\s+you\s+|you\s+|to\s+|it\s+when\s+)/i, '')
+    .replace(/\s+(?:please|thanks|thank you|ok|okay)\s*$/i, '')
+    .replace(/[,;:]\s*$/, '')
+    .trim();
+}
+
+const STOPWORDS = new Set(['this', 'that', 'these', 'those', 'them', 'thing', 'things', 'stuff', 'here', 'there', 'much', 'like']);
+
+/** A phrase with no content word cannot become a rule anyone could check. */
+function hasSubstance(s: string): boolean {
+  return s
+    .toLowerCase()
+    .split(/[^a-z0-9'-]+/)
+    .some((w) => w.length >= 3 && !STOPWORDS.has(w));
+}
+
+const GERUND = /^\w+ing\b/i;
+
+/**
+ * Pick a grammatical frame rather than trying to conjugate.
+ * "opening every answer with a summary" only works after "Avoid", never after "Never".
+ */
+function frame(object: string, polarity: Polarity): string {
+  const o = tidy(object);
+  if (!o) return '';
+  if (GERUND.test(o)) return polarity === 'forbid' ? `Avoid ${o}.` : `Prefer ${o}.`;
+  return polarity === 'forbid' ? `Never ${o}.` : `Always ${o}.`;
+}
+
+const TOO_VAGUE = /^(?:it|that|this|them|those|these|things?|stuff|anything|something)\b/i;
+
+export interface ExtractOptions {
+  /** Rule ids already present, so covered preferences are flagged rather than re-proposed. */
+  existingRuleIds?: Set<string>;
+  /** Discard candidates below this strength. */
+  minStrength?: Strength;
+}
+
+const RANK: Record<Strength, number> = { weak: 0, medium: 1, strong: 2 };
+
+/**
+ * Read a conversation and propose rules from what the person actually said.
+ * Only the user's own words are ever mined — never the assistant's.
+ */
+export function extractPreferences(text: string, opts: ExtractOptions = {}): PreferenceCandidate[] {
+  const min = RANK[opts.minStrength ?? 'medium'];
+  const existing = opts.existingRuleIds ?? new Set<string>();
+  const out: PreferenceCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const p of PATTERNS) {
+    if (RANK[p.strength] < min) continue;
+    const re = new RegExp(p.re.source, p.re.flags);
+    let m: RegExpExecArray | null;
+    let guard = 0;
+
+    while ((m = re.exec(text)) && guard++ < 5000) {
+      const object = m[1];
+      if (!object) continue;
+      const tidied = tidy(object);
+      // Reject both "I like it" and "Never do this" — an auxiliary plus a pronoun
+      // is not a rule, it is a reference to something said earlier that we cannot see.
+      if (TOO_VAGUE.test(tidied)) continue;
+      if (TOO_VAGUE.test(tidied.replace(/^(?:do|be|have|make|say|get|use)\s+/i, ''))) continue;
+      if (!hasSubstance(tidied)) continue;
+
+      const rule = p.rule(object);
+      if (!rule) continue;
+      const norm = normalize(rule);
+      if (norm.length < 6) continue;
+
+      const id = ruleId(norm);
+      if (seen.has(id)) continue;
+      seen.add(id);
+
+      // The quote must be a real slice of the input. Same discipline as the judge.
+      const start = m.index;
+      const end = m.index + m[0].length;
+      if (text.slice(start, end) !== m[0]) continue;
+
+      out.push({
+        id,
+        rule,
+        polarity: p.polarity,
+        strength: p.strength,
+        basis: p.basis,
+        quote: m[0],
+        start,
+        end,
+        check: classify(rule).kind,
+        alreadyCovered: existing.has(id),
+      });
+    }
+  }
+
+  return out.sort((a, b) => RANK[b.strength] - RANK[a.strength] || a.start - b.start);
+}
+
+/**
+ * Pull only the human turns out of a Claude Code transcript, so the assistant's own
+ * words are never mined back as if they were the user's preferences.
+ */
+export function userTurnsFromTranscript(records: { type?: string; message?: { role?: string; content?: unknown } }[]): string {
+  const parts: string[] = [];
+  for (const r of records) {
+    if (r.type !== 'user' || r.message?.role !== 'user') continue;
+    const c = r.message.content;
+    if (typeof c === 'string') parts.push(c);
+    else if (Array.isArray(c)) {
+      for (const b of c) {
+        if (b && typeof b === 'object' && (b as { type?: string }).type === 'text') {
+          const t = (b as { text?: string }).text;
+          if (typeof t === 'string') parts.push(t);
+        }
+      }
+    }
+  }
+  // Drop tool results and system reminders — they are not things the person said.
+  return parts
+    .filter((p) => !p.startsWith('<system-reminder>') && !p.startsWith('<task-notification>'))
+    .join('\n\n');
+}
+
+/** Render accepted candidates as markdown ready to append to a CLAUDE.md. */
+export function toRulesetMarkdown(candidates: PreferenceCandidate[], heading = 'Learned from what you said'): string {
+  if (!candidates.length) return '';
+  const lines = [`## ${heading}`, ''];
+  for (const c of candidates) {
+    lines.push(`- ${c.rule}`);
+    lines.push(`  <!-- ${c.id} · ${c.basis} · "${c.quote.replace(/\s+/g, ' ').slice(0, 100)}" -->`);
+  }
+  return lines.join('\n') + '\n';
+}

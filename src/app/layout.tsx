@@ -22,6 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
             </Link>
             <nav className="flex items-center gap-5 text-[13px] text-skip">
+              <Link href="/learn" className="hover:text-ink transition-colors">
+                Learn
+              </Link>
               <Link href="/enforce" className="hover:text-ink transition-colors">
                 Enforce
               </Link>
