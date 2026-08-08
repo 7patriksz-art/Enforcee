@@ -1,0 +1,198 @@
+#!/usr/bin/env node
+/**
+ * Enforcio Guard — active enforcement for Claude Code.
+ *
+ * Zero dependencies. Reads a hook payload on stdin, consults .enforcio/policy.json,
+ * and does one of three jobs depending on the hook event:
+ *
+ *   PreToolUse   → DENY a tool call before it runs. This is enforcement, not reporting.
+ *   PostCompact  → re-inject the instructions that Anthropic documents as lost at
+ *                  compaction, so they are back in context on the very next turn.
+ *   SessionStart → prime the session with the rule digest and open a ledger entry.
+ *   Stop         → close the ledger entry for the turn.
+ *
+ * Every decision is appended to .enforcio/ledger.jsonl so the monitor has a record.
+ *
+ * Contract (from Claude Code hook docs):
+ *   exit 0 + JSON on stdout  → structured decision
+ *   exit 2 + text on stderr  → hard block, stdout ignored
+ *   any other exit           → non-blocking error, the action proceeds
+ * We always exit 0 and speak JSON, so a guard bug can never wedge a session.
+ */
+
+import { readFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+
+const GUARD_VERSION = 'guard@1.0.0';
+
+function readStdin() {
+  try {
+    return readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function findPolicy(startDir) {
+  let dir = resolve(startDir || process.cwd());
+  for (let i = 0; i < 12; i++) {
+    const p = join(dir, '.enforcio', 'policy.json');
+    if (existsSync(p)) return p;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function log(policyPath, entry) {
+  if (!policyPath) return;
+  try {
+    const dir = dirname(policyPath);
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, 'ledger.jsonl'), JSON.stringify(entry) + '\n', 'utf8');
+  } catch {
+    /* the ledger is best-effort; never let it break a session */
+  }
+}
+
+function emit(obj) {
+  process.stdout.write(JSON.stringify(obj));
+  process.exit(0);
+}
+
+function allow() {
+  process.exit(0);
+}
+
+/** Build a RegExp, tolerating a bad pattern rather than throwing mid-session. */
+function safeRe(pattern, flags) {
+  try {
+    return new RegExp(pattern, flags ?? 'i');
+  } catch {
+    return null;
+  }
+}
+
+/** The text a deny rule should be tested against, per tool. */
+function subjectFor(toolName, input) {
+  const i = input || {};
+  if (toolName === 'Bash') return typeof i.command === 'string' ? i.command : '';
+  if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
+    return [i.file_path, i.notebook_path, i.path].filter((x) => typeof x === 'string').join(' ');
+  }
+  if (toolName === 'WebFetch') return typeof i.url === 'string' ? i.url : '';
+  if (toolName === 'Skill') return String(i.skill ?? i.name ?? '');
+  // Fall back to the whole input so a rule can still match something meaningful.
+  try {
+    return JSON.stringify(i);
+  } catch {
+    return '';
+  }
+}
+
+function toolMatches(ruleTool, toolName) {
+  if (!ruleTool || ruleTool === '*') return true;
+  return ruleTool.split('|').map((s) => s.trim()).includes(toolName);
+}
+
+function main() {
+  const raw = readStdin();
+  let payload = {};
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    allow();
+  }
+
+  const event = payload.hook_event_name || process.argv[2] || '';
+  const policyPath = findPolicy(payload.cwd);
+  if (!policyPath) allow();
+
+  let policy;
+  try {
+    policy = JSON.parse(readFileSync(policyPath, 'utf8'));
+  } catch {
+    // A malformed policy must never block work. Say so loudly instead.
+    emit({
+      systemMessage: 'Enforcio: policy.json could not be read, so no rules are being enforced this session.',
+    });
+  }
+
+  const now = new Date().toISOString();
+  const base = { at: now, session: payload.session_id ?? null, event, guard: GUARD_VERSION };
+
+  if (event === 'PreToolUse') {
+    const toolName = payload.tool_name ?? '';
+    const subject = subjectFor(toolName, payload.tool_input);
+
+    for (const rule of policy.deny ?? []) {
+      if (!toolMatches(rule.tool, toolName)) continue;
+      const re = safeRe(rule.pattern, rule.flags);
+      if (!re || !re.test(subject)) continue;
+
+      log(policyPath, {
+        ...base,
+        decision: 'DENY',
+        ruleId: rule.id,
+        rule: rule.rule,
+        tool: toolName,
+        subject: subject.slice(0, 400),
+      });
+
+      return emit({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            `Blocked by Enforcio rule ${rule.id}: ${rule.rule}\n` +
+            (rule.reason ? `${rule.reason}\n` : '') +
+            `Matched /${rule.pattern}/ against the ${toolName} input. ` +
+            `This is a hard rule from your own ruleset, not a suggestion — change the approach rather than retrying.`,
+        },
+      });
+    }
+
+    for (const rule of policy.warn ?? []) {
+      if (!toolMatches(rule.tool, toolName)) continue;
+      const re = safeRe(rule.pattern, rule.flags);
+      if (!re || !re.test(subject)) continue;
+      log(policyPath, { ...base, decision: 'WARN', ruleId: rule.id, rule: rule.rule, tool: toolName });
+      return emit({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: `Enforcio warning on rule ${rule.id}: ${rule.rule}. ${rule.reason ?? ''}`.trim(),
+        },
+      });
+    }
+
+    log(policyPath, { ...base, decision: 'ALLOW', tool: toolName });
+    allow();
+  }
+
+  if (event === 'PostCompact' || event === 'SessionStart') {
+    const text = (policy.reinject && policy.reinject.text) || '';
+    if (!text) allow();
+    const capped = text.slice(0, 9500);
+    log(policyPath, { ...base, decision: 'REINJECT', chars: capped.length });
+    return emit({
+      hookSpecificOutput: {
+        hookEventName: event,
+        additionalContext: capped,
+      },
+      systemMessage:
+        event === 'PostCompact'
+          ? 'Enforcio re-injected your rules after compaction.'
+          : undefined,
+    });
+  }
+
+  if (event === 'Stop' || event === 'SessionEnd') {
+    log(policyPath, { ...base, decision: 'SESSION_MARK', transcript: payload.transcript_path ?? null });
+    allow();
+  }
+
+  allow();
+}
+
+main();
