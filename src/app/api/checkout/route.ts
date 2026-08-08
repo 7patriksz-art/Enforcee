@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getStripe, siteUrl } from '@/lib/stripe';
 import { planById, stripePriceFor, TRIAL_DAYS } from '@/lib/plans';
 import { getUser } from '@/lib/supabase/server';
+import { billingStatus } from '@/lib/billing-gate';
 
 export const runtime = 'nodejs';
 
@@ -12,6 +13,13 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  // First gate, before Stripe is even constructed. Taking one payment on a
+  // non-commercial hosting plan is a breach we cannot undo by refunding it.
+  const billing = billingStatus();
+  if (!billing.enabled) {
+    return NextResponse.json({ error: billing.reason, detail: billing.detail }, { status: 503 });
+  }
+
   const stripe = getStripe();
   if (!stripe) {
     return NextResponse.json({ error: 'Checkout is not live on this deployment yet.' }, { status: 503 });

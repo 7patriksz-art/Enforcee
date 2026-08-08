@@ -1,99 +1,98 @@
 Enforcee — Licence
 ==================
 
-This repository is **not** under a single licence. Two different things live here
-and they carry different terms, deliberately.
+Copyright (c) 2026 Enforcee. All rights reserved.
 
-Read this file before copying anything out of it.
-
-
-1. MIT — the parts that run on your machine
--------------------------------------------
-
-The following are licensed under the MIT Licence, reproduced in full below:
-
-    guard/**            the hook runner that executes in your session
-    cli/**              the command-line wrapper (excluding bundled engine output)
-    plugin/**           the Claude Code plugin manifest, hooks, skills and commands
-    .claude-plugin/**   the marketplace manifest
-
-These are permissive on purpose. They run inside your development environment,
-under your account, with access to your files. You should not have to take our
-word for what they do — you should be able to read every line, fork them, audit
-them, and run a modified copy. A security-adjacent tool that asks you to trust an
-unreadable binary has not earned the trust it is asking for.
-
-MIT Licence
-
-Copyright (c) 2026 Enforcee
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This software is **source-available**, not open source. It is published so that
+it can be read, run and verified. It is not published so that it can be reused.
 
 
-2. All rights reserved — the engine
-------------------------------------
+Why you can read this at all
+-----------------------------
 
-Everything else in this repository, and in particular:
+Enforcee tells you whether an AI followed your rules, and it installs a component
+that runs inside your development environment with access to your files. A tool
+like that asking you to trust an unreadable binary has not earned the trust it is
+asking for.
 
-    src/lib/**          the audit engine, rule parser and classifier, the
-                        deterministic check library, the judge and its
-                        literal-evidence gate, ruleset health, the receipt
-                        format, the preference extractor, and the licence system
-    src/app/**          the web application
-    tests/**            the test suite, including the gold set
+So every line is here. Read it, run it, check that it does what the marketing
+says, and satisfy yourself that the `audit`, `health`, `learn` and `session`
+commands make no network calls — because they do not, and you should not have to
+take our word for that either.
 
-is **Copyright (c) 2026 Enforcee. All rights reserved.**
 
-It is published so that it can be read. It is not published so that it can be
-reused. Specifically, no licence is granted to copy, modify, redistribute,
-sublicense, or create derivative works from these files, or to use them — or the
-methodology, rule taxonomy, evaluation prompts, thresholds or scoring they
-contain — to build or train a competing product.
+What you may do
+---------------
 
-You may read it. You may quote short excerpts when discussing or reviewing it.
-You may report bugs against it. You may run it locally to satisfy yourself that
-it does what this repository says it does — that is the entire reason it is
-visible.
+- **Use it.** Run the software, on any machine, for any purpose including
+  commercial work, subject to the Terms of Service at
+  https://enforcee.vercel.app/terms.
+- **Read all of it**, and audit it however you like.
+- **Run modified copies locally** for your own debugging, security review, or to
+  satisfy yourself about its behaviour.
+- **Quote short excerpts** when discussing, reviewing, teaching or criticising it,
+  with attribution.
+- **Report bugs and vulnerabilities.** These are genuinely welcome.
 
-Why the split, stated plainly: the deterministic engine and the evidence gate are
-the product. Publishing them under a permissive licence would let a better-funded
-competitor ship them next week with our own test suite as proof, and there would
-be nothing left to sell. The parts you have to trust are open. The part we sell
-is not. We would rather say that in a licence file than be vague about it in a
-footer.
+
+What you may not do
+-------------------
+
+Without prior written permission, you may not:
+
+- copy, redistribute, republish, sublicense or sell this software or any part of
+  it, in source or compiled form;
+- create or distribute derivative works, forks, or ports;
+- remove or alter this notice, the copyright notices, or any licence check;
+- use this software, or the methodology, rule taxonomy, evaluation prompts,
+  thresholds, scoring, or receipt format it contains, to build, train or improve
+  a competing product;
+- use it to provide a competing service to third parties.
+
+The licence enforcement mechanism is a signed token verified offline. Nothing
+about that is obscured, and circumventing it is a breach of these terms rather
+than a puzzle to solve. If you need access and cannot pay, ask — see below.
+
+
+Third-party components
+----------------------
+
+This software incorporates open-source components, each under its own licence,
+which continue to govern those components and are unaffected by this file.
+Notably `@anthropic-ai/sdk` (MIT), bundled into the distributed CLI. Nothing in
+this licence restricts your rights under those licences with respect to those
+components.
 
 
 Contributions
 -------------
 
-Contributions to the MIT-licensed directories are welcome under the MIT Licence.
-By opening a pull request against those paths you agree your contribution is
-licensed the same way.
-
-We do not accept pull requests against src/lib/**. Open an issue instead — bug
-reports there are genuinely valuable and we would rather have the report than the
-patch.
+We do not accept pull requests. Please open an issue instead — a good bug report
+is worth more to us than a patch, and it keeps the ownership of this codebase
+unambiguous for both of us.
 
 
-Questions
----------
+Warranty and liability
+----------------------
 
-If you want to do something this file does not clearly allow, ask rather than
-guess: hello@enforcee.app. If your use is non-commercial, educational, or you are
-a researcher benchmarking verification tools, the answer is very likely yes.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Enforcee is a verification tool, not a security control. See clause 09 of the
+Terms of Service for what that means in practice; it is the most important thing
+on this subject and it is written in plain language.
+
+
+Asking
+------
+
+If you want to do something this file does not allow, ask rather than assume the
+answer is no: hello@enforcee.app.
+
+If you are a researcher benchmarking verification tools, a student, a security
+reviewer, or you work on a non-commercial project and cannot pay, say so. The
+answer is very likely yes, and it will not cost you anything.

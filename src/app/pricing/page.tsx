@@ -339,7 +339,7 @@ export default function Pricing() {
         body: JSON.stringify({ plan, interval }),
       });
       const json = await res.json();
-      if (!res.ok || !json.url) throw new Error(json.error ?? 'Could not start checkout.');
+      if (!res.ok || !json.url) throw new Error(json.detail ?? json.error ?? 'Could not start checkout.');
       window.location.href = json.url as string;
     } catch (e) {
       setError((e as Error).message);
@@ -482,7 +482,14 @@ export default function Pricing() {
       </div>
 
       {error && (
-        <p className="mt-5 rounded-xl border border-fail-line bg-fail-pale px-4 py-3 text-[13.5px] text-fail">{error}</p>
+        <div className="mt-5 rounded-xl border border-honey-line bg-honey-pale/50 px-4 py-3.5">
+          <p className="text-[13.5px] leading-relaxed text-ink">{error}</p>
+          <p className="mt-2 text-[12.5px] text-ink-mid">
+            In the meantime,{' '}
+            <Link href="/audit" className="text-brand hover:underline">auditing is unlimited and free</Link> and the CLI
+            needs no account at all.
+          </p>
+        </div>
       )}
 
       {/* ── The matrix ─────────────────────────────────────────────────── */}
