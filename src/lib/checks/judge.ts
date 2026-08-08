@@ -8,7 +8,24 @@ export const JUDGE_VERSION = 'judge@1.1.0';
 /** Configurable so we can move models without a code change. */
 export const JUDGE_MODEL = process.env.ENFORCEE_JUDGE_MODEL ?? 'claude-haiku-4-5';
 /** Independent samples per audit. Odd numbers give a clean majority. */
-export const JUDGE_SAMPLES = Number(process.env.ENFORCEE_JUDGE_SAMPLES ?? 3);
+const RAW_SAMPLES = Number(process.env.ENFORCEE_JUDGE_SAMPLES ?? 3);
+export const JUDGE_SAMPLES = Number.isFinite(RAW_SAMPLES) && RAW_SAMPLES >= 1 ? Math.floor(RAW_SAMPLES) : 3;
+
+/**
+ * Shortest quote the evidence gate will accept.
+ *
+ * The prompt asks for 10-300 characters and nothing enforced it, so a 3-character quote
+ * passed. At that length almost any fragment exists somewhere in the output, which turns
+ * "cite your evidence" into "name any three characters".
+ */
+const MIN_QUOTE = 10;
+
+/**
+ * Genuine layout whitespace only — NOT the JS \s class, which also matches U+FEFF,
+ * U+00A0 and U+2028. Collapsing those would let invisible characters bridge a quote.
+ */
+const LAYOUT_WS = /[ \t\r\n]/;
+const LAYOUT_WS_RUN = /[ \t\r\n]+/g;
 
 const VerdictSchema = z.enum(['FOLLOWED', 'VIOLATED', 'NOT_APPLICABLE', 'UNVERIFIABLE']);
 
@@ -16,7 +33,9 @@ const JudgedRule = z.object({
   rule_id: z.string(),
   verdict: VerdictSchema,
   /**
-   * Must be copied character-for-character from the output. We verify it.
+   * Must be copied from the output, at least MIN_QUOTE characters. We locate it ourselves
+   * and reject the verdict if we cannot — see locateQuote, which tolerates only ordinary
+   * layout whitespace and nothing more exotic.
    * Empty string means the judge found no supporting text.
    */
   evidence_quote: z.string(),
@@ -56,14 +75,16 @@ Return strict JSON matching the requested schema. No prose outside the JSON.`;
  * fabricated verdict still has to quote text that actually exists.
  */
 function neutralise(text: string): string {
-  return text.replace(/<<<ENFORCEE_OUTPUT_(START|END)>>>/g, '<<<redacted-delimiter>>>');
+  return text.replace(/<{2,}\s*\/?\s*ENFORCEE[_\s-]*OUTPUT[_\s-]*(?:START|END)\s*>{2,}/gi, '<<<redacted-delimiter>>>');
 }
 
 function buildPrompt(rules: Rule[], output: string): string {
   const ruleLines = rules
     .map((r) => {
-      const scope = r.trigger ? `\n  trigger: ${r.trigger}` : '';
-      const section = r.source.section.length ? `\n  section: ${r.source.section.join(' › ')}` : '';
+      const scope = r.trigger ? `\n  trigger: ${JSON.stringify(neutralise(r.trigger))}` : '';
+      const section = r.source.section.length
+        ? `\n  section: ${JSON.stringify(neutralise(r.source.section.join(' › ')))}`
+        : '';
       return `- rule_id: ${r.id}\n  text: ${JSON.stringify(neutralise(r.text))}${scope}${section}`;
     })
     .join('\n');
@@ -83,7 +104,10 @@ Return exactly one entry per rule_id above, in the same order.`;
 /** Whitespace-tolerant literal search. Returns real offsets into the original output. */
 export function locateQuote(output: string, quote: string): EvidenceSpan | null {
   const q = quote.trim();
-  if (q.length < 3) return null;
+  // The prompt asks for 10-300 characters; nothing used to enforce it. A 3-character
+  // quote is trivially present in almost any text, which made the gate satisfiable by
+  // citing a real but irrelevant fragment.
+  if (q.length < MIN_QUOTE) return null;
 
   const direct = output.indexOf(q);
   if (direct !== -1) return { start: direct, end: direct + q.length, quote: output.slice(direct, direct + q.length) };
@@ -94,7 +118,10 @@ export function locateQuote(output: string, quote: string): EvidenceSpan | null 
   let lastWasSpace = false;
   for (let i = 0; i < output.length; i++) {
     const ch = output[i];
-    if (/\s/.test(ch)) {
+    // Deliberately NOT \s. JS \s includes U+FEFF, U+00A0 and U+2028, so an output
+    // containing "does\uFEFFNOT" — which renders as "doesNOT" — would verify the quote
+    // "does NOT". Only genuine layout whitespace is collapsed here.
+    if (LAYOUT_WS.test(ch)) {
       if (lastWasSpace) continue;
       lastWasSpace = true;
       map.push(i);
@@ -105,7 +132,7 @@ export function locateQuote(output: string, quote: string): EvidenceSpan | null 
       flat += ch;
     }
   }
-  const flatQ = q.replace(/\s+/g, ' ');
+  const flatQ = q.replace(LAYOUT_WS_RUN, ' ');
   const idx = flat.indexOf(flatQ);
   if (idx === -1) return null;
   const start = map[idx];
@@ -114,7 +141,7 @@ export function locateQuote(output: string, quote: string): EvidenceSpan | null 
   return { start, end, quote: output.slice(start, end) };
 }
 
-function majority(verdicts: Verdict[]): { verdict: Verdict; agreement: number } {
+function majority(verdicts: Verdict[], requested = verdicts.length): { verdict: Verdict; agreement: number } {
   const counts = new Map<Verdict, number>();
   for (const v of verdicts) counts.set(v, (counts.get(v) ?? 0) + 1);
   let best: Verdict = 'UNVERIFIABLE';
@@ -125,7 +152,11 @@ function majority(verdicts: Verdict[]): { verdict: Verdict; agreement: number } 
       bestN = n;
     }
   }
-  return { verdict: best, agreement: verdicts.length ? bestN / verdicts.length : 0 };
+  // Divide by samples REQUESTED, not samples that happened to come back. Two of three
+  // failing and reporting 100% agreement is precisely the kind of flattering arithmetic
+  // this product exists to catch other people doing.
+  const denom = Math.max(requested, verdicts.length);
+  return { verdict: best, agreement: denom ? bestN / denom : 0 };
 }
 
 export interface JudgeOptions {
@@ -232,7 +263,7 @@ export async function runJudge(rules: Rule[], output: string, opts: JudgeOptions
       };
     }
 
-    const { verdict, agreement } = majority(votes.map((v) => v.verdict));
+    const { verdict, agreement } = majority(votes.map((v) => v.verdict), samples);
     const winning = votes.filter((v) => v.verdict === verdict);
 
     // Evidence must survive a literal lookup in the output. This is the anti-hallucination gate.
@@ -248,6 +279,23 @@ export async function runJudge(rules: Rule[], output: string, opts: JudgeOptions
       }
     }
     evidence = evidence.slice(0, 3);
+
+    // NOT_APPLICABLE used to bypass the gate completely, and it also removes the rule
+    // from the coverage denominator — so the strongest attack was never "say FOLLOWED",
+    // it was "say NOT_APPLICABLE for everything" and walk away with a spotless receipt.
+    // It now needs a stated trigger to be inapplicable against, or it is not believed.
+    if (verdict === 'NOT_APPLICABLE' && !rule.trigger) {
+      return {
+        ruleId: rule.id,
+        verdict: 'UNVERIFIABLE',
+        method: 'judged',
+        evidence: [],
+        rationale:
+          'The judge called this rule inapplicable, but the rule states no condition it could be inapplicable to. An unconditional rule is either followed or broken, so this was not accepted.',
+        engaged: false,
+        agreement,
+      };
+    }
 
     const needsEvidence = verdict === 'FOLLOWED' || verdict === 'VIOLATED';
     if (needsEvidence && evidence.length === 0) {

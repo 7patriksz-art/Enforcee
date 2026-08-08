@@ -132,7 +132,7 @@ export default function Home() {
               },
               {
                 k: 'It refuses to guess',
-                d: 'UNVERIFIABLE is a real answer here. When a model judges a rule, its evidence quote must exist character-for-character in the output, or the verdict is thrown away. Across 48 verdicts on three models: zero false accusations, zero invented evidence.',
+                d: 'UNVERIFIABLE is a real answer here. A judged verdict must cite at least ten characters we can then locate in your own text; if we cannot find it, the verdict is thrown away, not softened. Across 48 verdicts on three models: zero false accusations, zero invented evidence. What this stops is a model inventing a sentence — it is not a claim that every cited quote is the most apt one.',
               },
               {
                 k: 'It blocks, not just reports',

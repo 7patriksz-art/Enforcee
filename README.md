@@ -29,9 +29,13 @@ Two layers, never blurred, badged on every row:
   literals, regex, emoji, em dashes, word and character limits, JSON validity, markdown tables,
   code-fence tagging, required headings, citations, output language. On a realistic ruleset this
   settles about **80% of rules with zero model calls**.
-- **Judged** — only the remainder. The judge must return a quote copied character-for-character
-  from the output; we then search the output for it. If it is not literally there, **the verdict is
-  rejected** and recorded as unverifiable. A model cannot pass an audit by inventing a sentence.
+- **Judged** — only the remainder. The judge must return a quote of at least 10 characters from the
+  output; we then locate that quote ourselves, tolerating only ordinary differences in spaces and
+  line breaks. If we cannot find it, **the verdict is rejected** and recorded as unverifiable.
+
+  Precisely what this does and does not buy, because the difference matters: a model **cannot** pass
+  an audit by inventing a sentence. It **can** cite a real but poorly-chosen sentence — so the quote
+  is always rendered in place, and you are the one who decides whether it supports the verdict.
 
 The headline number is **Coverage**: the share of applicable rules that left any observable trace at
 all. A rule that leaves none is marked `no signal`. That is the silent-loss detector, and it is the

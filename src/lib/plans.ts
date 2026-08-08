@@ -180,7 +180,11 @@ export function planById(id: string): Plan | undefined {
 }
 
 export function entitlementsFor(plan: PlanId | null | undefined): Entitlements {
-  return ENTITLEMENTS[plan ?? 'free'];
+  // Never an unchecked index. `plan` ultimately comes from Stripe subscription metadata,
+  // which is hand-editable in their dashboard, and an unknown value used to return
+  // undefined and throw on first property access — turning a typo into a 500 on every
+  // gated surface for that user. Unknown degrades to free, never to paid.
+  return ENTITLEMENTS[plan as PlanId] ?? ENTITLEMENTS.free;
 }
 
 export function stripePriceFor(plan: Plan, interval: Interval): string | null {

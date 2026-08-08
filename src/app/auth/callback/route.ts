@@ -7,7 +7,11 @@ export const runtime = 'nodejs';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/history';
+  // Only same-origin, single-slash paths. `@evil.com` makes our host the URL's *userinfo*
+  // and sends the user to evil.com wearing our domain — which, on a magic-link callback,
+  // is session fixation plus a phishing redirector in one.
+  const raw = searchParams.get('next');
+  const next = raw && /^\/(?![/\\])/.test(raw) ? raw : '/history';
 
   if (code) {
     const supabase = await getServerSupabase();

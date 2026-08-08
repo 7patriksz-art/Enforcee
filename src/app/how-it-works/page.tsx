@@ -22,7 +22,7 @@ const STEPS = [
   {
     n: '04',
     t: 'Send only the remainder to a judge',
-    d: 'Whatever code cannot decide goes to a model, several times independently. Each verdict must come with a quote copied character-for-character from the output. We then search the output for that quote. If it is not there, the verdict is thrown out and recorded as unverifiable with the evidence rejected. A model cannot pass an audit by inventing a sentence.',
+    d: 'Whatever code cannot decide goes to a model, several times independently. Each verdict must come with a quote of at least ten characters taken from the output, and we then locate that quote in the output ourselves, tolerating only ordinary differences in spaces and line breaks. If we cannot find it, the verdict is thrown out and recorded as unverifiable. Stated precisely, because the distinction matters: this makes it impossible to pass an audit by inventing a sentence. It does not by itself prove the sentence a model cited was the most relevant one — so the quote is always shown to you, in place, to judge for yourself.',
     tag: 'judged',
   },
   {
