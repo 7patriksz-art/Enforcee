@@ -31,7 +31,7 @@ import { createPublicKey, verify } from 'node:crypto';
  * machine, every session. We never learn that you ran it.
  */
 const LICENCE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAK1WUAQxZe6E+Z4yTe4jqoSc3skssi5OH+kEHa2LZ2vA=
+MCowBQYDK2VwAyEAzUClif/dMJGgcLWGoGv5/v56q7Xk0yGuoRY0r/B7cWU=
 -----END PUBLIC KEY-----
 `;
 
