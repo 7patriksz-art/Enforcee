@@ -1,0 +1,99 @@
+Enforcee — Licence
+==================
+
+This repository is **not** under a single licence. Two different things live here
+and they carry different terms, deliberately.
+
+Read this file before copying anything out of it.
+
+
+1. MIT — the parts that run on your machine
+-------------------------------------------
+
+The following are licensed under the MIT Licence, reproduced in full below:
+
+    guard/**            the hook runner that executes in your session
+    cli/**              the command-line wrapper (excluding bundled engine output)
+    plugin/**           the Claude Code plugin manifest, hooks, skills and commands
+    .claude-plugin/**   the marketplace manifest
+
+These are permissive on purpose. They run inside your development environment,
+under your account, with access to your files. You should not have to take our
+word for what they do — you should be able to read every line, fork them, audit
+them, and run a modified copy. A security-adjacent tool that asks you to trust an
+unreadable binary has not earned the trust it is asking for.
+
+MIT Licence
+
+Copyright (c) 2026 Enforcee
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+2. All rights reserved — the engine
+------------------------------------
+
+Everything else in this repository, and in particular:
+
+    src/lib/**          the audit engine, rule parser and classifier, the
+                        deterministic check library, the judge and its
+                        literal-evidence gate, ruleset health, the receipt
+                        format, the preference extractor, and the licence system
+    src/app/**          the web application
+    tests/**            the test suite, including the gold set
+
+is **Copyright (c) 2026 Enforcee. All rights reserved.**
+
+It is published so that it can be read. It is not published so that it can be
+reused. Specifically, no licence is granted to copy, modify, redistribute,
+sublicense, or create derivative works from these files, or to use them — or the
+methodology, rule taxonomy, evaluation prompts, thresholds or scoring they
+contain — to build or train a competing product.
+
+You may read it. You may quote short excerpts when discussing or reviewing it.
+You may report bugs against it. You may run it locally to satisfy yourself that
+it does what this repository says it does — that is the entire reason it is
+visible.
+
+Why the split, stated plainly: the deterministic engine and the evidence gate are
+the product. Publishing them under a permissive licence would let a better-funded
+competitor ship them next week with our own test suite as proof, and there would
+be nothing left to sell. The parts you have to trust are open. The part we sell
+is not. We would rather say that in a licence file than be vague about it in a
+footer.
+
+
+Contributions
+-------------
+
+Contributions to the MIT-licensed directories are welcome under the MIT Licence.
+By opening a pull request against those paths you agree your contribution is
+licensed the same way.
+
+We do not accept pull requests against src/lib/**. Open an issue instead — bug
+reports there are genuinely valuable and we would rather have the report than the
+patch.
+
+
+Questions
+---------
+
+If you want to do something this file does not clearly allow, ask rather than
+guess: hello@enforcee.app. If your use is non-commercial, educational, or you are
+a researcher benchmarking verification tools, the answer is very likely yes.

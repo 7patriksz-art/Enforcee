@@ -85,7 +85,7 @@ export default function Install() {
             },
             {
               t: 'Repairs',
-              d: 'A PostCompact hook puts your ruleset back into context the moment compaction fires — the exact point where the skill listing, path-scoped rules and nested CLAUDE.md are documented to drop out.',
+              d: 'Claude Code already re-reads your project-root CLAUDE.md after /compact — that part is native, free, and we will not sell it to you. What it does not re-inject is nested CLAUDE.md files and paths:-scoped rules. A PostCompact hook covers that residue and records that it did.',
             },
             {
               t: 'Records',

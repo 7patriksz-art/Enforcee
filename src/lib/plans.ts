@@ -141,7 +141,7 @@ export const PLANS: Plan[] = [
     priceEnv: { monthly: 'STRIPE_BUILDER_MONTHLY', yearly: 'STRIPE_BUILDER_YEARLY' },
     unlocks: [
       'The guard: blocks a forbidden command before it runs',
-      'Rules restored automatically after every context compaction',
+      'Nested and path-scoped rules restored after compaction (root CLAUDE.md is already native and free)',
       'Retry-loop escalation, so a block never turns into a budget spiral',
       'Every audit kept, forever',
       'Per-rule track record: "this rule failed 6 of your last 40 audits"',

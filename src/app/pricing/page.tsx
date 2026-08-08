@@ -96,9 +96,9 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
-    label: 'Rules restored after context compaction',
+    label: 'Nested and path-scoped rules restored after compaction',
     detail:
-      'When a long session compacts, what the model can see is rebuilt from a summary, and parts of your instructions can come back as a paraphrase of themselves. The guard re-supplies your ruleset at that moment, before the model acts again, so the rules you wrote are the rules in play rather than a lossy retelling of them.',
+      'Read this one carefully, because most of it is free and we are not going to pretend otherwise. Claude Code already re-injects your project-root CLAUDE.md after /compact by itself — their docs say so plainly, and you should not pay anyone for that. What it does NOT do, in their words, is re-inject "nested CLAUDE.md files in subdirectories and rules with paths: frontmatter"; those come back only the next time Claude happens to read a matching file. In a monorepo that is most of your rules, and the gap is silent. The guard covers exactly that residue, and records that it did, so you can check rather than hope.',
     free: false,
     builder: true,
     founder: true,

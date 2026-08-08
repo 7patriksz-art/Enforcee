@@ -82,14 +82,14 @@ export default function EnforcePage() {
       <h1 className="text-[22px] font-semibold tracking-tight">Enforce</h1>
       <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
         Auditing tells you what already went wrong. This stops it. Enforcee compiles your rules into a guard that runs
-        inside Claude Code and denies a tool call <em>before</em> it executes — and puts your rules back into context
-        automatically after every compaction, which is the moment they are documented to fall out.
+        inside Claude Code and denies a tool call <em>before</em> it executes — and restores the nested and
+        path-scoped rules that Claude Code, by its own documentation, does not put back after a compaction.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {[
           ['Block', 'A forbidden command never runs. The model is told why, in your own words, and told not to retry.'],
-          ['Repair', 'After a compaction your ruleset is re-injected on the next turn, before the model acts again.'],
+          ['Repair', 'Root CLAUDE.md already survives compaction natively. Nested and path-scoped rules do not — the guard puts those back.'],
           ['Record', 'Every allow, warn and deny is appended to a local ledger you own.'],
         ].map(([t, d]) => (
           <div key={t} className="rounded-lg border hairline bg-white px-4 py-3">

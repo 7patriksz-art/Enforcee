@@ -197,28 +197,30 @@ export default function Home() {
           </h2>
           <p className="readable mt-4 max-w-prose">
             No customer logos, no five-star quotes, no &ldquo;trusted by 10,000 developers&rdquo;. What we have is a
-            public record of people describing this exact problem, and a vendor that closed the ticket.
+            public record of people describing this exact problem. Every quote is dated and linked, because a complaint
+            from eighteen months ago may already have been fixed — and quietly reusing one that was would make us
+            exactly the kind of source this product exists to replace.
           </p>
 
           <div className="mt-9 grid gap-4 lg:grid-cols-3">
             {[
               {
-                q: 'Currently the only workaround is to manually correct the model each time it violates a rule, which defeats the purpose of having persistent instructions in CLAUDE.md.',
-                who: 'phpmac',
-                where: 'anthropics/claude-code #59309',
-                url: 'https://github.com/anthropics/claude-code/issues/59309',
+                q: 'AGENTS.md works pretty well, but it is not deterministic or actually enforced in any way — agents can ignore or forget about what AGENTS.md says, and this becomes more and more apparent as a repo grows.',
+                who: 'aleqs',
+                where: 'Hacker News · 6 Aug 2026',
+                url: 'https://news.ycombinator.com/item?id=49200721',
               },
               {
-                q: 'After compaction, the agent has the conversation but not the rules.',
-                who: 'kcarriedo',
-                where: 'same thread, independent reproduction',
-                url: 'https://github.com/anthropics/claude-code/issues/59309',
+                q: "It's clear at this point that agents don't actually follow agents.md. They try to but they don't… I regularly have to stop an agent and remind it to use p4 edit, despite the first paragraph of Claude.md being 'this is a project using perforce'.",
+                who: 'maccard',
+                where: 'Hacker News · 31 Jul 2026',
+                url: 'https://news.ycombinator.com/item?id=49124086',
               },
               {
-                q: 'Any system where the rule is more fragile than the policy is going to leak.',
-                who: 'kcarriedo',
-                where: 'same thread',
-                url: 'https://github.com/anthropics/claude-code/issues/59309',
+                q: 'Agents let a plausible in-environment request override the standing policy, perform a required check and then act against its result, lose rule details over long horizons, and report compliance they did not achieve.',
+                who: 'HANDBOOK.md benchmark',
+                where: 'arXiv 2607.25398 · 28 Jul 2026',
+                url: 'https://arxiv.org/abs/2607.25398',
               },
             ].map((c) => (
               <figure key={c.q} className="flex flex-col rounded-2xl border hairline bg-white px-5 py-5">
@@ -234,15 +236,20 @@ export default function Home() {
 
           <div className="mt-6 rounded-2xl border border-clay-line bg-clay-pale px-5 py-4">
             <p className="text-[14.5px] leading-relaxed text-ink">
-              That thread names four earlier duplicates of itself, spanning months.{' '}
-              <span className="hi hi-clay font-semibold">It was closed as not planned.</span> Nobody is coming to fix
-              this inside the tool, which is why the answer has to sit beside it.
+              That last one is not a person having a bad day — it is a peer-reviewed benchmark of 65 agentic tasks
+              graded against 824 programmatic criteria.{' '}
+              <span className="hi hi-clay font-semibold">
+                The best of thirty frontier model configurations passed 36.2% of them.
+              </span>{' '}
+              And the failure it names by title is the model reporting compliance it did not achieve — which is the
+              exact thing you cannot catch by reading the answer.
             </p>
           </div>
 
           <p className="mt-6 max-w-prose font-mono text-[11px] leading-relaxed text-skip">
-            Quoted verbatim from a public GitHub thread and linked so you can read the whole argument yourself. These
-            people are describing a problem, not endorsing us — we have never spoken to them.
+            Quoted verbatim and linked so you can read the whole argument yourself. Every quote is from the last six
+            weeks; we re-check them and drop any that a vendor has since fixed. These people are describing a problem,
+            not endorsing us — we have never spoken to them.
           </p>
         </div>
       </section>

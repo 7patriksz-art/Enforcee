@@ -6,3 +6,7 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Built by scripts/pack-cli.mjs
+npm-dist/
+*.tgz
