@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
-    console.error('[enforcio] audit failed', err);
+    console.error('[enforcee] audit failed', err);
     return NextResponse.json({ error: 'Audit failed.' }, { status: 500 });
   }
 }

@@ -68,7 +68,7 @@ export async function runAudit(input: AuditInput): Promise<AuditOutcome> {
         method: 'structural',
         evidence: [],
         rationale:
-          'This rule is too vague to pass or fail. Enforcio will not manufacture a verdict for it — rewrite it as something checkable.',
+          'This rule is too vague to pass or fail. Enforcee will not manufacture a verdict for it — rewrite it as something checkable.',
         engaged: false,
       });
       continue;

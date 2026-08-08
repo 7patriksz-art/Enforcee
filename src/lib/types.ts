@@ -1,5 +1,5 @@
 /**
- * Enforcio core types.
+ * Enforcee core types.
  *
  * Design rule: every verdict must carry HOW it was reached. We never blur the line
  * between a deterministic proof and a model's opinion.

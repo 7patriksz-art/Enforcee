@@ -9,12 +9,12 @@ export default function Home() {
         </p>
         <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.12] tracking-tight sm:text-[46px]">
           You wrote the rules. <br className="hidden sm:block" />
-          Enforcio checks whether the model actually followed them.
+          Enforcee checks whether the model actually followed them.
         </h1>
         <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-neutral-600">
           Custom instructions, <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[13px]">CLAUDE.md</code>,
           system prompts, project rules, skills, memory files. You spend real time writing them and you have no way to
-          know if any of it landed. Enforcio takes your rules and one AI output and returns a receipt: every rule, a
+          know if any of it landed. Enforcee takes your rules and one AI output and returns a receipt: every rule, a
           verdict, the exact evidence, and a straight answer about what could not be verified.
         </p>
 
@@ -83,7 +83,7 @@ export default function Home() {
         <div className="mt-10 rounded-lg border hairline bg-white px-5 py-5">
           <h3 className="text-[15px] font-semibold tracking-tight">Before you even run an output through it</h3>
           <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-            Enforcio reads your ruleset on its own and tells you what is wrong with it — duplicated rules, rules that
+            Enforcee reads your ruleset on its own and tells you what is wrong with it — duplicated rules, rules that
             contradict each other, rules so vague that no audit could ever pass or fail them, and rules buried so deep in
             the file that attention has already faded by the time the model reaches them. That check costs nothing and
             uses no model at all.

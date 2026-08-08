@@ -39,7 +39,7 @@ export default function HowItWorks() {
       <h1 className="text-[28px] font-semibold tracking-tight">How the checking works</h1>
       <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-neutral-600">
         The obvious way to build this is to ask a model whether another model followed the rules. That is not
-        verification, it is a second opinion with the same failure mode. So Enforcio does as much as possible without a
+        verification, it is a second opinion with the same failure mode. So Enforcee does as much as possible without a
         model, and puts a hard evidence gate in front of everything else.
       </p>
 
@@ -68,7 +68,7 @@ export default function HowItWorks() {
         <h2 className="text-[18px] font-semibold tracking-tight">What Coverage actually means</h2>
         <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-600">
           A pass rate is easy to game. If your ruleset says <em>never use emojis</em> and the answer has no emojis, that
-          is a pass — but it is also what you would get from a model that never read the rule at all. So Enforcio tracks a
+          is a pass — but it is also what you would get from a model that never read the rule at all. So Enforcee tracks a
           second thing: whether the output carries any observable trace of the rule being applied.
         </p>
         <p className="mt-3 text-[13.5px] leading-relaxed text-neutral-600">
@@ -84,7 +84,7 @@ export default function HowItWorks() {
         <h2 className="text-[15px] font-semibold tracking-tight">Limits, stated plainly</h2>
         <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-neutral-600">
           <li>
-            Enforcio audits <strong>text</strong>. It sees what the model produced, not what was in its context window. A
+            Enforcee audits <strong>text</strong>. It sees what the model produced, not what was in its context window. A
             high score means the output is consistent with your rules, not that the model read them.
           </li>
           <li>
@@ -93,7 +93,7 @@ export default function HowItWorks() {
             row.
           </li>
           <li>
-            Absence of a violation is weaker evidence than presence of one. Enforcio distinguishes the two rather than
+            Absence of a violation is weaker evidence than presence of one. Enforcee distinguishes the two rather than
             averaging them into a single reassuring number.
           </li>
         </ul>

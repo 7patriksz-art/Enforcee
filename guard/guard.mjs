@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Enforcio Guard — active enforcement for Claude Code.
+ * Enforcee Guard — active enforcement for Claude Code.
  *
- * Zero dependencies. Reads a hook payload on stdin, consults .enforcio/policy.json,
+ * Zero dependencies. Reads a hook payload on stdin, consults .enforcee/policy.json,
  * and does one of three jobs depending on the hook event:
  *
  *   PreToolUse   → DENY a tool call before it runs. This is enforcement, not reporting.
@@ -11,7 +11,7 @@
  *   SessionStart → prime the session with the rule digest and open a ledger entry.
  *   Stop         → close the ledger entry for the turn.
  *
- * Every decision is appended to .enforcio/ledger.jsonl so the monitor has a record.
+ * Every decision is appended to .enforcee/ledger.jsonl so the monitor has a record.
  *
  * Contract (from Claude Code hook docs):
  *   exit 0 + JSON on stdout  → structured decision
@@ -36,7 +36,7 @@ function readStdin() {
 function findPolicy(startDir) {
   let dir = resolve(startDir || process.cwd());
   for (let i = 0; i < 12; i++) {
-    const p = join(dir, '.enforcio', 'policy.json');
+    const p = join(dir, '.enforcee', 'policy.json');
     if (existsSync(p)) return p;
     const parent = dirname(dir);
     if (parent === dir) break;
@@ -115,7 +115,7 @@ function main() {
   } catch {
     // A malformed policy must never block work. Say so loudly instead.
     emit({
-      systemMessage: 'Enforcio: policy.json could not be read, so no rules are being enforced this session.',
+      systemMessage: 'Enforcee: policy.json could not be read, so no rules are being enforced this session.',
     });
   }
 
@@ -145,7 +145,7 @@ function main() {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
           permissionDecisionReason:
-            `Blocked by Enforcio rule ${rule.id}: ${rule.rule}\n` +
+            `Blocked by Enforcee rule ${rule.id}: ${rule.rule}\n` +
             (rule.reason ? `${rule.reason}\n` : '') +
             `Matched /${rule.pattern}/ against the ${toolName} input. ` +
             `This is a hard rule from your own ruleset, not a suggestion — change the approach rather than retrying.`,
@@ -161,7 +161,7 @@ function main() {
       return emit({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext: `Enforcio warning on rule ${rule.id}: ${rule.rule}. ${rule.reason ?? ''}`.trim(),
+          additionalContext: `Enforcee warning on rule ${rule.id}: ${rule.rule}. ${rule.reason ?? ''}`.trim(),
         },
       });
     }
@@ -182,7 +182,7 @@ function main() {
       },
       systemMessage:
         event === 'PostCompact'
-          ? 'Enforcio re-injected your rules after compaction.'
+          ? 'Enforcee re-injected your rules after compaction.'
           : undefined,
     });
   }

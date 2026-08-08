@@ -17,8 +17,8 @@ const RULESET = `# Ops rules
 `;
 
 beforeAll(() => {
-  project = mkdtempSync(join(tmpdir(), 'enforcio-guard-'));
-  mkdirSync(join(project, '.enforcio'), { recursive: true });
+  project = mkdtempSync(join(tmpdir(), 'enforcee-guard-'));
+  mkdirSync(join(project, '.enforcee'), { recursive: true });
 
   const { rules } = parseRuleset(RULESET);
   const proposals = proposeDenyRules(rules);
@@ -28,7 +28,7 @@ beforeAll(() => {
   const warn = on.filter((p) => p.severity === 'warn').map(strip);
 
   const policy = compilePolicy(RULESET, rules, chosen, warn);
-  writeFileSync(join(project, '.enforcio', 'policy.json'), JSON.stringify(policy, null, 2));
+  writeFileSync(join(project, '.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));
 });
 
 afterAll(() => {
@@ -69,7 +69,7 @@ describe('guard: active enforcement', () => {
     expect(r.code).toBe(0);
     const d = decision(r.stdout)!;
     expect(d.hookSpecificOutput?.permissionDecision).toBe('deny');
-    expect(d.hookSpecificOutput?.permissionDecisionReason).toMatch(/Blocked by Enforcio rule/);
+    expect(d.hookSpecificOutput?.permissionDecisionReason).toMatch(/Blocked by Enforcee rule/);
   });
 
   it('warns rather than blocks on an ordinary recursive delete', () => {
@@ -80,7 +80,7 @@ describe('guard: active enforcement', () => {
     });
     const d = decision(r.stdout)!;
     expect(d.hookSpecificOutput?.permissionDecision).toBeUndefined();
-    expect(d.hookSpecificOutput?.additionalContext).toMatch(/Enforcio warning/);
+    expect(d.hookSpecificOutput?.additionalContext).toMatch(/Enforcee warning/);
   });
 
   it('denies a force push but allows --force-with-lease', () => {
@@ -135,7 +135,7 @@ describe('guard: repair after compaction', () => {
     const r = runGuard({ hook_event_name: 'PostCompact', session_id: 's1' });
     const d = decision(r.stdout)!;
     const ctx = d.hookSpecificOutput?.additionalContext ?? '';
-    expect(ctx).toMatch(/ENFORCIO/);
+    expect(ctx).toMatch(/ENFORCEE/);
     expect(ctx).toMatch(/Never use emojis/);
     expect(ctx.length).toBeLessThanOrEqual(9500);
     expect(d.systemMessage).toMatch(/re-injected/i);
@@ -157,7 +157,7 @@ describe('guard: repair after compaction', () => {
 
 describe('guard: safety of the guard itself', () => {
   it('never blocks when there is no policy at all', () => {
-    const empty = mkdtempSync(join(tmpdir(), 'enforcio-nopolicy-'));
+    const empty = mkdtempSync(join(tmpdir(), 'enforcee-nopolicy-'));
     const r = runGuard({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /' } }, empty);
     expect(r.code).toBe(0);
     expect(r.stdout.trim()).toBe('');
@@ -165,9 +165,9 @@ describe('guard: safety of the guard itself', () => {
   });
 
   it('degrades to a visible warning when the policy is corrupt, never to a block', () => {
-    const broken = mkdtempSync(join(tmpdir(), 'enforcio-broken-'));
-    mkdirSync(join(broken, '.enforcio'), { recursive: true });
-    writeFileSync(join(broken, '.enforcio', 'policy.json'), '{ not json');
+    const broken = mkdtempSync(join(tmpdir(), 'enforcee-broken-'));
+    mkdirSync(join(broken, '.enforcee'), { recursive: true });
+    writeFileSync(join(broken, '.enforcee', 'policy.json'), '{ not json');
     const r = runGuard({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /' } }, broken);
     expect(r.code).toBe(0);
     expect(decision(r.stdout)!.systemMessage).toMatch(/no rules are being enforced/i);
@@ -185,10 +185,10 @@ describe('guard: safety of the guard itself', () => {
   });
 
   it('survives a deny rule with an invalid regex', () => {
-    const bad = mkdtempSync(join(tmpdir(), 'enforcio-badre-'));
-    mkdirSync(join(bad, '.enforcio'), { recursive: true });
+    const bad = mkdtempSync(join(tmpdir(), 'enforcee-badre-'));
+    mkdirSync(join(bad, '.enforcee'), { recursive: true });
     writeFileSync(
-      join(bad, '.enforcio', 'policy.json'),
+      join(bad, '.enforcee', 'policy.json'),
       JSON.stringify({ version: 1, deny: [{ id: 'x', rule: 'r', tool: 'Bash', pattern: '([' }], warn: [], reinject: { text: '' } })
     );
     const r = runGuard({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'anything' } }, bad);
@@ -208,7 +208,7 @@ describe('guard: the ledger', () => {
   it('records every decision it makes', () => {
     runGuard({ hook_event_name: 'PreToolUse', session_id: 'led', tool_name: 'Bash', tool_input: { command: 'npm publish' } });
     runGuard({ hook_event_name: 'PreToolUse', session_id: 'led', tool_name: 'Bash', tool_input: { command: 'ls' } });
-    const p = join(project, '.enforcio', 'ledger.jsonl');
+    const p = join(project, '.enforcee', 'ledger.jsonl');
     expect(existsSync(p)).toBe(true);
     const lines = readFileSync(p, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.some((l) => l.decision === 'DENY')).toBe(true);

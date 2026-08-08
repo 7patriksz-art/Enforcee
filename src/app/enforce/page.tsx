@@ -56,7 +56,7 @@ export default function EnforcePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'enforcio-install.sh';
+    a.download = 'enforcee-install.sh';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -68,7 +68,7 @@ export default function EnforcePage() {
     <main className="mx-auto max-w-6xl px-5 py-8">
       <h1 className="text-[22px] font-semibold tracking-tight">Enforce</h1>
       <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-        Auditing tells you what already went wrong. This stops it. Enforcio compiles your rules into a guard that runs
+        Auditing tells you what already went wrong. This stops it. Enforcee compiles your rules into a guard that runs
         inside Claude Code and denies a tool call <em>before</em> it executes — and puts your rules back into context
         automatically after every compaction, which is the moment they are documented to fall out.
       </p>
@@ -169,7 +169,7 @@ export default function EnforcePage() {
             <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] leading-relaxed text-neutral-600">
               <li>Download the script and open it. It is plain text and every line is readable.</li>
               <li>
-                Run it from your project root: <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px]">bash enforcio-install.sh</code>
+                Run it from your project root: <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px]">bash enforcee-install.sh</code>
               </li>
               <li>Restart Claude Code.</li>
             </ol>
@@ -183,7 +183,7 @@ export default function EnforcePage() {
               onClick={download}
               className="mt-4 rounded-md bg-ink px-4 py-2 text-[13px] font-medium text-white hover:bg-ink-soft transition-colors"
             >
-              Download enforcio-install.sh
+              Download enforcee-install.sh
             </button>
           </section>
 

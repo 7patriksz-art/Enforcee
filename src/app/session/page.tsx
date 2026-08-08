@@ -56,7 +56,7 @@ export default function SessionPage() {
     <main className="mx-auto max-w-6xl px-5 py-8">
       <h1 className="text-[22px] font-semibold tracking-tight">Session evidence</h1>
       <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-        Drop a Claude Code session file and Enforcio reads what the model could actually see: which skills were offered,
+        Drop a Claude Code session file and Enforcee reads what the model could actually see: which skills were offered,
         which MCP servers never finished connecting, which tools disappeared mid-session, and whether your own hard rules
         about shell commands and file reads held.
       </p>
@@ -217,7 +217,7 @@ export default function SessionPage() {
             </div>
             <p className="mt-2 max-w-4xl font-mono text-[10px] leading-relaxed text-neutral-400">
               What this cannot tell you: the session file contains no system prompt and no CLAUDE.md content, so nobody
-              can prove from it which instructions were in the model&apos;s context on a given turn. Enforcio does not
+              can prove from it which instructions were in the model&apos;s context on a given turn. Enforcee does not
               claim to. Everything above is either read straight out of the file or computed from something that was.
             </p>
           </section>

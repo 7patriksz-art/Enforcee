@@ -4,7 +4,7 @@ import { hashText } from '../receipt';
 export const POLICY_VERSION = 'policy@1.0.0';
 
 /**
- * A deny rule is the only thing in Enforcio that can stop an action, so it is held
+ * A deny rule is the only thing in Enforcee that can stop an action, so it is held
  * to a higher standard than a verdict: it is always derived from an explicit pattern
  * and always confirmed by the user before it is compiled in. We never infer a block
  * from prose and switch it on silently.
@@ -31,7 +31,7 @@ export interface Policy {
 }
 
 export interface Proposal extends DenyRule {
-  /** Why Enforcio thinks this is enforceable, shown next to the checkbox. */
+  /** Why Enforcee thinks this is enforceable, shown next to the checkbox. */
   basis: string;
   /** Enabled by default only when the pattern is unambiguous. */
   defaultOn: boolean;
@@ -151,7 +151,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
       pattern: d.re,
       flags: 'i',
       reason: `${d.label} is irreversible or reaches outside this working copy.`,
-      basis: 'Enforcio standing library of destructive operations',
+      basis: 'Enforcee standing library of destructive operations',
       defaultOn: d.on,
       severity: d.severity,
     });
@@ -164,7 +164,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     pattern: SECRET_PATHS,
     flags: 'i',
     reason: 'Keys and .env files should not pass through a model context.',
-    basis: 'Enforcio standing library of sensitive paths',
+    basis: 'Enforcee standing library of sensitive paths',
     defaultOn: true,
     severity: 'deny',
   });
@@ -184,7 +184,7 @@ export function buildReinjectText(rules: Rule[], label = 'your ruleset'): string
   const lines = rules.map((r, i) => `${String(i + 1).padStart(2, '0')}. [${r.id}] ${r.text}`);
   const body = lines.join('\n');
   const header =
-    `ENFORCIO — rules re-injected after a context boundary.\n` +
+    `ENFORCEE — rules re-injected after a context boundary.\n` +
     `These are the ${rules.length} rules from ${label}. Anthropic's documentation states that the skill ` +
     `description listing, rules with paths: frontmatter, and nested CLAUDE.md files do not survive ` +
     `compaction. Treat the list below as in force for the rest of this session.\n\n`;
@@ -210,7 +210,7 @@ export function compilePolicy(
 }
 
 /** The settings.json fragment that wires the guard into a project. */
-export function hookSettings(guardPath = '.enforcio/guard.mjs') {
+export function hookSettings(guardPath = '.enforcee/guard.mjs') {
   const cmd = `node ${guardPath}`;
   return {
     hooks: {

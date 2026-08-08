@@ -319,7 +319,7 @@ export default function ReceiptView({ receipt, output }: Props) {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `enforcio-receipt-${receipt.digest.slice(0, 12)}.json`;
+              a.download = `enforcee-receipt-${receipt.digest.slice(0, 12)}.json`;
               a.click();
               URL.revokeObjectURL(url);
             }}

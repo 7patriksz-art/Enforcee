@@ -50,7 +50,7 @@ export default function AuditPage() {
       <div className="mb-6">
         <h1 className="text-[22px] font-semibold tracking-tight">Run an audit</h1>
         <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-neutral-600">
-          Paste the rules you gave your assistant on the left, and something it produced on the right. Enforcio returns a
+          Paste the rules you gave your assistant on the left, and something it produced on the right. Enforcee returns a
           verdict for every single rule, the evidence behind it, and an honest list of what it could not verify.
         </p>
       </div>

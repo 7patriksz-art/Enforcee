@@ -28,13 +28,13 @@ export function installScript(policy: Policy, opts: { merge?: boolean } = {}): s
   const warnCount = policy.warn.length;
 
   const header = `#!/usr/bin/env bash
-# Enforcio guard installer
+# Enforcee guard installer
 # Generated ${policy.generatedAt}
 # Ruleset hash ${policy.rulesetHash.slice(0, 16)}
 #
 # Writes three files into the current project:
-#   .enforcio/policy.json   ${denyCount} blocking rule(s), ${warnCount} warning rule(s)
-#   .enforcio/guard.mjs     the runner — no dependencies, plain Node
+#   .enforcee/policy.json   ${denyCount} blocking rule(s), ${warnCount} warning rule(s)
+#   .enforcee/guard.mjs     the runner — no dependencies, plain Node
 #   .claude/settings.json   the hook wiring
 #
 # Read it before you run it. Every line is visible below.
@@ -48,14 +48,14 @@ fi
 `;
 
   const files =
-    heredoc('.enforcio/policy.json', JSON.stringify(policy, null, 2), 'ENFORCIO_POLICY') +
+    heredoc('.enforcee/policy.json', JSON.stringify(policy, null, 2), 'ENFORCEE_POLICY') +
     '\n' +
-    heredoc('.enforcio/guard.mjs', guardSource(), 'ENFORCIO_GUARD') +
-    '\nchmod +x .enforcio/guard.mjs\n\n';
+    heredoc('.enforcee/guard.mjs', guardSource(), 'ENFORCEE_GUARD') +
+    '\nchmod +x .enforcee/guard.mjs\n\n';
 
   // Heredoc terminators must sit at column 0, so nothing below gets indented even
   // where it would read more nicely — bash does not care about how it reads.
-  const writeSettings = heredoc('.claude/settings.json', JSON.stringify(settings, null, 2), 'ENFORCIO_SETTINGS');
+  const writeSettings = heredoc('.claude/settings.json', JSON.stringify(settings, null, 2), 'ENFORCEE_SETTINGS');
 
   const settingsBlock = opts.merge
     ? `# Merge the hooks into an existing .claude/settings.json rather than clobbering it.
@@ -66,10 +66,10 @@ const add=${JSON.stringify(JSON.stringify(settings))};
 const parsed=JSON.parse(add);
 existing.hooks=existing.hooks||{};
 for (const [event,entries] of Object.entries(parsed.hooks)) {
-  existing.hooks[event]=(existing.hooks[event]||[]).filter(e=>!JSON.stringify(e).includes("enforcio")).concat(entries);
+  existing.hooks[event]=(existing.hooks[event]||[]).filter(e=>!JSON.stringify(e).includes("enforcee")).concat(entries);
 }
 fs.writeFileSync(".claude/settings.json", JSON.stringify(existing,null,2)+"\\n");
-console.log("merged Enforcio hooks into your existing .claude/settings.json");'
+console.log("merged Enforcee hooks into your existing .claude/settings.json");'
 else
 ${writeSettings}fi
 `
@@ -77,16 +77,16 @@ ${writeSettings}fi
 
   const footer = `
 echo ""
-echo "Enforcio guard installed."
+echo "Enforcee guard installed."
 echo "  ${denyCount} rule(s) will block a tool call before it runs."
 echo "  ${warnCount} rule(s) will warn without blocking."
 echo "  Your rules are re-injected automatically after every context compaction."
 echo ""
-echo "Decisions are appended to .enforcio/ledger.jsonl."
-echo "Add .enforcio/ledger.jsonl to .gitignore if you do not want it committed."
+echo "Decisions are appended to .enforcee/ledger.jsonl."
+echo "Add .enforcee/ledger.jsonl to .gitignore if you do not want it committed."
 echo ""
 echo "Test it without risk:"
-echo "  echo '{\\"hook_event_name\\":\\"PreToolUse\\",\\"tool_name\\":\\"Bash\\",\\"tool_input\\":{\\"command\\":\\"git push --force\\"}}' | node .enforcio/guard.mjs"
+echo "  echo '{\\"hook_event_name\\":\\"PreToolUse\\",\\"tool_name\\":\\"Bash\\",\\"tool_input\\":{\\"command\\":\\"git push --force\\"}}' | node .enforcee/guard.mjs"
 echo ""
 echo "Restart Claude Code for the hooks to take effect."
 `;

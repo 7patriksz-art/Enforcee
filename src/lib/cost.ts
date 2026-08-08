@@ -1,9 +1,9 @@
 /**
- * Cost metering. Every model call Enforcio makes is priced and written to a ledger,
+ * Cost metering. Every model call Enforcee makes is priced and written to a ledger,
  * because the product's price is set from measured unit cost, not guesswork.
  *
  * Rates are USD per 1M tokens, taken from platform.claude.com/docs/en/about-claude/pricing
- * (checked 2026-08-07). Override without a deploy via ENFORCIO_PRICE_OVERRIDES (JSON).
+ * (checked 2026-08-07). Override without a deploy via ENFORCEE_PRICE_OVERRIDES (JSON).
  */
 
 export interface Rate {
@@ -51,7 +51,7 @@ let overrides: Record<string, Rate> | null = null;
 function table(): Record<string, Rate> {
   if (overrides === null) {
     overrides = {};
-    const raw = process.env.ENFORCIO_PRICE_OVERRIDES;
+    const raw = process.env.ENFORCEE_PRICE_OVERRIDES;
     if (raw) {
       try {
         overrides = JSON.parse(raw) as Record<string, Rate>;

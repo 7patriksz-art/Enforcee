@@ -56,7 +56,7 @@ export async function POST(req: Request) {
   return new NextResponse(installScript(policy, { merge: merge ?? true }), {
     headers: {
       'Content-Type': 'text/x-shellscript; charset=utf-8',
-      'Content-Disposition': 'attachment; filename="enforcio-install.sh"',
+      'Content-Disposition': 'attachment; filename="enforcee-install.sh"',
       'Cache-Control': 'no-store',
     },
   });

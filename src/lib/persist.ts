@@ -102,7 +102,7 @@ export async function persistAudit(params: {
 
     return { saved: true, auditId: audit.id };
   } catch (e) {
-    console.error('[enforcio] persist failed', e);
+    console.error('[enforcee] persist failed', e);
     return { saved: false, reason: 'storage error' };
   }
 }

@@ -1,4 +1,4 @@
--- Enforcio / Ruleceipt — initial schema
+-- Enforcee / Ruleceipt — initial schema
 -- Paste this whole file into the Supabase SQL editor and run it once.
 --
 -- Design notes:
