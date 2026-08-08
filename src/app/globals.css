@@ -27,26 +27,24 @@ body {
 }
 
 /* ── The punchline highlighter ───────────────────────────────────────────────
-   A soft marker sweep behind the sentence that matters most in a section.
-   Sits behind the text rather than over it, so contrast never drops. */
+   A soft marker sweep behind the sentence that carries a section.
+
+   Painted as a background on the inline element rather than a pseudo-element:
+   a ::before box only covers the last line fragment, so a highlighted sentence that
+   wraps would show a stray sliver instead of a stripe. box-decoration-break: clone
+   repaints it per line, which is the whole point. */
 .hi {
-  position: relative;
-  white-space: pre-wrap;
+  background-image: linear-gradient(103deg, #fde68a 0%, #fcd34d 50%, #fde68a 100%);
+  background-repeat: no-repeat;
+  background-size: 100% 0.58em;
+  background-position: 0 86%;
+  padding: 0 0.14em;
+  border-radius: 0.14em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
-.hi::before {
-  content: '';
-  position: absolute;
-  left: -0.14em;
-  right: -0.14em;
-  bottom: 0.02em;
-  height: 0.62em;
-  background: linear-gradient(103deg, #fde68a 0%, #fcd34d 48%, #fde68a 100%);
-  border-radius: 0.18em;
-  z-index: -1;
-  transform: rotate(-0.35deg);
-}
-.hi-clay::before {
-  background: linear-gradient(103deg, #ffd9c0 0%, #fbbf9b 48%, #ffd9c0 100%);
+.hi-clay {
+  background-image: linear-gradient(103deg, #ffd9c0 0%, #fbbf9b 50%, #ffd9c0 100%);
 }
 
 /* Evidence highlight inside audited output. */
