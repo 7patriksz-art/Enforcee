@@ -3,56 +3,77 @@ import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Enforcee — proof your AI followed your rules',
+  title: 'Enforcee — stop fighting your own AI',
   description:
-    'Enforcee audits an AI output against your own rules and returns a receipt: every rule, a verdict, the evidence, and how it was checked.',
+    'Enforcee tells you which of your rules the model actually followed, rule by rule, with the exact quote — and blocks the ones it can stop before they run.',
 };
+
+const NAV = [
+  ['/install', 'Install'],
+  ['/learn', 'Learn'],
+  ['/enforce', 'Enforce'],
+  ['/session', 'Sessions'],
+  ['/pricing', 'Pricing'],
+  ['/how-it-works', 'How it works'],
+];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen font-sans antialiased">
-        <header className="border-b hairline bg-white/70 backdrop-blur sticky top-0 z-20">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
-            <Link href="/" className="flex items-center gap-2.5 group">
-              <span className="grid h-7 w-7 place-items-center rounded-[7px] bg-ink text-[13px] font-bold text-white">E</span>
-              <span className="text-[15px] font-semibold tracking-tight">Enforcee</span>
-              <span className="rounded border hairline px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-skip">
-                mvp
-              </span>
+        <header className="sticky top-0 z-30 border-b hairline bg-paper/85 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center gap-5 px-5 py-3">
+            <Link href="/" className="flex items-center gap-2.5">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-ink text-[13px] font-bold text-white">E</span>
+              <span className="font-display text-[17px] tracking-tight">Enforcee</span>
             </Link>
-            <nav className="flex items-center gap-5 text-[13px] text-skip">
-              <Link href="/learn" className="hover:text-ink transition-colors">
-                Learn
-              </Link>
-              <Link href="/enforce" className="hover:text-ink transition-colors">
-                Enforce
-              </Link>
-              <Link href="/session" className="hover:text-ink transition-colors">
-                Session evidence
-              </Link>
-              <Link href="/how-it-works" className="hover:text-ink transition-colors">
-                How it works
-              </Link>
-              <Link href="/history" className="hover:text-ink transition-colors">
-                History
-              </Link>
-              <Link
-                href="/audit"
-                className="rounded-md bg-ink px-3 py-1.5 text-[13px] font-medium text-white hover:bg-ink-soft transition-colors"
-              >
-                Run an audit
-              </Link>
+            <nav className="ml-auto hidden items-center gap-5 text-[13.5px] text-ink-mid md:flex">
+              {NAV.map(([href, label]) => (
+                <Link key={href} href={href} className="transition-colors hover:text-ink">
+                  {label}
+                </Link>
+              ))}
             </nav>
+            <Link
+              href="/audit"
+              className="ml-auto rounded-lg bg-ink px-3.5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-ink-soft md:ml-0"
+            >
+              Run an audit
+            </Link>
           </div>
+          <nav className="flex gap-4 overflow-x-auto border-t hairline px-5 py-2 text-[13px] text-ink-mid md:hidden">
+            {NAV.map(([href, label]) => (
+              <Link key={href} href={href} className="whitespace-nowrap">
+                {label}
+              </Link>
+            ))}
+          </nav>
         </header>
+
         {children}
-        <footer className="mt-24 border-t hairline">
-          <div className="mx-auto max-w-6xl px-5 py-8 font-mono text-[11px] leading-relaxed text-skip">
-            <p>Enforcee · an audit layer for the rules you give your AI.</p>
-            <p className="mt-1">
-              Verdicts are labelled by method. Deterministic checks are reproducible proofs. Judged checks are model
-              opinions with evidence spans verified against the source text. We show you which is which.
+
+        <footer className="border-t hairline bg-paper-soft">
+          <div className="mx-auto max-w-6xl px-5 py-10">
+            <div className="flex flex-wrap gap-x-10 gap-y-4">
+              <div className="max-w-sm">
+                <div className="font-display text-[17px] tracking-tight">Enforcee</div>
+                <p className="mt-2 text-[13px] leading-relaxed text-ink-mid">
+                  An audit and enforcement layer for the rules you give your AI. Deterministic where it can be, honest
+                  where it cannot.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-x-8 gap-y-2 text-[13px] text-ink-mid">
+                {[...NAV, ['/history', 'History'], ['/signin', 'Sign in']].map(([href, label]) => (
+                  <Link key={href} href={href} className="hover:text-ink">
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <p className="mt-8 max-w-3xl border-t hairline pt-5 font-mono text-[11px] leading-relaxed text-skip">
+              Every verdict is labelled by method. Deterministic checks are reproducible proofs. Judged checks are model
+              opinions whose evidence quote was verified against the source text, or discarded. We show you which is
+              which, and we say plainly what cannot be verified at all.
             </p>
           </div>
         </footer>

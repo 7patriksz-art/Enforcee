@@ -3,31 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
 }
 
-html,
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: #fbfbfa;
-  color: #0d1117;
+  background: #fdfcf9;
+  color: #1a1614;
+  font-size: 16px;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: #cfe3ff;
+  background: #fcd34d;
+  color: #1a1614;
 }
 
-/* Evidence highlight inside the audited output. */
+/* ── The punchline highlighter ───────────────────────────────────────────────
+   A soft marker sweep behind the sentence that matters most in a section.
+   Sits behind the text rather than over it, so contrast never drops. */
+.hi {
+  position: relative;
+  white-space: pre-wrap;
+}
+.hi::before {
+  content: '';
+  position: absolute;
+  left: -0.14em;
+  right: -0.14em;
+  bottom: 0.02em;
+  height: 0.62em;
+  background: linear-gradient(103deg, #fde68a 0%, #fcd34d 48%, #fde68a 100%);
+  border-radius: 0.18em;
+  z-index: -1;
+  transform: rotate(-0.35deg);
+}
+.hi-clay::before {
+  background: linear-gradient(103deg, #ffd9c0 0%, #fbbf9b 48%, #ffd9c0 100%);
+}
+
+/* Evidence highlight inside audited output. */
 mark.ev {
-  background: #fff3bf;
-  box-shadow: inset 0 -0.35em 0 #ffe066;
+  background: #fef3c7;
+  box-shadow: inset 0 -0.35em 0 #fcd34d;
   border-radius: 2px;
   padding: 0 1px;
+  color: inherit;
 }
 mark.ev-bad {
-  background: #ffe3e0;
-  box-shadow: inset 0 -0.35em 0 #ffc9c2;
+  background: #fee2e2;
+  box-shadow: inset 0 -0.35em 0 #fca5a5;
 }
 
 textarea {
@@ -35,19 +67,40 @@ textarea {
 }
 
 .hairline {
-  border-color: #e2e2dd;
+  border-color: #e4ded0;
+}
+
+/* Long-form reading: generous measure and leading. */
+.readable {
+  font-size: 17px;
+  line-height: 1.72;
+  letter-spacing: 0.002em;
+  color: #57504a;
+}
+.readable strong {
+  color: #1a1614;
+  font-weight: 600;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .grow-in {
-    animation: growIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: growIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   @keyframes growIn {
-    from {
-      transform: scaleX(0);
-    }
-    to {
-      transform: scaleX(1);
-    }
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
   }
+  .rise {
+    animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+/* The funnel diagram breathes on hover without moving layout. */
+.stage:hover .stage-card {
+  border-color: #fbbf9b;
+  background: #fff8f3;
 }

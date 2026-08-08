@@ -1,0 +1,11 @@
+{
+  "name": "enforcee",
+  "owner": { "name": "Enforcee", "url": "https://enforcee.vercel.app" },
+  "plugins": [
+    {
+      "name": "enforcee",
+      "source": "./plugin",
+      "description": "Blocks forbidden tool calls before they run, restores your rules after compaction, and audits whether the model followed them."
+    }
+  ]
+}
