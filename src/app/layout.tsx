@@ -54,13 +54,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         <footer className="border-t hairline bg-paper-soft">
           <div className="mx-auto max-w-6xl px-5 py-10">
-            <div className="flex flex-wrap gap-x-10 gap-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-4">
               <div className="max-w-sm">
                 <div className="font-display text-[17px] tracking-tight">Enforcee</div>
                 <p className="mt-2 text-[13px] leading-relaxed text-ink-mid">
                   An audit and enforcement layer for the rules you give your AI. Deterministic where it can be, honest
                   where it cannot.
                 </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-[12.5px] text-ink-mid">
+                <Link href="/account" className="transition-colors hover:text-ink">Account</Link>
+                <Link href="/privacy" className="transition-colors hover:text-ink">Privacy</Link>
+                <Link href="/terms" className="transition-colors hover:text-ink">Terms</Link>
+                <a href="mailto:hello@enforcee.app" className="transition-colors hover:text-ink">Contact</a>
               </div>
             </div>
             <p className="mt-8 max-w-3xl border-t hairline pt-5 font-mono text-[11px] leading-relaxed text-skip">

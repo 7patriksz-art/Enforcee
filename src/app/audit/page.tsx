@@ -2,16 +2,19 @@
 
 import { useState } from 'react';
 import clsx from 'clsx';
+import Link from 'next/link';
 import ReceiptView from '@/components/ReceiptView';
 import { SAMPLES } from '@/lib/samples';
 import type { Receipt } from '@/lib/types';
 
 interface AuditResponse {
   receipt: Receipt;
-  totalUsd: number;
   judgeAvailable: boolean;
   mode: 'deterministic' | 'full';
   quotaNote?: string;
+  gateNote?: string;
+  plan: 'free' | 'builder' | 'founder';
+  stored?: { saved: boolean; reason?: string };
 }
 
 export default function AuditPage() {
@@ -122,6 +125,26 @@ export default function AuditPage() {
       {data?.quotaNote && (
         <p className="mt-4 rounded-md border border-unknown-line bg-unknown-pale px-3 py-2 text-[12.5px] text-unknown">
           {data.quotaNote}
+        </p>
+      )}
+
+      {data?.gateNote && (
+        <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-honey-line bg-honey-pale px-3 py-2 text-[12.5px] text-ink">
+          <span>{data.gateNote}</span>
+          <Link href="/pricing" className="font-medium text-brand hover:underline">
+            See what Builder adds →
+          </Link>
+        </p>
+      )}
+
+      {data && data.plan === 'free' && (
+        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border hairline bg-paper-soft px-3 py-2 text-[12.5px] text-ink-mid">
+          <span>
+            This receipt is not being saved. Close the tab and it is gone — download the JSON if you want to keep it.
+          </span>
+          <Link href="/pricing" className="font-medium text-brand hover:underline">
+            Keep every audit →
+          </Link>
         </p>
       )}
 

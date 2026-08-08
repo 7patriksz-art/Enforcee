@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { extractPreferences, toRulesetMarkdown, type Strength } from '@/lib/preferences';
 import { parseRuleset } from '@/lib/rules/parse';
+import { getAccess } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
 
@@ -28,20 +29,29 @@ export async function POST(req: Request) {
     existingRuleset ? parseRuleset(existingRuleset).rules.map((r) => r.id) : []
   );
 
-  const candidates = extractPreferences(conversation, {
+  const all = extractPreferences(conversation, {
     existingRuleIds,
     minStrength: (minStrength as Strength) ?? 'medium',
   });
 
+  // Free sees the first few and is told exactly how many it is not seeing. A limit you
+  // hide is a limit that produces a refund; a limit you name is a reason to upgrade.
+  const { entitlements, plan } = await getAccess();
+  const limit = entitlements.learnLimit;
+  const capped = Number.isFinite(limit) ? all.slice(0, limit) : all;
+  const withheld = all.length - capped.length;
+
   if (accept) {
     const picked = new Set(accept);
+    // Gate the export too, not just the view — otherwise the wall is decoration.
     return NextResponse.json({
-      markdown: toRulesetMarkdown(candidates.filter((c) => picked.has(c.id))),
+      markdown: toRulesetMarkdown(capped.filter((c) => picked.has(c.id))),
+      withheld,
     });
   }
 
   return NextResponse.json(
-    { candidates, scanned: conversation.length },
+    { candidates: capped, scanned: conversation.length, withheld, limit: Number.isFinite(limit) ? limit : null, plan },
     { headers: { 'Cache-Control': 'no-store' } }
   );
 }

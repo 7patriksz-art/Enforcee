@@ -1,9 +1,14 @@
-import type { Receipt } from './types';
+import type { CostEntry, Receipt } from './types';
 import { getServerSupabase, getServiceSupabase } from './supabase/server';
 import { hashText } from './receipt';
+import { getAccess } from './entitlements';
 
 /**
- * Persist an audit, if and only if there is a signed-in user and a configured database.
+ * Persist an audit, if and only if there is a signed-in user, a configured database, and
+ * a plan that includes history.
+ *
+ * The plan check lives here rather than only at the call site, because a gate that exists
+ * in one route and not another is a gate that leaks the first time somebody adds a route.
  *
  * Deliberately non-fatal: a storage failure must never turn a successful audit into an
  * error page. The receipt the user is looking at is already sealed and correct; saving
@@ -15,6 +20,8 @@ export async function persistAudit(params: {
   output: string;
   mode: 'deterministic' | 'full';
   totalUsd: number;
+  /** True cost, which may differ from the cost sealed into the receipt. */
+  cost?: CostEntry[];
   rulesetName?: string;
 }): Promise<{ saved: boolean; auditId?: string; reason?: string }> {
   const supabase = await getServerSupabase();
@@ -24,7 +31,13 @@ export async function persistAudit(params: {
   const user = userData.user;
   if (!user) return { saved: false, reason: 'not signed in' };
 
+  const access = await getAccess();
+  if (access.entitlements.historyDays <= 0) {
+    return { saved: false, reason: 'history is part of Builder' };
+  }
+
   const { receipt, ruleset, output, mode, totalUsd } = params;
+  const trueCost = params.cost ?? receipt.cost;
 
   try {
     const bodyHash = hashText(ruleset);
@@ -84,9 +97,9 @@ export async function persistAudit(params: {
 
     // The ledger is written with the service role so it cannot be rewritten from a browser.
     const service = getServiceSupabase();
-    if (service && receipt.cost.length) {
+    if (service && trueCost.length) {
       await service.from('cost_ledger').insert(
-        receipt.cost.map((c) => ({
+        trueCost.map((c) => ({
           user_id: user.id,
           audit_id: audit.id,
           model: c.model,

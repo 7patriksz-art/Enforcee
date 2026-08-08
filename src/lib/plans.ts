@@ -1,88 +1,177 @@
 /**
- * The plans, in one place, so the pricing page and the checkout route can never drift.
+ * Plans and entitlements, in one place, so the pricing page, the checkout route and the
+ * feature gates can never drift apart.
  *
- * Deliberate absences, each a decision rather than an oversight:
- *  - No per-audit meter, no credit balance, no counter in the UI. Metering rules punishes
- *    your most thorough user, who is your best user.
- *  - We never publish our own unit cost. What a thing costs us is not the customer's
- *    business and stating it only ever argues against our own price.
- *  - The free tier is complete for its job. The wall is at continuity and scale, not at
- *    features held hostage.
+ * The gating principle, arrived at the hard way: **free inspects, paid enforces.**
+ *
+ * The first cut of this gave away everything and walled only continuity, which left no
+ * honest reason to pay. The line now sits where the value actually is — a person will pay
+ * to stop something happening and to know whether it is getting worse. They will not pay
+ * for a nicer view of a problem they can already see for free.
+ *
+ * We never publish our own unit cost anywhere a customer can read it.
  */
 
 export type Interval = 'monthly' | 'yearly';
+export type PlanId = 'free' | 'builder' | 'founder';
+
+/** Every gate in the product. Adding a capability means adding it here first. */
+export interface Entitlements {
+  /** Run an audit and read the receipt. Always true — this is the proof of the claim. */
+  audit: boolean;
+  /** Compile and download the guard that blocks tool calls and repairs after compaction. */
+  guard: boolean;
+  /** The judged fifth runs on our key rather than yours. */
+  hostedJudge: boolean;
+  /** Days of audit history kept. 0 means nothing is saved at all. */
+  historyDays: number;
+  /** Per-rule track record across audits — the longitudinal product. */
+  ruleHistory: boolean;
+  /** Alerts when a rule that used to hold starts failing. */
+  driftAlerts: boolean;
+  /** Rules recovered from conversation. Free sees the first few and stops. */
+  learnLimit: number;
+  /** Rulesets and policies synced across machines. */
+  sync: boolean;
+  /** Rulesets that are authoritative for a repo, and the CI gate. */
+  ciGate: boolean;
+  /** Exportable receipts for a third party. */
+  attestation: boolean;
+  /** Projects a policy may be installed into. */
+  projects: number;
+  /** REST API access. */
+  api: boolean;
+}
+
+export const ENTITLEMENTS: Record<PlanId, Entitlements> = {
+  free: {
+    audit: true,
+    guard: false,
+    hostedJudge: false,
+    historyDays: 0,
+    ruleHistory: false,
+    driftAlerts: false,
+    learnLimit: 3,
+    sync: false,
+    ciGate: false,
+    attestation: false,
+    projects: 0,
+    api: false,
+  },
+  builder: {
+    audit: true,
+    guard: true,
+    hostedJudge: true,
+    historyDays: 3650,
+    ruleHistory: true,
+    driftAlerts: true,
+    learnLimit: Infinity,
+    sync: true,
+    ciGate: false,
+    attestation: false,
+    projects: 3,
+    api: false,
+  },
+  founder: {
+    audit: true,
+    guard: true,
+    hostedJudge: true,
+    historyDays: 3650,
+    ruleHistory: true,
+    driftAlerts: true,
+    learnLimit: Infinity,
+    sync: true,
+    ciGate: true,
+    attestation: true,
+    projects: Infinity,
+    api: true,
+  },
+};
 
 export interface Plan {
-  id: 'free' | 'builder' | 'founder';
+  id: PlanId;
   name: string;
-  /** Who this is for, in the buyer's own words. */
   who: string;
   pitch: string;
   price: Record<Interval, number>;
-  /** Stripe price id env var per interval. Absent means not purchasable yet. */
+  /** Launch pricing. The struck-through number people see beside the real one. */
+  wasPrice?: Record<Interval, number>;
   priceEnv?: Record<Interval, string>;
-  features: string[];
-  limits?: string[];
+  /** What this plan adds that the one before it did not have. */
+  unlocks: string[];
+  /** Stated plainly, because a limit you hide is a limit that produces a refund. */
+  walls?: string[];
   cta: string;
   featured?: boolean;
 }
+
+export const TRIAL_DAYS = 30;
 
 export const PLANS: Plan[] = [
   {
     id: 'free',
     name: 'Free',
-    who: 'Anyone who wants to know whether their rules are working.',
-    pitch: 'The whole deterministic engine, the guard, and the learning loop. No account, no card, no expiry.',
+    who: 'See the problem. On your own rules, in twenty seconds.',
+    pitch:
+      'Everything you need to find out whether your rules are being followed — one output at a time, by hand.',
     price: { monthly: 0, yearly: 0 },
-    features: [
+    unlocks: [
       'Unlimited audits, on the web and in the CLI',
-      'Every evidence span, every method badge',
-      'Four fifths of a real ruleset checked without a model call',
+      'Every verdict, every evidence quote, every method badge',
+      'Coverage — the rules that left no trace at all',
       'Ruleset health: duplicates, contradictions, dead rules',
-      'The guard: blocks, repairs after compaction, keeps a local ledger',
-      'Learn: rules recovered from what you already said',
       'Session evidence, parsed in your browser',
-      '14 days of history once you sign in',
+      'A taste of Learn: the first 3 rules found in your conversation',
     ],
-    limits: ['Bring your own key for the judged fifth', 'One person, your own machines'],
-    cta: 'Start auditing',
+    walls: [
+      'Nothing is saved. Close the tab and the receipt is gone.',
+      'No guard — Free tells you what happened, it does not stop anything.',
+      'Bring your own key for the judged fifth.',
+      'One output at a time, by hand, every time.',
+    ],
+    cta: 'Run an audit',
   },
   {
     id: 'builder',
     name: 'Builder',
     who: 'You ship with an AI most days and you are tired of finding out late.',
-    pitch: 'Every rule keeps a permanent track record, so you can see which ones are quietly rotting.',
-    price: { monthly: 25, yearly: 250 },
-    priceEnv: { monthly: 'STRIPE_PRICE_BUILDER_MONTHLY', yearly: 'STRIPE_PRICE_BUILDER_YEARLY' },
-    features: [
-      'Everything in Free',
-      'The judged fifth runs on our key, not yours',
-      'Unlimited history instead of 14 days',
-      'Per-rule track record across every audit you have ever run',
-      'Drift alerts the moment a rule starts failing',
-      'Cross-machine sync of rulesets and policies',
-      'Receipts you can export and hand to someone else',
+    pitch: 'The guard runs in every session, and every rule starts keeping a permanent record.',
+    price: { monthly: 19, yearly: 190 },
+    wasPrice: { monthly: 25, yearly: 250 },
+    priceEnv: { monthly: 'STRIPE_BUILDER_MONTHLY', yearly: 'STRIPE_BUILDER_YEARLY' },
+    unlocks: [
+      'The guard: blocks a forbidden command before it runs',
+      'Rules restored automatically after every context compaction',
+      'Retry-loop escalation, so a block never turns into a budget spiral',
+      'Every audit kept, forever',
+      'Per-rule track record: "this rule failed 6 of your last 40 audits"',
+      'Drift alerts when a rule that used to hold starts failing',
+      'The judged fifth on our key — no key to manage, rotate or leak',
+      'Learn, unlimited',
+      'Sync across your machines · up to 3 projects',
     ],
-    cta: 'Become a Builder',
+    cta: `Start ${TRIAL_DAYS} days free`,
     featured: true,
   },
   {
     id: 'founder',
     name: 'Founder',
     who: 'Your rules govern a codebase other people commit to.',
-    pitch: 'The gate moves from your laptop into the pipeline, and every bypass is on the record.',
-    price: { monthly: 35, yearly: 350 },
-    priceEnv: { monthly: 'STRIPE_PRICE_FOUNDER_MONTHLY', yearly: 'STRIPE_PRICE_FOUNDER_YEARLY' },
-    features: [
+    pitch: 'The gate moves off your laptop and into the pipeline, and every bypass is on the record.',
+    price: { monthly: 29, yearly: 290 },
+    wasPrice: { monthly: 35, yearly: 350 },
+    priceEnv: { monthly: 'STRIPE_FOUNDER_MONTHLY', yearly: 'STRIPE_FOUNDER_YEARLY' },
+    unlocks: [
       'Everything in Builder',
-      'Rulesets authoritative for a repository',
-      'Committed blocking hooks and the CI gate',
+      'Rulesets authoritative for a repository, not just a laptop',
+      'The CI gate: a violated rule fails the pull request',
       'Bypasses recorded with the reason attached',
+      'Signed, exportable receipts you can hand to a client',
       'Drift reporting across every repo you watch',
-      'REST API',
+      'Unlimited projects · REST API',
       'Your questions answered by the person who wrote it',
     ],
-    cta: 'Become a Founder',
+    cta: `Start ${TRIAL_DAYS} days free`,
   },
 ];
 
@@ -90,24 +179,22 @@ export function planById(id: string): Plan | undefined {
   return PLANS.find((p) => p.id === id);
 }
 
-/** Resolve a plan's Stripe price id at request time. */
+export function entitlementsFor(plan: PlanId | null | undefined): Entitlements {
+  return ENTITLEMENTS[plan ?? 'free'];
+}
+
 export function stripePriceFor(plan: Plan, interval: Interval): string | null {
   if (!plan.priceEnv) return null;
   return process.env[plan.priceEnv[interval]] ?? null;
 }
 
-/**
- * What twelve months at the monthly rate would have cost, so the yearly price can be
- * shown against a real anchor rather than a made-up one.
- */
-export function yearlyAnchor(plan: Plan): { was: number; now: number; saved: number; effectiveMonthly: number } | null {
+/** What twelve months at the monthly rate costs, so yearly is shown against a real anchor. */
+export function yearlySaving(plan: Plan): { was: number; saved: number; effectiveMonthly: number } | null {
   if (plan.price.monthly === 0) return null;
   const was = plan.price.monthly * 12;
-  const now = plan.price.yearly;
   return {
     was,
-    now,
-    saved: was - now,
-    effectiveMonthly: Math.round((now / 12) * 100) / 100,
+    saved: was - plan.price.yearly,
+    effectiveMonthly: Math.round((plan.price.yearly / 12) * 100) / 100,
   };
 }

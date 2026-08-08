@@ -15,24 +15,31 @@ const STEPS = [
   },
   {
     n: '03',
+    t: 'Drop in your licence',
+    d: 'Once per machine. It is a signed line of text checked on your own disk — no activation server, no phone-home, and it keeps working on a plane.',
+    code: 'mkdir -p ~/.enforcee && echo "<your licence>" > ~/.enforcee/licence',
+  },
+  {
+    n: '04',
     t: 'Compile your rules into a policy',
     d: 'Run this in your project root. It reads your ruleset and writes .enforcee/policy.json. Nothing leaves the machine.',
     code: 'npx enforcee guard CLAUDE.md',
   },
   {
-    n: '04',
+    n: '05',
     t: 'Restart Claude Code',
     d: 'Hooks load at startup. From here the guard is live in every session in that project.',
     code: null,
   },
 ];
 
-const COMMANDS = [
-  ['npx enforcee audit CLAUDE.md answer.md', 'Per-rule verdicts with evidence. Exits non-zero on a violation, so it drops straight into CI.'],
-  ['npx enforcee health CLAUDE.md', 'Critiques the ruleset itself: duplicates, contradictions, rules too vague to ever check.'],
-  ['npx enforcee learn conversation.txt', 'Proposes rules from things you already said. Nothing is switched on for you.'],
-  ['npx enforcee session <session>.jsonl', 'What the model could actually see: skills offered vs used, MCP servers that never connected.'],
-  ['npx enforcee guard CLAUDE.md', 'Recompiles the policy after you change your rules.'],
+const COMMANDS: [string, string, 'free' | 'licensed'][] = [
+  ['npx enforcee audit CLAUDE.md answer.md', 'Per-rule verdicts with evidence. Exits non-zero on a violation, so it drops straight into CI.', 'free'],
+  ['npx enforcee health CLAUDE.md', 'Critiques the ruleset itself: duplicates, contradictions, rules too vague to ever check.', 'free'],
+  ['npx enforcee learn conversation.txt', 'Proposes rules from things you already said. Nothing is switched on for you.', 'free'],
+  ['npx enforcee session <session>.jsonl', 'What the model could actually see: skills offered vs used, MCP servers that never connected.', 'free'],
+  ['npx enforcee guard CLAUDE.md', 'Compiles and recompiles the policy the guard enforces.', 'licensed'],
+  ['npx enforcee licence', 'Shows which licence this machine is using, and when it expires.', 'free'],
 ];
 
 export default function Install() {
@@ -49,7 +56,7 @@ export default function Install() {
       </p>
 
       <section className="mt-12">
-        <h2 className="font-display text-[24px] tracking-tight">Four steps, about a minute</h2>
+        <h2 className="font-display text-[24px] tracking-tight">Five steps, about a minute</h2>
         <ol className="mt-5 space-y-px overflow-hidden rounded-2xl border hairline bg-paper-line">
           {STEPS.map((s) => (
             <li key={s.n} className="bg-white px-5 py-5">
@@ -96,18 +103,52 @@ export default function Install() {
       <section className="mt-12">
         <h2 className="font-display text-[24px] tracking-tight">The command line</h2>
         <p className="readable mt-2 max-w-prose">
-          Zero network calls by default. About 80% of a real ruleset is decided by code, so the useful half genuinely
-          does not need a model, a key or an account.
+          Zero network calls. Not one, not even the licence check. About 80% of a real ruleset is decided by code, so
+          the diagnostic half genuinely does not need a model, a key or an account —{' '}
+          <span className="hi font-semibold text-ink">and it never will</span>.
         </p>
         <div className="mt-5 overflow-hidden rounded-2xl border hairline">
-          {COMMANDS.map(([cmd, d], i) => (
+          {COMMANDS.map(([cmd, d, tier], i) => (
             <div key={cmd} className={i % 2 ? 'bg-paper-soft/60' : 'bg-white'}>
               <div className="px-5 py-3.5">
-                <code className="font-mono text-[13px] text-clay">{cmd}</code>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <code className="font-mono text-[13px] text-clay">{cmd}</code>
+                  <span
+                    className={
+                      tier === 'free'
+                        ? 'rounded px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wide bg-pass-pale text-pass'
+                        : 'rounded px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wide bg-honey-pale text-honey'
+                    }
+                  >
+                    {tier === 'free' ? 'free, no account' : 'licensed'}
+                  </span>
+                </div>
                 <p className="mt-1 text-[13px] leading-relaxed text-ink-mid">{d}</p>
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mt-12 rounded-2xl border border-honey-line bg-honey-pale/40 px-6 py-6">
+        <h2 className="font-display text-[22px] tracking-tight">How the licence works, plainly</h2>
+        <p className="readable mt-2 max-w-prose">
+          The auditing commands are free forever and need no licence — that is not a trial, it is the deal. The guard is
+          what we charge for, and it is checked with a signature your machine verifies on its own.
+        </p>
+        <ul className="readable mt-3 max-w-prose list-disc space-y-1.5 pl-5">
+          <li>Your licence is one line of text. Put it in <code className="font-mono text-[13px]">~/.enforcee/licence</code>, or in <code className="font-mono text-[13px]">ENFORCEE_LICENCE</code> for CI.</li>
+          <li>It is verified offline against a key compiled into the tool. Nothing is sent to us, ever — including the fact that you ran it.</li>
+          <li>It renews itself while you are subscribed. It stops working a few weeks after you cancel, without us having to watch you.</li>
+          <li><code className="font-mono text-[13px]">npx enforcee licence</code> tells you what you have and when it expires.</li>
+        </ul>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link href="/account" className="rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white hover:bg-ink-soft transition-colors">
+            Get my licence
+          </Link>
+          <Link href="/pricing" className="rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-[14px] font-medium hover:border-ink/30 transition-colors">
+            Start 30 days free
+          </Link>
         </div>
       </section>
 

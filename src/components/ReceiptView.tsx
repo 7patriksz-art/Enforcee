@@ -312,7 +312,7 @@ export default function ReceiptView({ receipt, output }: Props) {
             engine {receipt.engine.parser} · {receipt.engine.deterministic}
             {receipt.engine.judge ? ` · ${receipt.engine.judge}` : ' · no judge'}
           </span>
-          <span className="font-mono text-[11px] text-skip">audit cost {formatUsd(spend)}</span>
+          {spend > 0 && <span className="font-mono text-[11px] text-skip">audit cost {formatUsd(spend)}</span>}
           <button
             onClick={() => {
               const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: 'application/json' });

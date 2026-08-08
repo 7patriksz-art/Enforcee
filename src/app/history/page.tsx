@@ -2,7 +2,7 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { getUser, supabaseConfigured } from '@/lib/supabase/server';
 import { recentAudits, ruleHistory } from '@/lib/persist';
-import { formatUsd } from '@/lib/cost';
+import { getAccess } from '@/lib/entitlements';
 import { Stat } from '@/components/primitives';
 
 export const dynamic = 'force-dynamic';
@@ -36,8 +36,45 @@ export default async function History() {
     );
   }
 
+  const access = await getAccess();
+  if (access.entitlements.historyDays <= 0) {
+    return (
+      <Shell>
+        <section className="rounded-2xl border border-honey-line bg-honey-pale/50 px-5 py-6">
+          <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-honey">the wall</div>
+          <h2 className="mt-2 font-display text-[21px] tracking-tight">
+            One audit is an anecdote. Forty is a diagnosis.
+          </h2>
+          <p className="readable mt-2 max-w-2xl">
+            On Free nothing is written down, so there is nothing here. That is deliberate rather than mean: the
+            interesting question is never <em>did this response follow rule 7</em>, it is{' '}
+            <span className="hi font-semibold text-ink">
+              which of my rules has been quietly failing for three weeks
+            </span>{' '}
+            — and no single audit can answer it.
+          </p>
+          <ul className="readable mt-4 max-w-2xl list-disc space-y-1.5 pl-5 text-[13.5px]">
+            <li>Every receipt kept, forever, searchable by ruleset.</li>
+            <li>A per-rule track record: <em>this rule failed 6 of your last 40 audits</em>.</li>
+            <li>Drift alerts the moment a rule that used to hold starts failing.</li>
+          </ul>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Link
+              href="/pricing"
+              className="rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
+            >
+              Start 30 days free
+            </Link>
+            <Link href="/audit" className="text-[13px] text-brand hover:underline">
+              Or keep auditing free
+            </Link>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
   const [audits, rules] = await Promise.all([recentAudits(), ruleHistory()]);
-  const spend = audits.reduce((n, a) => n + Number(a.total_usd ?? 0), 0);
   const avgCoverage =
     audits.length === 0
       ? 0
@@ -46,7 +83,7 @@ export default async function History() {
   return (
     <Shell>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat value={String(audits.length)} label="Audits kept" hint="Free history covers the last 14 days." />
+        <Stat value={String(audits.length)} label="Audits kept" hint="Every audit you have run, kept indefinitely." />
         <Stat
           value={`${Math.round(avgCoverage * 100)}%`}
           label="Average coverage"
@@ -54,7 +91,12 @@ export default async function History() {
           tone={avgCoverage >= 0.7 ? 'good' : avgCoverage >= 0.4 ? 'warn' : 'bad'}
         />
         <Stat value={String(rules.length)} label="Rules tracked" hint="Content-addressed, so they survive rewording." />
-        <Stat value={formatUsd(spend)} label="Inference spent" hint="What these audits actually cost to run." />
+        <Stat
+          value={String(rules.filter((r) => r.violated > 0).length)}
+          label="Rules with a failure"
+          hint="Rules that have been broken at least once. Start here."
+          tone={rules.some((r) => r.violated > 0) ? 'warn' : 'good'}
+        />
       </div>
 
       {rules.length > 0 && (
@@ -115,7 +157,7 @@ export default async function History() {
                   </span>
                   {(s.violated ?? 0) > 0 && <span className="font-mono text-[11px] text-fail">{s.violated} broken</span>}
                   <span className="ml-auto font-mono text-[10px] text-neutral-400">
-                    {a.mode} · {formatUsd(Number(a.total_usd ?? 0))} ·{' '}
+                    {a.mode} ·{' '}
                     {new Date(a.created_at as string).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
                   </span>
                 </li>

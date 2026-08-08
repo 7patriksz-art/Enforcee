@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, siteUrl } from '@/lib/stripe';
-import { planById, stripePriceFor } from '@/lib/plans';
+import { planById, stripePriceFor, TRIAL_DAYS } from '@/lib/plans';
 import { getUser } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
@@ -50,7 +50,14 @@ export async function POST(req: Request) {
       cancel_url: `${siteUrl()}/pricing?checkout=cancelled`,
       customer_email: user?.email ?? undefined,
       client_reference_id: user?.id ?? undefined,
-      subscription_data: { metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' } },
+      subscription_data: {
+        // The trial is the product, not a demo of it — see entitlements.ts, where a
+        // trialing subscription grants exactly what an active one grants.
+        trial_period_days: TRIAL_DAYS,
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' },
+      },
+      payment_method_collection: 'if_required',
       metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' },
     });
     return NextResponse.json({ url: session.url });

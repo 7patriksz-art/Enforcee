@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { parseRuleset } from '@/lib/rules/parse';
 import { compilePolicy, proposeDenyRules, type DenyRule } from '@/lib/enforce/policy';
 import { installScript } from '@/lib/enforce/bundle';
+import { getAccess } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
 
@@ -28,10 +29,32 @@ export async function POST(req: Request) {
   const { rules } = parseRuleset(ruleset);
   const proposals = proposeDenyRules(rules);
 
+  // Seeing what would be blocked is free — it is the diagnosis, and it is what convinces
+  // anyone that this is worth having. Compiling the thing that actually blocks is not.
+  const access = await getAccess();
+
   if (!chosen) {
     return NextResponse.json(
-      { proposals, ruleCount: rules.length },
+      {
+        proposals,
+        ruleCount: rules.length,
+        canInstall: access.entitlements.guard,
+        plan: access.plan,
+        signedIn: access.signedIn,
+      },
       { headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  if (!access.entitlements.guard) {
+    return NextResponse.json(
+      {
+        error: 'The guard is part of Builder.',
+        detail:
+          'Everything above is real and yours to read — those are the commands that would have been stopped. Installing the thing that stops them starts a 30-day trial, no card.',
+        upgrade: '/pricing',
+      },
+      { status: 402, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 

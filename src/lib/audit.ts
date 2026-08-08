@@ -14,11 +14,26 @@ export interface AuditInput {
   /** Skip Layer B entirely — free, instant, deterministic-only audit. */
   deterministicOnly?: boolean;
   judge?: JudgeOptions;
+  /**
+   * Who paid for the inference.
+   *
+   * `caller` — the key belongs to whoever ran the audit, so the price on the receipt is
+   * their price and they are entitled to see it. This is the CLI and bring-your-own-key.
+   *
+   * `host` — we paid, under a flat subscription. The audit cost the reader nothing, so
+   * the receipt says nothing, and our unit economics stay ours. The real figure is still
+   * returned to the caller of runAudit for the ledger; it just never gets sealed into a
+   * receipt that leaves the building.
+   */
+  billing?: 'caller' | 'host';
 }
 
 export interface AuditOutcome {
   receipt: Receipt;
+  /** True spend, for our ledger. Not necessarily what the receipt shows. */
   totalUsd: number;
+  /** True cost entries, for our ledger. Not necessarily what the receipt shows. */
+  cost: CostEntry[];
 }
 
 function summarize(rules: Rule[], results: RuleResult[]): Receipt['summary'] {
@@ -101,6 +116,11 @@ export async function runAudit(input: AuditInput): Promise<AuditOutcome> {
   const order = new Map(rules.map((r, i) => [r.id, i]));
   results.sort((a, b) => (order.get(a.ruleId) ?? 0) - (order.get(b.ruleId) ?? 0));
 
+  // Token counts stay — they are how anyone reproduces the run. Price does not, because on
+  // a hosted audit the price is ours, not the reader's.
+  const receiptCost: CostEntry[] =
+    input.billing === 'host' ? cost.map((c) => ({ ...c, usd: 0 })) : cost;
+
   const receipt = sealReceipt({
     version: '1',
     rulesetHash: hashText(input.ruleset),
@@ -115,9 +135,9 @@ export async function runAudit(input: AuditInput): Promise<AuditOutcome> {
     results,
     health,
     summary: summarize(rules, results),
-    cost,
+    cost: receiptCost,
     previousDigest: input.previousDigest ?? null,
   });
 
-  return { receipt, totalUsd: totalUsd(cost) };
+  return { receipt, totalUsd: totalUsd(cost), cost };
 }

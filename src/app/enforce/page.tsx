@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import clsx from 'clsx';
+import Link from 'next/link';
 import { SAMPLES } from '@/lib/samples';
 
 interface Proposal {
@@ -23,6 +24,8 @@ export default function EnforcePage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canInstall, setCanInstall] = useState(true);
+  const [signedIn, setSignedIn] = useState(false);
 
   async function analyse() {
     setBusy(true);
@@ -37,6 +40,8 @@ export default function EnforcePage() {
       if (!res.ok) throw new Error(json.error ?? 'Failed.');
       setProposals(json.proposals as Proposal[]);
       setRuleCount(json.ruleCount as number);
+      setCanInstall(Boolean(json.canInstall));
+      setSignedIn(Boolean(json.signedIn));
       setPicked(new Set((json.proposals as Proposal[]).filter((p) => p.defaultOn).map((p) => p.id)));
     } catch (e) {
       setError((e as Error).message);
@@ -51,6 +56,14 @@ export default function EnforcePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ruleset, chosen: [...picked], merge: true }),
     });
+    if (res.status === 402) {
+      setCanInstall(false);
+      return;
+    }
+    if (!res.ok) {
+      setError('Could not compile the guard. Try again.');
+      return;
+    }
     const text = await res.text();
     const blob = new Blob([text], { type: 'text/x-shellscript' });
     const url = URL.createObjectURL(blob);
@@ -164,28 +177,62 @@ export default function EnforcePage() {
             </ul>
           </section>
 
-          <section className="rounded-lg border hairline bg-white px-4 py-4">
-            <h2 className="text-[14px] font-semibold tracking-tight">Install it</h2>
-            <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] leading-relaxed text-neutral-600">
-              <li>Download the script and open it. It is plain text and every line is readable.</li>
-              <li>
-                Run it from your project root: <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px]">bash enforcee-install.sh</code>
-              </li>
-              <li>Restart Claude Code.</li>
-            </ol>
-            <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-skip">
-              It writes three files: the compiled policy, a dependency-free runner, and the hook wiring. If you already
-              have a <code className="font-mono">.claude/settings.json</code> it merges rather than overwrites. There is
-              no curl-piped-to-shell one-liner on purpose — the guard blocks that pattern by default, and shipping an
-              installer that does the thing we tell you never to do would be a poor start.
-            </p>
-            <button
-              onClick={download}
-              className="mt-4 rounded-md bg-ink px-4 py-2 text-[13px] font-medium text-white hover:bg-ink-soft transition-colors"
-            >
-              Download enforcee-install.sh
-            </button>
-          </section>
+          {canInstall ? (
+            <section className="rounded-lg border hairline bg-white px-4 py-4">
+              <h2 className="text-[14px] font-semibold tracking-tight">Install it</h2>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] leading-relaxed text-neutral-600">
+                <li>Download the script and open it. It is plain text and every line is readable.</li>
+                <li>
+                  Run it from your project root: <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px]">bash enforcee-install.sh</code>
+                </li>
+                <li>Restart Claude Code.</li>
+              </ol>
+              <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-skip">
+                It writes three files: the compiled policy, a dependency-free runner, and the hook wiring. If you already
+                have a <code className="font-mono">.claude/settings.json</code> it merges rather than overwrites. There is
+                no curl-piped-to-shell one-liner on purpose — the guard blocks that pattern by default, and shipping an
+                installer that does the thing we tell you never to do would be a poor start.
+              </p>
+              <button
+                onClick={download}
+                className="mt-4 rounded-md bg-ink px-4 py-2 text-[13px] font-medium text-white hover:bg-ink-soft transition-colors"
+              >
+                Download enforcee-install.sh
+              </button>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-honey-line bg-honey-pale/50 px-5 py-5">
+              <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-honey">the wall</div>
+              <h2 className="mt-2 font-display text-[20px] tracking-tight">
+                Everything above is real. Turning it on is Builder.
+              </h2>
+              <p className="readable mt-2 max-w-2xl">
+                Those {denyOn} blocking rules were compiled from your own ruleset — that is exactly what would have been
+                stopped, and reading it costs nothing and always will.{' '}
+                <span className="hi font-semibold text-ink">
+                  Downloading the thing that actually stops them is where we start charging.
+                </span>{' '}
+                Thirty days free, no card, and the audit stays unlimited whatever you decide.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/pricing"
+                  className="rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
+                >
+                  Start 30 days free
+                </Link>
+                {!signedIn && (
+                  <Link href="/signin" className="text-[13px] text-brand hover:underline">
+                    Already subscribed? Sign in
+                  </Link>
+                )}
+              </div>
+              <p className="mt-4 max-w-2xl text-[12px] leading-relaxed text-ink-mid">
+                If you would rather not pay at all: the command-line tool audits without an account, without a key and
+                without a network call. It will not block anything, but it will tell you the truth.
+              </p>
+            </section>
+          )}
 
           <section className="rounded-lg border hairline bg-neutral-50/70 px-4 py-3">
             <p className="max-w-4xl font-mono text-[10px] leading-relaxed text-neutral-400">

@@ -13,6 +13,8 @@ import { proposeDenyRules, compilePolicy } from '../src/lib/enforce/policy';
 import { extractPreferences, toRulesetMarkdown } from '../src/lib/preferences';
 import { parseTranscript } from '../src/lib/transcript/parse';
 import { analyseCapabilities } from '../src/lib/transcript/findings';
+import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
+import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
 const VERSION = '0.1.0';
@@ -40,13 +42,17 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
   ${C.bold('enforcee learn')} <conversation-file>           propose rules from what you already said
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
-  ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project
+  ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
+  ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
   ${C.dim('--json')}         emit the receipt as JSON instead of a table
   ${C.dim('--quiet')}        exit code only
 
 Exits non-zero when a rule is VIOLATED, so it works as a CI gate.
+
+${C.dim('audit, health, learn and session need no account, no key and no network.')}
+${C.dim('guard needs a licence, checked offline against a key compiled into this binary.')}
 `);
 }
 
@@ -152,9 +158,44 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'licence' || cmd === 'license') {
+    const check = checkLocalLicence();
+    console.log('');
+    if (check.ok) {
+      console.log(`  ${C.green('✓')} ${licenceMessage(check)}`);
+      console.log(C.grey(`  expires ${new Date(check.payload.exp * 1000).toISOString().slice(0, 10)} · from ${check.from}`));
+    } else {
+      console.log(`  ${C.yellow('•')} ${licenceMessage(check)}`);
+      console.log(C.grey(`  Looked in ENFORCEE_LICENCE, ${LICENCE_PATHS.project}, ${LICENCE_PATHS.home}`));
+    }
+    console.log('');
+    console.log(C.grey('  audit, health, learn and session work regardless — they always will.'));
+    console.log('');
+    return;
+  }
+
   if (cmd === 'guard') {
     const rulesPath = args[1];
     if (!rulesPath) return help();
+
+    // Checked offline. No network call, no account, no activation server — just a
+    // signature against a key compiled into this file.
+    const lic = checkLocalLicence();
+    if (!lic.ok) {
+      console.log('');
+      console.log(`  ${C.yellow('The guard is the part we charge for.')}`);
+      console.log(`  ${C.grey(licenceMessage(lic))}`);
+      console.log('');
+      console.log(C.grey('  What you can still do right now, free and unlimited:'));
+      console.log(C.grey(`    enforcee audit ${rulesPath} <output-file>   which rules were actually followed`));
+      console.log(C.grey(`    enforcee health ${rulesPath}                what is wrong with the ruleset itself`));
+      console.log('');
+      console.log(C.grey('  Already subscribed? Paste your licence:'));
+      console.log(C.grey(`    mkdir -p ~/.enforcee && echo "<licence>" > ${LICENCE_PATHS.home}`));
+      console.log('');
+      process.exit(3);
+    }
+
     const ruleset = read(rulesPath);
     const { rules } = parseRuleset(ruleset, rulesPath);
     const proposals = proposeDenyRules(rules);
@@ -172,6 +213,7 @@ async function main(): Promise<void> {
     writeFileSync(join('.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));
     console.log('');
     console.log(`  Wrote ${C.bold('.enforcee/policy.json')} — ${policy.deny.length} blocking, ${policy.warn.length} warning.`);
+    console.log(C.grey(`  ${licenceMessage(lic)}`));
     console.log(C.grey('  Add the hook wiring with the installer from enforcee.vercel.app/install,'));
     console.log(C.grey('  or point .claude/settings.json at .enforcee/guard.mjs yourself.'));
     console.log('');

@@ -3,7 +3,33 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
-import { PLANS, yearlyAnchor, type Interval } from '@/lib/plans';
+import { PLANS, TRIAL_DAYS, yearlySaving, type Interval } from '@/lib/plans';
+
+const MATRIX: { label: string; free: string | boolean; builder: string | boolean; founder: string | boolean }[] = [
+  { label: 'Audits, on the web and in the CLI', free: 'Unlimited', builder: 'Unlimited', founder: 'Unlimited' },
+  { label: 'CLI without an account, a key or a network call', free: true, builder: true, founder: true },
+  { label: 'Evidence quotes and method badges', free: true, builder: true, founder: true },
+  { label: 'Ruleset health', free: true, builder: true, founder: true },
+  { label: 'Rules found in your conversation', free: 'First 3', builder: 'Unlimited', founder: 'Unlimited' },
+  { label: 'Receipts kept after you close the tab', free: false, builder: 'Forever', founder: 'Forever' },
+  { label: 'Per-rule track record over time', free: false, builder: true, founder: true },
+  { label: 'Drift alerts when a rule starts failing', free: false, builder: true, founder: true },
+  { label: 'The guard — blocks a command before it runs', free: false, builder: true, founder: true },
+  { label: 'Rules restored after context compaction', free: false, builder: true, founder: true },
+  { label: 'Retry-loop escalation', free: false, builder: true, founder: true },
+  { label: 'Judged layer on our key, not yours', free: false, builder: true, founder: true },
+  { label: 'Projects', free: '—', builder: '3', founder: 'Unlimited' },
+  { label: 'CI gate — a violation fails the PR', free: false, builder: false, founder: true },
+  { label: 'Bypasses recorded with a reason', free: false, builder: false, founder: true },
+  { label: 'Signed receipts for a client', free: false, builder: false, founder: true },
+  { label: 'REST API', free: false, builder: false, founder: true },
+];
+
+function Cell({ v }: { v: string | boolean }) {
+  if (v === true) return <span className="font-mono text-[13px] text-pass">✓</span>;
+  if (v === false) return <span className="font-mono text-[13px] text-paper-line">—</span>;
+  return <span className="text-[12.5px] text-ink-mid">{v}</span>;
+}
 
 export default function Pricing() {
   const [interval, setInterval] = useState<Interval>('yearly');
@@ -31,17 +57,17 @@ export default function Pricing() {
   return (
     <main className="mx-auto max-w-6xl px-5 py-14">
       <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay">pricing</p>
-      <h1 className="mt-4 max-w-[22ch] font-display text-[38px] leading-[1.1] tracking-tight">
-        The free tier is not a trial. It is the product.
+      <h1 className="mt-4 max-w-[24ch] font-display text-[38px] leading-[1.1] tracking-tight">
+        Free shows you the problem. Paid makes it stop.
       </h1>
       <p className="readable mt-5 max-w-prose">
-        Four fifths of a real ruleset is settled by code — instantly, reproducibly, and without a model.
-        That part is yours permanently.{' '}
-        <span className="hi font-semibold text-ink">You pay when your rules stop being only yours.</span>
+        Auditing is free forever and always will be — it is how you find out whether any of this is true.{' '}
+        <span className="hi font-semibold text-ink">
+          But an audit is a diagnosis. The guard is the treatment.
+        </span>{' '}
+        Thirty days of the real thing, no card, cancel from a link in the first email.
       </p>
 
-      {/* Interval switch. Yearly is the default because it is the better deal and hiding
-          that behind a click only costs the buyer money. */}
       <div className="mt-9 inline-flex items-center gap-1 rounded-xl border hairline bg-white p-1">
         {(['monthly', 'yearly'] as Interval[]).map((iv) => (
           <button
@@ -64,8 +90,9 @@ export default function Pricing() {
 
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         {PLANS.map((p) => {
-          const anchor = yearlyAnchor(p);
-          const showYearly = interval === 'yearly' && anchor;
+          const saving = yearlySaving(p);
+          const price = p.price[interval];
+          const was = p.wasPrice?.[interval];
           return (
             <div
               key={p.id}
@@ -82,61 +109,53 @@ export default function Pricing() {
               <div className="font-display text-[22px] tracking-tight">{p.name}</div>
               <p className="mt-1 text-[12.5px] leading-snug text-clay">{p.who}</p>
 
-              <div className="mt-4 min-h-[74px]">
-                {p.price.monthly === 0 ? (
-                  <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-[38px] leading-none tracking-tight">$0</span>
-                      <span className="text-[13px] text-ink-mid">forever, no account</span>
-                    </div>
-                  </>
-                ) : showYearly ? (
-                  <>
-                    <div className="flex items-baseline gap-2.5">
-                      <span className="font-mono text-[16px] leading-none text-ink-light line-through decoration-clay/60 decoration-2">
-                        ${anchor!.was}
-                      </span>
-                      <span className="font-mono text-[38px] leading-none tracking-tight">${p.price.yearly}</span>
-                      <span className="text-[13px] text-ink-mid">/ year</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-pass-pale px-2 py-0.5 font-mono text-[11px] text-pass">
-                        save ${anchor!.saved}
-                      </span>
+              <div className="mt-4 min-h-[70px]">
+                <div className="flex items-baseline gap-2.5">
+                  {was && (
+                    <span className="font-mono text-[17px] leading-none text-ink-light line-through decoration-clay/60 decoration-2">
+                      ${was}
+                    </span>
+                  )}
+                  <span className="font-mono text-[38px] leading-none tracking-tight">${price}</span>
+                  <span className="text-[13px] text-ink-mid">
+                    {price === 0 ? 'forever' : interval === 'yearly' ? '/ year' : '/ month'}
+                  </span>
+                </div>
+                {saving && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-clay-pale px-2 py-0.5 font-mono text-[11px] text-clay">
+                      launch price
+                    </span>
+                    {interval === 'yearly' && (
                       <span className="font-mono text-[11.5px] text-ink-light">
-                        ${anchor!.effectiveMonthly.toFixed(2)}/mo effective
+                        ${saving.effectiveMonthly.toFixed(2)}/mo effective · saves ${saving.saved} against monthly
                       </span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-[38px] leading-none tracking-tight">${p.price.monthly}</span>
-                      <span className="text-[13px] text-ink-mid">/ month</span>
-                    </div>
-                    <div className="mt-2 font-mono text-[11.5px] text-ink-light">
-                      ${p.price.yearly} a year saves you ${anchor!.saved}
-                    </div>
-                  </>
+                    )}
+                  </div>
                 )}
               </div>
 
               <p className="mt-3 text-[13.5px] leading-relaxed text-ink-mid">{p.pitch}</p>
 
               <ul className="mt-5 space-y-2 border-t hairline pt-5 text-[13.5px] leading-relaxed">
-                {p.features.map((f) => (
+                {p.unlocks.map((f) => (
                   <li key={f} className="flex gap-2.5">
                     <span className="mt-[3px] font-mono text-[11px] text-pass">✓</span>
                     <span>{f}</span>
                   </li>
                 ))}
-                {p.limits?.map((l) => (
-                  <li key={l} className="flex gap-2.5 text-ink-light">
-                    <span className="mt-[3px] font-mono text-[11px]">–</span>
-                    <span>{l}</span>
-                  </li>
-                ))}
               </ul>
+
+              {p.walls && (
+                <div className="mt-4 rounded-xl border border-unknown-line bg-unknown-pale/50 px-3.5 py-3">
+                  <div className="font-mono text-[10px] uppercase tracking-wide text-unknown">what free does not do</div>
+                  <ul className="mt-1.5 space-y-1 text-[12.5px] leading-relaxed text-ink-mid">
+                    {p.walls.map((l) => (
+                      <li key={l}>{l}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="mt-auto pt-6">
                 {p.id === 'free' ? (
@@ -147,16 +166,21 @@ export default function Pricing() {
                     {p.cta}
                   </Link>
                 ) : (
-                  <button
-                    onClick={() => checkout(p.id as 'builder' | 'founder')}
-                    disabled={busy !== null}
-                    className={clsx(
-                      'w-full rounded-xl px-4 py-2.5 text-[14px] font-medium transition-colors disabled:opacity-50',
-                      p.featured ? 'bg-ink text-white hover:bg-ink-soft' : 'border border-ink/15 bg-white hover:border-ink/30'
-                    )}
-                  >
-                    {busy === p.id ? 'Opening checkout…' : p.cta}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => checkout(p.id as 'builder' | 'founder')}
+                      disabled={busy !== null}
+                      className={clsx(
+                        'w-full rounded-xl px-4 py-2.5 text-[14px] font-medium transition-colors disabled:opacity-50',
+                        p.featured ? 'bg-ink text-white hover:bg-ink-soft' : 'border border-ink/15 bg-white hover:border-ink/30'
+                      )}
+                    >
+                      {busy === p.id ? 'Opening checkout…' : p.cta}
+                    </button>
+                    <p className="mt-2 text-center font-mono text-[10.5px] text-skip">
+                      no card for the trial · cancel any time
+                    </p>
+                  </>
                 )}
               </div>
             </div>
@@ -168,32 +192,66 @@ export default function Pricing() {
         <p className="mt-5 rounded-xl border border-fail-line bg-fail-pale px-4 py-3 text-[13.5px] text-fail">{error}</p>
       )}
 
-      <section className="mt-14 rounded-2xl border border-honey-line bg-honey-pale/40 px-6 py-6">
+      {/* ── The matrix ─────────────────────────────────────────────────── */}
+      <section className="mt-14">
+        <h2 className="font-display text-[24px] tracking-tight">Exactly what you get</h2>
+        <p className="readable mt-2 mb-6 max-w-prose">
+          No asterisks. If a row says no, it means no — not &ldquo;limited&rdquo;.
+        </p>
+        <div className="overflow-x-auto rounded-2xl border hairline">
+          <table className="w-full min-w-[620px] text-left text-[13.5px]">
+            <thead>
+              <tr className="bg-paper-soft text-[10.5px] uppercase tracking-wide text-skip">
+                <th className="px-4 py-3 font-medium">&nbsp;</th>
+                <th className="px-4 py-3 text-center font-medium">Free</th>
+                <th className="bg-honey-pale/40 px-4 py-3 text-center font-medium text-honey">Builder</th>
+                <th className="px-4 py-3 text-center font-medium">Founder</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y hairline bg-white">
+              {MATRIX.map((r) => (
+                <tr key={r.label}>
+                  <td className="px-4 py-2.5">{r.label}</td>
+                  <td className="px-4 py-2.5 text-center"><Cell v={r.free} /></td>
+                  <td className="bg-honey-pale/20 px-4 py-2.5 text-center"><Cell v={r.builder} /></td>
+                  <td className="px-4 py-2.5 text-center"><Cell v={r.founder} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-12 rounded-2xl border border-honey-line bg-honey-pale/40 px-6 py-6">
         <h2 className="font-display text-[22px] tracking-tight">What we will never charge for</h2>
         <ul className="readable mt-3 max-w-prose list-disc space-y-1.5 pl-5">
-          <li><strong>Audits, rules, spans or scores.</strong> A meter would punish the person checking the most rules, who is exactly the person getting the most out of this.</li>
-          <li><strong>The hook generator.</strong> Claude Code hooks are native and free. Charging for a file you could write yourself is not a business.</li>
-          <li><strong>Running it locally.</strong> The CLI makes zero network calls by default and always will. There is no phone-home to switch off, because there is nothing to switch off.</li>
+          <li><strong>Auditing.</strong> Unlimited, on Free, forever. It is how you check whether anything we claim is true, and putting that behind a wall would make every number on this site unverifiable.</li>
+          <li><strong>Per-audit metering.</strong> No credits, no counter, no charge that grows with how carefully you check.</li>
+          <li><strong>Your own data.</strong> Rulesets are markdown you own, the policy is JSON in your repo, the ledger is on your disk. Cancelling takes the history, not the work.</li>
         </ul>
       </section>
 
       <section className="mt-8 grid gap-5 sm:grid-cols-2">
         {[
           {
-            q: 'Why is the free tier so complete?',
-            a: 'Because giving away the part that runs without a model is the proof of the claim. If we hid it behind a wall you would have no reason to believe anything we say about the rest.',
+            q: `What happens after ${TRIAL_DAYS} days?`,
+            a: 'It stops. No card is taken up front, so nothing charges automatically — you either add one or you drop back to Free with your audits still working. We would rather lose the sale than take a payment somebody forgot about.',
           },
           {
-            q: 'What exactly triggers the paywall?',
-            a: 'Continuity and reach. Free answers "did my rules get followed, right now, on my machine." You pay when you want that answered while you sleep, kept forever, or applied to work that other people commit to.',
+            q: 'Why is auditing free but blocking is not?',
+            a: 'An audit is a diagnosis you run when you already suspect something. The guard runs on every tool call, in every session, whether or not you are watching. One of those is a tool. The other is a system that has to be there when you are not.',
           },
           {
-            q: 'Can I cancel and keep what I built?',
-            a: 'Yes. Your rulesets are markdown files you own, the policy is JSON in your repo, and the ledger is on your disk. Cancelling takes away the history and the hosted judge, not your work.',
+            q: 'Can I keep using it for free forever?',
+            a: 'Yes, honestly. If manual auditing is all you need, take it and go with our blessing. Most people who audit twice come back wanting the thing that stops it happening again.',
           },
           {
             q: 'Do I need an API key?',
-            a: 'Only on Free, and only for the judged fifth. Builder and Founder run it on our side so there is no key to manage, rotate or leak.',
+            a: 'On Free, yes, and only for the judged fifth — four fifths runs on your machine with no key at all. On Builder and Founder there is no key to manage, rotate or leak.',
+          },
+          {
+            q: 'How is the paid CLI licensed if it never phones home?',
+            a: 'Your licence is one signed line of text your own machine verifies offline. It works on a plane, it works in an air-gapped CI runner, and we never learn that you ran it. The auditing commands need no licence at all and never will.',
           },
         ].map((f) => (
           <div key={f.q} className="rounded-2xl border hairline bg-white px-5 py-4">
@@ -202,6 +260,12 @@ export default function Pricing() {
           </div>
         ))}
       </section>
+
+      <p className="mt-10 max-w-prose text-[12.5px] leading-relaxed text-skip">
+        Prices in USD, excluding any tax that applies where you are. By subscribing you agree to the{' '}
+        <Link href="/terms" className="text-brand hover:underline">terms</Link> and the{' '}
+        <Link href="/privacy" className="text-brand hover:underline">privacy policy</Link>.
+      </p>
     </main>
   );
 }

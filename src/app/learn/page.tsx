@@ -34,6 +34,7 @@ export default function LearnPage() {
   const [markdown, setMarkdown] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [withheld, setWithheld] = useState(0);
 
   async function scan() {
     setBusy(true);
@@ -48,6 +49,7 @@ export default function LearnPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed.');
       setCandidates(json.candidates as Candidate[]);
+      setWithheld(Number(json.withheld ?? 0));
       setPicked(new Set());
     } catch (e) {
       setError((e as Error).message);
@@ -120,6 +122,21 @@ export default function LearnPage() {
       </div>
 
       {error && <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">{error}</p>}
+
+      {withheld > 0 && (
+        <div className="mt-4 rounded-xl border border-honey-line bg-honey-pale/50 px-4 py-3">
+          <p className="text-[13.5px] leading-relaxed text-ink">
+            <span className="hi font-semibold">
+              {withheld} more rule{withheld === 1 ? '' : 's'} found in this conversation.
+            </span>{' '}
+            Free shows the first {candidates?.length ?? 3}. We are not going to pretend they do not exist — they are
+            yours, you said them, and Builder hands you all of them.{' '}
+            <a href="/pricing" className="font-medium text-brand hover:underline">
+              Thirty days free →
+            </a>
+          </p>
+        </div>
+      )}
 
       {candidates && (
         <div className="mt-7 space-y-5">

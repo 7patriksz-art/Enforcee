@@ -1,0 +1,97 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+
+export default function Licence({ entitled }: { entitled: boolean }) {
+  const [licence, setLicence] = useState<string | null>(null);
+  const [expires, setExpires] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function issue() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/licence', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail ?? json.error ?? 'Could not issue a licence.');
+      setLicence(json.licence as string);
+      setExpires(json.expiresAt as string);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!entitled) {
+    return (
+      <section className="rounded-2xl border border-honey-line bg-honey-pale/50 px-5 py-5">
+        <h2 className="font-display text-[20px] tracking-tight">No licence on this account yet</h2>
+        <p className="readable mt-2 max-w-2xl">
+          Auditing needs no licence and never will. The guard does.{' '}
+          <span className="hi font-semibold text-ink">Thirty days free, no card.</span>
+        </p>
+        <Link
+          href="/pricing"
+          className="mt-4 inline-block rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
+        >
+          Start the trial
+        </Link>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border hairline bg-white px-5 py-5">
+      <h2 className="font-display text-[20px] tracking-tight">Your licence</h2>
+      <p className="readable mt-2 max-w-2xl">
+        One line of signed text. It is checked on your own machine, offline, every time the guard compiles — we never
+        find out that you ran it.
+      </p>
+
+      {!licence ? (
+        <button
+          onClick={issue}
+          disabled={busy}
+          className="mt-4 rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft disabled:opacity-50"
+        >
+          {busy ? 'Signing…' : 'Issue a licence'}
+        </button>
+      ) : (
+        <div className="mt-4">
+          <div className="overflow-x-auto rounded-xl bg-ink px-4 py-3">
+            <code className="font-mono text-[11.5px] leading-relaxed text-paper break-all">{licence}</code>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(licence);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1600);
+              }}
+              className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-[13px] font-medium transition-colors hover:border-ink/30"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            {expires && (
+              <span className="font-mono text-[11px] text-skip">
+                valid until {new Date(expires).toISOString().slice(0, 10)} · re-issue any time
+              </span>
+            )}
+          </div>
+          <p className="mt-4 text-[13px] leading-relaxed text-ink-mid">Then, once per machine:</p>
+          <pre className="mt-2 overflow-x-auto rounded-lg bg-paper-soft px-4 py-2.5 font-mono text-[12.5px] leading-relaxed">
+            {'mkdir -p ~/.enforcee\npbpaste > ~/.enforcee/licence   # or paste it with any editor\nnpx enforcee licence           # confirms it verified'}
+          </pre>
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-4 rounded-xl border border-fail-line bg-fail-pale px-4 py-3 text-[13px] text-fail">{error}</p>
+      )}
+    </section>
+  );
+}
