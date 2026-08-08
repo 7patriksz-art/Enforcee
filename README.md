@@ -8,6 +8,29 @@ for the turn it stops appearing.
 
 Enforcee gives you an answer with evidence, and then stops the things it can stop.
 
+## Try it in twenty seconds
+
+No install, no account, no API key, no network call.
+
+```bash
+npx enforcee audit CLAUDE.md some-output.md
+```
+
+```
+  VIOLATED       proof  Never use emojis.
+                        "🎉"
+  VIOLATED       proof  Always cite sources with a markdown link.
+  FOLLOWED       proof  Keep responses under 200 words.
+
+  67% coverage  ·  2 violated  ·  1 unverifiable  ·  67% proven by code
+```
+
+`coverage` is the headline number: the share of applicable rules that left **any observable
+trace**. A rule that left none is reported as such rather than quietly counted as passing.
+
+Other commands: `enforcee health CLAUDE.md` finds duplicates, contradictions and dead rules in
+the ruleset itself; `enforcee guard CLAUDE.md` compiles the blocking hook.
+
 ---
 
 ## Three layers
@@ -104,7 +127,7 @@ because the price of this product is set from measured unit cost.
 npm install
 cp .env.example .env.local     # fill in what you have; everything degrades gracefully without it
 npm run dev
-npm test                       # 97 tests, including the guard run as a real subprocess
+npm test                       # 155 tests, including the guard run as a real subprocess
 ```
 
 The audit, the transcript reader and the guard compiler all work with no database and no API key.
