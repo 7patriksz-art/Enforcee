@@ -4,7 +4,7 @@
 
 You write a `CLAUDE.md`, a system prompt, custom instructions, project rules. You have no way to
 know whether any of it landed. The current state of the art is planting a canary emoji and watching
-for the turn it stops appearing.
+for the turn it stops appearing. Per-rule verdicts with a verified evidence quote, plus a hook that blocks forbidden commands before they run.
 
 Enforcee gives you an answer with evidence, and then stops the things it can stop.
 
