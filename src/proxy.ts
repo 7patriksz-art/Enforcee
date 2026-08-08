@@ -2,10 +2,16 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
+ * Renamed from middleware.ts by the Next.js 16 codemod. Note what this does and does
+ * not do: it refreshes the Supabase session cookie so server components see a live user.
+ * It performs no authorisation. Every gate is enforced in the route via getAccess(), which
+ * calls auth.getUser(). That separation is deliberate — proxy-layer auth checks are exactly
+ * what CVE-2025-29927 bypassed, and nothing here is load-bearing for access control.
+ *
  * Refreshes the auth session on every request so server components see a live user.
  * Does nothing at all when Supabase is not configured.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return NextResponse.next({ request });

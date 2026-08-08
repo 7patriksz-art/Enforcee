@@ -1,11 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import './globals.css';
+import { SITE_URL } from '@/lib/site-url';
+
+const TITLE = 'Enforcee — stop fighting your own AI';
+const DESCRIPTION =
+  'Enforcee tells you which of your rules the model actually followed, rule by rule, with the exact quote — and blocks the ones it can stop before they run.';
 
 export const metadata: Metadata = {
-  title: 'Enforcee — stop fighting your own AI',
-  description:
-    'Enforcee tells you which of your rules the model actually followed, rule by rule, with the exact quote — and blocks the ones it can stop before they run.',
+  // Without metadataBase, Next resolves the OG card against http://localhost:3000 and every
+  // social preview ships a broken image. We get one Show HN; it should not look like that.
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: { title: TITLE, description: DESCRIPTION, url: SITE_URL, siteName: 'Enforcee', type: 'website' },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 };
 
 const NAV = [

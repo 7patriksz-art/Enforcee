@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://enforcee.vercel.app';
+import { SITE_URL as BASE } from '@/lib/site-url';
 
 /** Public surfaces only. /admin and /history are gated and have no business being indexed. */
 const ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }[] = [
