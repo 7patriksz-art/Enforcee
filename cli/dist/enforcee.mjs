@@ -8827,13 +8827,19 @@ function totalUsd(entries) {
 // src/lib/checks/judge.ts
 var JUDGE_VERSION = "judge@1.1.0";
 var JUDGE_MODEL = process.env.ENFORCEE_JUDGE_MODEL ?? "claude-haiku-4-5";
-var JUDGE_SAMPLES = Number(process.env.ENFORCEE_JUDGE_SAMPLES ?? 3);
+var RAW_SAMPLES = Number(process.env.ENFORCEE_JUDGE_SAMPLES ?? 3);
+var JUDGE_SAMPLES = Number.isFinite(RAW_SAMPLES) && RAW_SAMPLES >= 1 ? Math.floor(RAW_SAMPLES) : 3;
+var MIN_QUOTE = 10;
+var LAYOUT_WS = /[ \t\r\n]/;
+var LAYOUT_WS_RUN = /[ \t\r\n]+/g;
 var VerdictSchema = external_exports.enum(["FOLLOWED", "VIOLATED", "NOT_APPLICABLE", "UNVERIFIABLE"]);
 var JudgedRule = external_exports.object({
   rule_id: external_exports.string(),
   verdict: VerdictSchema,
   /**
-   * Must be copied character-for-character from the output. We verify it.
+   * Must be copied from the output, at least MIN_QUOTE characters. We locate it ourselves
+   * and reject the verdict if we cannot — see locateQuote, which tolerates only ordinary
+   * layout whitespace and nothing more exotic.
    * Empty string means the judge found no supporting text.
    */
   evidence_quote: external_exports.string(),
@@ -8861,14 +8867,14 @@ You are being audited yourself. Three hard constraints:
 Never reward an output for merely being good. Judge only the specific rule text you are given.
 Return strict JSON matching the requested schema. No prose outside the JSON.`;
 function neutralise(text) {
-  return text.replace(/<<<ENFORCEE_OUTPUT_(START|END)>>>/g, "<<<redacted-delimiter>>>");
+  return text.replace(/<{2,}\s*\/?\s*ENFORCEE[_\s-]*OUTPUT[_\s-]*(?:START|END)\s*>{2,}/gi, "<<<redacted-delimiter>>>");
 }
 function buildPrompt(rules, output) {
   const ruleLines = rules.map((r) => {
     const scope = r.trigger ? `
-  trigger: ${r.trigger}` : "";
+  trigger: ${JSON.stringify(neutralise(r.trigger))}` : "";
     const section = r.source.section.length ? `
-  section: ${r.source.section.join(" \u203A ")}` : "";
+  section: ${JSON.stringify(neutralise(r.source.section.join(" \u203A ")))}` : "";
     return `- rule_id: ${r.id}
   text: ${JSON.stringify(neutralise(r.text))}${scope}${section}`;
   }).join("\n");
@@ -8885,7 +8891,7 @@ Return exactly one entry per rule_id above, in the same order.`;
 }
 function locateQuote(output, quote) {
   const q = quote.trim();
-  if (q.length < 3) return null;
+  if (q.length < MIN_QUOTE) return null;
   const direct = output.indexOf(q);
   if (direct !== -1) return { start: direct, end: direct + q.length, quote: output.slice(direct, direct + q.length) };
   const map = [];
@@ -8893,7 +8899,7 @@ function locateQuote(output, quote) {
   let lastWasSpace = false;
   for (let i = 0; i < output.length; i++) {
     const ch = output[i];
-    if (/\s/.test(ch)) {
+    if (LAYOUT_WS.test(ch)) {
       if (lastWasSpace) continue;
       lastWasSpace = true;
       map.push(i);
@@ -8904,7 +8910,7 @@ function locateQuote(output, quote) {
       flat += ch;
     }
   }
-  const flatQ = q.replace(/\s+/g, " ");
+  const flatQ = q.replace(LAYOUT_WS_RUN, " ");
   const idx = flat.indexOf(flatQ);
   if (idx === -1) return null;
   const start = map[idx];
@@ -8912,7 +8918,7 @@ function locateQuote(output, quote) {
   const end = (map[endIdx] ?? map[map.length - 1]) + 1;
   return { start, end, quote: output.slice(start, end) };
 }
-function majority(verdicts) {
+function majority(verdicts, requested = verdicts.length) {
   const counts = /* @__PURE__ */ new Map();
   for (const v of verdicts) counts.set(v, (counts.get(v) ?? 0) + 1);
   let best = "UNVERIFIABLE";
@@ -8923,7 +8929,8 @@ function majority(verdicts) {
       bestN = n;
     }
   }
-  return { verdict: best, agreement: verdicts.length ? bestN / verdicts.length : 0 };
+  const denom = Math.max(requested, verdicts.length);
+  return { verdict: best, agreement: denom ? bestN / denom : 0 };
 }
 async function runJudge(rules, output, opts = {}) {
   if (rules.length === 0) return { results: [], cost: [] };
@@ -8994,7 +9001,7 @@ async function runJudge(rules, output, opts = {}) {
         agreement: 0
       };
     }
-    const { verdict, agreement } = majority(votes.map((v) => v.verdict));
+    const { verdict, agreement } = majority(votes.map((v) => v.verdict), samples);
     const winning = votes.filter((v) => v.verdict === verdict);
     let evidence = [];
     let downgraded = false;
@@ -9008,6 +9015,17 @@ async function runJudge(rules, output, opts = {}) {
       }
     }
     evidence = evidence.slice(0, 3);
+    if (verdict === "NOT_APPLICABLE" && !rule.trigger) {
+      return {
+        ruleId: rule.id,
+        verdict: "UNVERIFIABLE",
+        method: "judged",
+        evidence: [],
+        rationale: "The judge called this rule inapplicable, but the rule states no condition it could be inapplicable to. An unconditional rule is either followed or broken, so this was not accepted.",
+        engaged: false,
+        agreement
+      };
+    }
     const needsEvidence = verdict === "FOLLOWED" || verdict === "VIOLATED";
     if (needsEvidence && evidence.length === 0) {
       return {
@@ -9928,7 +9946,7 @@ import { join } from "node:path";
 
 // src/lib/licence-key.ts
 var LICENCE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAK1WUAQxZe6E+Z4yTe4jqoSc3skssi5OH+kEHa2LZ2vA=
+MCowBQYDK2VwAyEAzUClif/dMJGgcLWGoGv5/v56q7Xk0yGuoRY0r/B7cWU=
 -----END PUBLIC KEY-----
 `;
 
