@@ -119,6 +119,22 @@ Stated up front, because the audience for this product is right to be skeptical.
 
 ---
 
+## What ships, and what that protects
+
+The published bundle is minified. Stated precisely, because the difference matters: function
+names and control flow are mangled, which raises the cost of lifting the algorithm. **String
+literals survive minification**, so the deny patterns remain greppable by anyone who wants
+them. Minification is a speed bump, not a lock, and treating it as a lock would be exactly
+the kind of self-flattery this project exists to argue against.
+
+`guard/guard.mjs` is deliberately **not** minified. It runs on every tool call in your
+session and decides whether to block it; you should be able to read it. It contains matching
+logic and no patterns — those live in the `policy.json` compiled on your machine.
+
+The claim that a free audit makes no network call is not asked to be taken on trust either.
+The release script stubs `http`, `https`, `net`, `tls` and `fetch`, runs a real audit, and
+fails the build if anything dials. That is a stronger check than reading source.
+
 ## Stack
 
 Next.js 16 · TypeScript · Tailwind · Supabase (Postgres, auth, RLS from the first migration) ·

@@ -133,6 +133,14 @@ src.startsWith('#!/usr/bin/env node')
   ? ok('exactly one shebang')
   : bad('duplicate shebang — this broke once before, do not ship it');
 
+// Minified deliberately. Note what this does and does not buy — see the note in the
+// README: function names and control flow are mangled, but *string literals survive*,
+// so the deny patterns remain greppable. This raises the cost of lifting the algorithm.
+// It does not protect the patterns, and we should not tell ourselves otherwise.
+/^#!\/usr\/bin\/env node\n.{2000,}/s.test(src)
+  ? ok('bundle is minified')
+  : bad('bundle is not minified — the engine would ship as readable source');
+
 const kb = Math.round(statSync(bundle).size / 1024);
 kb < 2048 ? ok(`bundle is ${kb} KB`) : bad(`bundle is ${kb} KB — something got pulled in that should not have`);
 
