@@ -30,7 +30,7 @@ export function billingStatus(): BillingStatus {
     enabled: false,
     reason: 'Checkout is deliberately switched off.',
     detail:
-      'Enforcee is still hosted on a plan whose terms do not permit commercial use, so we are not taking payments yet. Everything free keeps working, and the 30-day trial will still be 30 days whenever you start it — you have lost nothing by arriving early.',
+      'We are not taking payments yet. Everything on the free tier keeps working — unlimited auditing, no account, no card — and that is not a trial, so nothing is ticking down while you wait.',
   };
 }
 

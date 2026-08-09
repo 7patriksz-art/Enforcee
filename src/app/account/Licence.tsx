@@ -32,7 +32,7 @@ export default function Licence({ entitled }: { entitled: boolean }) {
         <h2 className="font-display text-[20px] tracking-tight">No licence on this account yet</h2>
         <p className="readable mt-2 max-w-2xl">
           Auditing needs no licence and never will. The guard does.{' '}
-          <span className="hi font-semibold text-ink">Thirty days free, no card.</span>
+          <span className="hi font-semibold text-ink">Auditing stays free and unlimited.</span>
         </p>
         <Link
           href="/pricing"

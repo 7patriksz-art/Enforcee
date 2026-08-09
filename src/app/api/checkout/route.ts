@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, siteUrl } from '@/lib/stripe';
-import { planById, stripePriceFor, TRIAL_DAYS } from '@/lib/plans';
+import { planById, stripePriceFor } from '@/lib/plans';
 import { getUser } from '@/lib/supabase/server';
 import { billingStatus } from '@/lib/billing-gate';
 
@@ -59,13 +59,12 @@ export async function POST(req: Request) {
       customer_email: user?.email ?? undefined,
       client_reference_id: user?.id ?? undefined,
       subscription_data: {
-        // The trial is the product, not a demo of it — see entitlements.ts, where a
-        // trialing subscription grants exactly what an active one grants.
-        trial_period_days: TRIAL_DAYS,
-        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
         metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' },
       },
-      payment_method_collection: 'if_required',
+      // payment_method_collection: 'if_required' was here to let the card-free trial start
+      // without a card. With no trial there is nothing to defer collection for, and leaving
+      // it would mean the one path that takes money is configured by an assumption that is
+      // no longer true. Removed so Stripe collects a payment method, which is the default.
       metadata: { plan: plan.id, interval: parsed.data.interval, user_id: user?.id ?? '' },
     });
     return NextResponse.json({ url: session.url });

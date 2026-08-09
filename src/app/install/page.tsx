@@ -147,7 +147,7 @@ export default function Install() {
             Get my licence
           </Link>
           <Link href="/pricing" className="rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-[14px] font-medium hover:border-ink/30 transition-colors">
-            Start 30 days free
+            Subscribe
           </Link>
         </div>
       </section>

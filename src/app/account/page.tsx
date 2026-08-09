@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getAccess } from '@/lib/entitlements';
-import { planById, TRIAL_DAYS } from '@/lib/plans';
+import { planById } from '@/lib/plans';
 import { supabaseConfigured } from '@/lib/supabase/server';
 import Licence from './Licence';
 import { CONTACT_EMAIL } from '@/lib/contact';
@@ -77,7 +77,7 @@ export default async function Account() {
             <div className="mt-2 font-display text-[24px] tracking-tight">{plan.name}</div>
             {access.trialing && (
               <div className="mt-2 inline-flex rounded-full bg-honey-pale px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-honey">
-                trialing · {TRIAL_DAYS} days
+                trialing
               </div>
             )}
             <p className="mt-3 text-[13px] leading-relaxed text-ink-mid">{plan.who}</p>

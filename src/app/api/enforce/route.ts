@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       {
         error: 'The guard is part of Builder.',
         detail:
-          'Everything above is real and yours to read — those are the commands that would have been stopped. Installing the thing that stops them starts a 30-day trial, no card.',
+          'Everything above is real and yours to read — those are the commands that would have been stopped. Installing the thing that stops them is the paid part; reading this was not, and will not become so.',
         upgrade: '/pricing',
       },
       { status: 402, headers: { 'Cache-Control': 'no-store' } }

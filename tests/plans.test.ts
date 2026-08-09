@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ENTITLEMENTS, PLANS, TRIAL_DAYS, entitlementsFor, planById, yearlySaving } from '../src/lib/plans';
+import { ENTITLEMENTS, PLANS, entitlementsFor, planById, yearlySaving } from '../src/lib/plans';
 
 /**
  * These are not decorative. Every one of them encodes a commercial decision that a
@@ -28,9 +28,15 @@ describe('plans: the wall', () => {
     expect(ENTITLEMENTS.builder.learnLimit).toBe(Infinity);
   });
 
-  it('builder unlocks enforcement, founder unlocks the pipeline', () => {
+  it('builder unlocks enforcement AND the gate; founder unlocks proof and scale', () => {
     expect(ENTITLEMENTS.builder.guard).toBe(true);
-    expect(ENTITLEMENTS.builder.ciGate).toBe(false);
+    // The CI gate lives on Builder deliberately. It was on Founder, which put the one
+    // surface this category actually monetises behind the highest wall. Founder now
+    // differentiates on proof and scale — attestation, the API, unlimited projects —
+    // not by withholding the gate.
+    expect(ENTITLEMENTS.builder.ciGate).toBe(true);
+    expect(ENTITLEMENTS.builder.attestation).toBe(false);
+    expect(ENTITLEMENTS.builder.api).toBe(false);
     expect(ENTITLEMENTS.founder.ciGate).toBe(true);
     expect(ENTITLEMENTS.founder.attestation).toBe(true);
     expect(ENTITLEMENTS.founder.api).toBe(true);
@@ -95,9 +101,22 @@ describe('plans: pricing', () => {
   });
 
   it('the trial is a month, and the CTAs say so', () => {
-    expect(TRIAL_DAYS).toBe(30);
     for (const p of PLANS) {
-      if (p.price.monthly > 0) expect(p.cta).toContain(String(TRIAL_DAYS));
+      if (p.price.monthly > 0) expect(p.cta).not.toMatch(/trial|days free/i);
     }
+  });
+});
+
+describe('no trials', () => {
+  it('no paid plan advertises a trial', () => {
+    for (const p of PLANS.filter((p) => p.price.monthly > 0)) {
+      expect(p.cta).not.toMatch(/trial|days free/i);
+      expect(JSON.stringify(p)).not.toMatch(/30 days free|thirty days free|no card for the trial/i);
+    }
+  });
+
+  it('the free tier says plainly that it is not a trial', () => {
+    const free = PLANS.find((p) => p.id === 'free')!;
+    expect(JSON.stringify(free.walls)).toMatch(/not a trial/i);
   });
 });

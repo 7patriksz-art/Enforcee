@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Callout, Clause, LegalShell } from '@/components/Legal';
-import { TRIAL_DAYS } from '@/lib/plans';
 import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const metadata: Metadata = {
@@ -149,9 +148,10 @@ export default function Terms() {
             terms.
           </li>
           <li>
-            <strong>The {TRIAL_DAYS}-day trial</strong> gives you the full paid plan. We do not require a card to start
-            it. If no payment method is present when the trial ends, the subscription simply ends — nothing is charged,
-            and your account drops back to Free with auditing still working.
+            <strong>There is no trial.</strong> The free tier is not a limited preview — auditing is unlimited on it,
+            with no account and no card, for as long as you want. A paid plan charges from the day you start it. If you
+            cancel, you keep the paid features until the period you have already paid for ends, and then drop back to
+            Free with auditing still working.
           </li>
           <li>
             <strong>Subscriptions renew automatically</strong> at the price shown when you subscribed, monthly or

@@ -63,7 +63,7 @@ export default async function History() {
               href="/pricing"
               className="rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
             >
-              Start 30 days free
+              Subscribe
             </Link>
             <Link href="/audit" className="text-[13px] text-brand hover:underline">
               Or keep auditing free

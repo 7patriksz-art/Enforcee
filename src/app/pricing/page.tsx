@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
-import { PLANS, TRIAL_DAYS, yearlySaving, type Interval } from '@/lib/plans';
+import { PLANS, yearlySaving, type Interval } from '@/lib/plans';
 
 interface Row {
   label: string;
@@ -358,7 +358,7 @@ export default function Pricing() {
         <span className="hi font-semibold text-ink">
           But an audit is a diagnosis. The guard is the treatment.
         </span>{' '}
-        Thirty days of the real thing, no card, cancel from a link in the first email.
+        No trial, because the free tier is not a teaser — auditing is unlimited there, forever. Cancel a paid plan from a link in any receipt.
       </p>
 
       <div className="mt-9 inline-flex items-center gap-1 rounded-xl border hairline bg-white p-1">
@@ -471,7 +471,7 @@ export default function Pricing() {
                       {busy === p.id ? 'Opening checkout…' : p.cta}
                     </button>
                     <p className="mt-2 text-center font-mono text-[10.5px] text-skip">
-                      no card for the trial · cancel any time
+                      cancel any time
                     </p>
                   </>
                 )}
@@ -559,8 +559,8 @@ export default function Pricing() {
       <section className="mt-8 grid gap-5 sm:grid-cols-2">
         {[
           {
-            q: `What happens after ${TRIAL_DAYS} days?`,
-            a: 'It stops. No card is taken up front, so nothing charges automatically — you either add one or you drop back to Free with your audits still working. We would rather lose the sale than take a payment somebody forgot about.',
+            q: 'Is there a free trial?',
+            a: 'No, and that is deliberate. A trial on top of a genuine free tier quietly says the free tier is not really the product. Ours is: auditing is unlimited on Free, forever, no account and no card, and every verdict and evidence quote is the same one a subscriber sees. You are not evaluating a demo — you are using the thing, and paying only when you want it to remember, to block, and to gate a pull request.',
           },
           {
             q: 'Why is auditing free but blocking is not?',

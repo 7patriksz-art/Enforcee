@@ -132,7 +132,7 @@ export default function LearnPage() {
             Free shows the first {candidates?.length ?? 3}. We are not going to pretend they do not exist — they are
             yours, you said them, and Builder hands you all of them.{' '}
             <a href="/pricing" className="font-medium text-brand hover:underline">
-              Thirty days free →
+              Subscribe →
             </a>
           </p>
         </div>

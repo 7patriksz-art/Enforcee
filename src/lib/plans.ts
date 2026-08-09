@@ -67,7 +67,11 @@ export const ENTITLEMENTS: Record<PlanId, Entitlements> = {
     driftAlerts: true,
     learnLimit: Infinity,
     sync: true,
-    ciGate: false,
+    // The CI gate is here, not on Founder. It was the other way round, which was backwards:
+    // this category's money has consolidated at the pull-request boundary — CodeRabbit and
+    // Greptile both monetise there and nobody has monetised at the session boundary — so the
+    // gate was sitting behind our highest wall instead of being the reason to pay at all.
+    ciGate: true,
     attestation: false,
     projects: 3,
     api: false,
@@ -105,8 +109,17 @@ export interface Plan {
   featured?: boolean;
 }
 
-export const TRIAL_DAYS = 30;
-
+/**
+ * There is no trial, deliberately.
+ *
+ * A 30-day card-free trial was on both paid plans. It was removed because the free tier is
+ * not a teaser — auditing is unlimited on it, forever, and that is the honest demonstration.
+ * A trial on top of a genuine free tier says the free tier is not really the product.
+ *
+ * It also removes a real hole rather than merely a marketing wrinkle: a card-free trial that
+ * entitled as `active`, plus a 45-day licence with no revocation list, was roughly 74 days of
+ * the paid guard per throwaway email address, repeatable. That is now unreachable.
+ */
 export const PLANS: Plan[] = [
   {
     id: 'free',
@@ -124,6 +137,7 @@ export const PLANS: Plan[] = [
       'A taste of Learn: the first 3 rules found in your conversation',
     ],
     walls: [
+      'Not a trial. Auditing is unlimited here, forever.',
       'Nothing is saved. Close the tab and the receipt is gone.',
       'No guard — Free tells you what happened, it does not stop anything.',
       'Bring your own key for the judged fifth.',
@@ -135,7 +149,7 @@ export const PLANS: Plan[] = [
     id: 'builder',
     name: 'Builder',
     who: 'You ship with an AI most days and you are tired of finding out late.',
-    pitch: 'The guard runs in every session, and every rule starts keeping a permanent record.',
+    pitch: 'The guard runs in every session, the gate runs on every pull request, and every rule starts keeping a permanent record.',
     price: { monthly: 19, yearly: 190 },
     wasPrice: { monthly: 25, yearly: 250 },
     priceEnv: { monthly: 'STRIPE_BUILDER_MONTHLY', yearly: 'STRIPE_BUILDER_YEARLY' },
@@ -148,30 +162,30 @@ export const PLANS: Plan[] = [
       'Drift alerts when a rule that used to hold starts failing',
       'The judged fifth on our key — no key to manage, rotate or leak',
       'Learn, unlimited',
+      'The CI gate: a violated rule fails the pull request',
       'Sync across your machines · up to 3 projects',
     ],
-    cta: `Start ${TRIAL_DAYS} days free`,
+    cta: 'Subscribe',
     featured: true,
   },
   {
     id: 'founder',
     name: 'Founder',
-    who: 'Your rules govern a codebase other people commit to.',
-    pitch: 'The gate moves off your laptop and into the pipeline, and every bypass is on the record.',
+    who: 'Other people commit to this codebase, and someone will ask you to prove it held.',
+    pitch: 'Receipts you can hand to a client, a record of every bypass, and the API to wire it into whatever you already run.',
     price: { monthly: 29, yearly: 290 },
     wasPrice: { monthly: 35, yearly: 350 },
     priceEnv: { monthly: 'STRIPE_FOUNDER_MONTHLY', yearly: 'STRIPE_FOUNDER_YEARLY' },
     unlocks: [
-      'Everything in Builder',
+      'Everything in Builder, including the CI gate',
       'Rulesets authoritative for a repository, not just a laptop',
-      'The CI gate: a violated rule fails the pull request',
-      'Bypasses recorded with the reason attached',
+      'Bypasses recorded with the reason attached, across a team',
       'Signed, exportable receipts you can hand to a client',
       'Drift reporting across every repo you watch',
       'Unlimited projects · REST API',
       'Your questions answered by the person who wrote it',
     ],
-    cta: `Start ${TRIAL_DAYS} days free`,
+    cta: 'Subscribe',
   },
 ];
 

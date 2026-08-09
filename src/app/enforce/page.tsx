@@ -212,14 +212,14 @@ export default function EnforcePage() {
                 <span className="hi font-semibold text-ink">
                   Downloading the thing that actually stops them is where we start charging.
                 </span>{' '}
-                Thirty days free, no card, and the audit stays unlimited whatever you decide.
+                The audit stays unlimited and free whatever you decide — that part is not a trial and never expires.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <Link
                   href="/pricing"
                   className="rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
                 >
-                  Start 30 days free
+                  Subscribe
                 </Link>
                 {!signedIn && (
                   <Link href="/signin" className="text-[13px] text-brand hover:underline">

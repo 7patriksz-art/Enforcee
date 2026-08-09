@@ -26,7 +26,7 @@ export async function POST() {
     return NextResponse.json(
       {
         error: 'The guard is part of Builder.',
-        detail: 'Thirty days free, no card. Auditing stays unlimited either way.',
+        detail: 'Auditing stays free and unlimited either way — that is not a trial.',
         upgrade: '/pricing',
       },
       { status: 402 }
