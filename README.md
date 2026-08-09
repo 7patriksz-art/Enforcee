@@ -119,6 +119,27 @@ Stated up front, because the audience for this product is right to be skeptical.
 
 ---
 
+## Use it as a CI gate
+
+The audit exits non-zero on a violation, so it gates a pull request with no wrapper:
+
+```yaml
+- uses: 7patriksz-art/Enforcee@v0.1.3
+  with:
+    rules: CLAUDE.md
+    output: generated/summary.md
+```
+
+Or call the CLI directly — `npx enforcee audit CLAUDE.md out.md`. Exit `0` clean, `1` on a
+violation, `2` when it could not run at all. That third code matters: a gate that reports
+"passed" because it failed to start is worse than no gate, so a broken invocation is a hard
+error, never a pass.
+
+The action writes the full receipt to the job summary and exposes `violated` and `coverage`
+as outputs. Set `fail-on-violation: false` to report without blocking. The CLI version is
+pinned by default rather than floating on `@latest`, because a gate that quietly changes
+what it accepts is not a gate.
+
 ## What ships, and why it is readable
 
 The published bundle is **not** minified, on purpose.

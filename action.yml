@@ -1,0 +1,75 @@
+name: 'Enforcee — rule audit'
+description: 'Check whether an AI-generated output followed your ruleset. Per-rule verdicts with a verified evidence quote. Fails the job on a violation.'
+author: 'Enforcee'
+
+branding:
+  icon: 'check-square'
+  color: 'gray-dark'
+
+inputs:
+  rules:
+    description: 'Path to the ruleset — CLAUDE.md, AGENTS.md, .cursorrules, or any markdown list of rules.'
+    required: false
+    default: 'CLAUDE.md'
+  output:
+    description: 'Path to the file being audited against those rules.'
+    required: true
+  fail-on-violation:
+    description: 'Fail the job when a rule is violated. Set to false to report without gating.'
+    required: false
+    default: 'true'
+  version:
+    description: 'Version of the enforcee CLI to run. Pinned by default — a CI gate whose behaviour changes under you is not a gate.'
+    required: false
+    default: '0.1.3'
+
+outputs:
+  violated:
+    description: 'Number of rules the output demonstrably broke.'
+    value: ${{ steps.audit.outputs.violated }}
+  coverage:
+    description: 'Share of applicable rules that left any observable trace, as a percentage.'
+    value: ${{ steps.audit.outputs.coverage }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run the audit
+      id: audit
+      shell: bash
+      run: |
+        set +e
+        # Pinned by default rather than @latest. A gate that silently changes what it
+        # accepts is worse than no gate, and this one can fail a pull request.
+        npx --yes "enforcee@${{ inputs.version }}" audit "${{ inputs.rules }}" "${{ inputs.output }}" | tee /tmp/enforcee-audit.txt
+        STATUS=${PIPESTATUS[0]}
+        set -e
+
+        # Exit 2 means the CLI could not run at all — bad arguments, missing file. That is
+        # a broken workflow, not a failed audit, and it must never be reported as "passed".
+        if [ "$STATUS" -eq 2 ]; then
+          echo "::error::Enforcee could not run. Check the rules and output paths."
+          exit 2
+        fi
+
+        SUMMARY=$(grep -oE '[0-9]+% coverage.*' /tmp/enforcee-audit.txt | tail -1 || true)
+        VIOLATED=$(printf '%s' "$SUMMARY" | grep -oE '[0-9]+ violated' | grep -oE '[0-9]+' || echo 0)
+        COVERAGE=$(printf '%s' "$SUMMARY" | grep -oE '^[0-9]+' || echo 0)
+        echo "violated=${VIOLATED}" >> "$GITHUB_OUTPUT"
+        echo "coverage=${COVERAGE}" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "## Enforcee"
+          echo ""
+          echo "\`${{ inputs.output }}\` audited against \`${{ inputs.rules }}\`"
+          echo ""
+          echo '```'
+          cat /tmp/enforcee-audit.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$STATUS" -eq 1 ] && [ "${{ inputs.fail-on-violation }}" = "true" ]; then
+          echo "::error::${VIOLATED} rule(s) violated."
+          exit 1
+        fi
+        exit 0
