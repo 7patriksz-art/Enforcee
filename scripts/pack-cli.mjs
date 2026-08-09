@@ -61,8 +61,10 @@ honestly unverifiable — with the exact quote each verdict was decided on.
 
 About four fifths of a real ruleset is settled by deterministic code. Those verdicts
 are reproducible: same input, same receipt, on any machine. The rest can be sent to a
-model with \`--judge\`, and a judged verdict whose evidence quote cannot be located
-character-for-character in your own text is thrown away rather than shown to you.
+model with \`--judge\`, and a judged verdict must cite at least ten characters we can then
+locate in your own text. If we cannot find it, the verdict is thrown away rather than
+shown to you. Precisely: that makes it impossible to pass by inventing a sentence. It does
+not prove a cited sentence was the most apt one, so the quote is always shown in place.
 
 ## Commands
 
@@ -74,6 +76,18 @@ character-for-character in your own text is thrown away rather than shown to you
 | \`enforcee session <transcript.jsonl>\` | What the model could actually see: skills offered vs used, MCP servers that never connected. |
 | \`enforcee guard <rules>\` | Compiles your rules into a policy the guard enforces. **Requires a licence.** |
 | \`enforcee licence\` | Shows the licence this machine is using and when it expires. |
+
+## The blocking hook
+
+\`enforcee guard\` compiles \`.enforcee/policy.json\` and drops the runner beside it. Wire it
+up yourself, or install the Claude Code plugin, which ships the hooks pre-wired:
+
+\`\`\`
+/plugin marketplace add 7patriksz-art/Enforcee
+/plugin install enforcee@enforcee
+\`\`\`
+
+Source: https://github.com/7patriksz-art/Enforcee
 
 ## Privacy
 

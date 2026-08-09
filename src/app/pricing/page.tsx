@@ -34,7 +34,7 @@ const MATRIX: Row[] = [
   {
     label: 'Evidence quotes and method badges',
     detail:
-      'Every verdict says how it was reached. Deterministic means code proved it and you can reproduce it offline. Judged means a model decided — and it had to return a quote copied character-for-character out of your own text, which we then locate programmatically in the source. A judged verdict whose quote we cannot find is thrown away and downgraded to unverifiable rather than shown to you. You never have to wonder which verdicts are proofs and which are opinions, because we never blur the two.',
+      'Every verdict says how it was reached. Deterministic means code proved it and you can reproduce it offline. Judged means a model decided — and it had to return a quote of at least ten characters from your own text, which we then locate ourselves, tolerating only ordinary differences in spaces and line breaks. A judged verdict whose quote we cannot find is thrown away and downgraded to unverifiable rather than shown to you. That makes it impossible to pass by inventing a sentence; it does not prove the sentence cited was the most apt one, which is why the quote is always shown in place for you to judge. You never have to wonder which verdicts are proofs and which are opinions, because we never blur the two.',
     free: true,
     builder: true,
     founder: true,
