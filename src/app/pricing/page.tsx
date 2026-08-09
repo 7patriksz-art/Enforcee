@@ -12,6 +12,13 @@ interface Row {
   free: string | boolean;
   builder: string | boolean;
   founder: string | boolean;
+  /**
+   * The ENTITLEMENTS key this row describes, where one exists. This table is prose and the
+   * entitlements are code, so they can disagree — and did: the CI gate moved to Builder and
+   * this row still said Founder-only, which is the version a buyer reads. A test now asserts
+   * every keyed row matches, so the table cannot quietly contradict what the product does.
+   */
+  key?: 'guard' | 'hostedJudge' | 'ruleHistory' | 'driftAlerts' | 'sync' | 'ciGate' | 'attestation' | 'api';
 }
 
 const MATRIX: Row[] = [
@@ -72,6 +79,7 @@ const MATRIX: Row[] = [
     founder: 'Forever',
   },
   {
+    key: 'ruleHistory',
     label: 'Per-rule track record over time',
     detail:
       'Rules are identified by a hash of their normalised text, so a rule keeps its identity even after you reword it, reorder it or move it to a different file. That is what makes a sentence like "this rule failed 6 of your last 40 audits" possible at all. It is the question that actually changes what you write in your ruleset, and no single audit can answer it.',
@@ -80,6 +88,7 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
+    key: 'driftAlerts',
     label: 'Drift alerts when a rule starts failing',
     detail:
       'A rule that held for weeks and then starts failing is the signal worth paying for — it usually means the model changed underneath you, or your ruleset grew a contradiction you have not noticed. Silent degradation is the exact failure this product exists to catch, and you cannot spot it by looking at one audit at a time.',
@@ -88,6 +97,7 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
+    key: 'guard',
     label: 'The guard — blocks a command before it runs',
     detail:
       'A hook that inspects a tool call before it executes and refuses the ones your rules forbid, handing the model your own rule text as the reason. Force-push denied, --force-with-lease allowed, rm -rf ./build warned, rm -rf / denied. This is the difference between finding out afterwards and it not happening. It runs on your machine, reads a policy in your own repo, and writes to a ledger you own — it never contacts us.',
@@ -112,6 +122,7 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
+    key: 'hostedJudge',
     label: 'Judged layer on our key, not yours',
     detail:
       'The minority of rules that code cannot settle are adjudicated by a model. On Free you supply your own API key for that part, and the request is between you and the provider. On paid there is no key to obtain, manage, rotate or leak, and no second bill arriving from somewhere else.',
@@ -128,11 +139,12 @@ const MATRIX: Row[] = [
     founder: 'Unlimited',
   },
   {
+    key: 'ciGate',
     label: 'CI gate — a violation fails the PR',
     detail:
-      'The same check that runs on your laptop runs in your pipeline and exits non-zero when a rule is violated, so a pull request fails instead of merging. This is the point where a rule stops being your personal preference and becomes something the team is actually held to — which is a different product from a thing you run when you happen to remember.',
+      'The same check that runs on your laptop runs in your pipeline and exits non-zero when a rule is violated, so a pull request fails instead of merging. This is the point where a rule stops being your personal preference and becomes something the team is actually held to — which is a different product from a thing you run when you happen to remember. Ships as a GitHub Action; the CLI exits non-zero on a violation, so any other CI runner works too.',
     free: false,
-    builder: false,
+    builder: true,
     founder: true,
   },
   {
@@ -144,6 +156,7 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
+    key: 'attestation',
     label: 'Signed receipts for a client',
     detail:
       'An exportable, tamper-evident record of what was checked and what the verdict was. A receipt carries a hash of the ruleset, a hash of the output and a hash of itself, so anyone can recompute it and prove it was not edited after the fact — including somebody who has no reason to trust you. That is what makes it usable as evidence rather than as a screenshot.',
@@ -152,6 +165,7 @@ const MATRIX: Row[] = [
     founder: true,
   },
   {
+    key: 'api',
     label: 'REST API',
     detail:
       'Run audits from your own systems instead of from our interface — a review bot, an internal dashboard, a nightly job over yesterday’s outputs. Same engine, same receipts, same verdicts, with your own credentials.',
