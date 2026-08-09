@@ -54,8 +54,9 @@ Two layers, never blurred, badged on every row:
 
 - **Deterministic** — decided by code, no model involved, reproducible. Required and forbidden
   literals, regex, emoji, em dashes, word and character limits, JSON validity, markdown tables,
-  code-fence tagging, required headings, citations, output language. On a realistic ruleset this
-  settles about **80% of rules with zero model calls**.
+  code-fence tagging, required headings, citations, output language. On a hand-written ruleset — a `CLAUDE.md`, an `AGENTS.md`, a `.cursorrules` — this settles
+  about **80% of rules with zero model calls**. On a 100-page enterprise SOP it is much lower,
+  and the parser is the reason; we are measuring that honestly before claiming anything wider.
 - **Judged** — only the remainder. The judge must return a quote of at least 10 characters from the
   output; we then locate that quote ourselves, tolerating only ordinary differences in spaces and
   line breaks. If we cannot find it, **the verdict is rejected** and recorded as unverifiable.
@@ -111,7 +112,7 @@ Stated up front, because the audience for this product is right to be skeptical.
 | | |
 |---|---|
 | Time to a full 10-rule audit | **7 seconds** |
-| Rules decided with no model call | **4 in 5** on a realistic ruleset |
+| Rules decided with no model call | **4 in 5** on a hand-written ruleset |
 | Gold-set judge accuracy (Haiku 4.5, 3 samples) | **94%** |
 | False accusations across 48 verdicts on 3 models | **0** |
 | Fabricated evidence spans | **0** |

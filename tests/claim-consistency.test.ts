@@ -51,3 +51,28 @@ describe('public claims', () => {
     });
   }
 });
+
+/**
+ * The word "realistic" was doing work it had not earned.
+ *
+ * The ~80% deterministic figure was measured on rulesets we wrote ourselves. Benchmarking
+ * against the HANDBOOK corpus (65 real enterprise SOPs, 20-124 pages) put it at 6.7%
+ * overall, or 19.4% counting only obligation-bearing lines — and revealed the parser
+ * over-extracts so badly on real documents that neither number fairly measures the engine.
+ *
+ * Until extraction is fixed and re-measured, the claim must say WHICH ruleset shape it
+ * holds for. "Hand-written" is checkable. "Realistic" invites the reader to assume.
+ */
+describe('the deterministic-share claim', () => {
+  const SURFACES = ['README.md', 'scripts/pack-cli.mjs', 'src/app/how-it-works/page.tsx'];
+  for (const file of SURFACES) {
+    it(`${file} qualifies the 80% figure by ruleset shape`, () => {
+      const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+      const offending = text
+        .split('\n')
+        .filter((l) => /realistic ruleset/i.test(l))
+        .filter((l) => !/^\s*(\*|\/\/|#)/.test(l));
+      expect(offending, `${file} still says "realistic ruleset" — unverified on real SOPs`).toEqual([]);
+    });
+  }
+});
