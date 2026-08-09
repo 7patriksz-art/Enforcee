@@ -1,12 +1,18 @@
 name: Publish to npm
 
 # Trusted publishing. No NPM_TOKEN anywhere — npm mints a short-lived credential from
-# GitHub's OIDC identity for this specific workflow in this specific repo. There is no
-# long-lived secret to leak, rotate, or accidentally paste into a chat window.
+# GitHub's OIDC identity for this workflow in this repo. Nothing long-lived to leak.
 #
-# Requires a one-off setup on npmjs.com: Packages → enforcee → Settings → Trusted publishing,
-# pointing at this repository and this workflow filename. npm does not validate that config
-# when you save it, so the filename below and the one entered there must match exactly.
+# Node 24 is deliberate, not cosmetic. npm's docs: "Trusted publishing requires npm CLI
+# version 11.5.1 or later and Node version 22.14.0 or higher." Node 22 ships npm 10, the
+# OIDC handshake fails, the registry treats the request as anonymous, and an anonymous PUT
+# to an existing package returns a misleading `E404 Not Found` rather than an auth error.
+# That is what run #2 hit. Installing npm@latest as a separate step did not fix it, so this
+# uses the Node version that ships a new enough npm instead.
+#
+# npmjs.com setup: Packages → enforcee → Settings → Trusted publishing. npm does not
+# validate that config when saved, so the workflow filename there must match this file
+# exactly, including the .yml.
 
 on:
   push:
@@ -18,24 +24,41 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write        # required for OIDC; without it npm falls back to looking for a token
+      id-token: write        # required for OIDC; without it npm looks for a token and fails
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
-      # npm 11.5.1+ is required for trusted publishing.
-      - run: npm install -g npm@latest
+      # Fail loudly and early rather than as an opaque 404 at the end. The last failure cost
+      # two runs to diagnose precisely because npm reports an unusable credential as "404
+      # not found" — so the version that determines whether the credential works at all
+      # gets asserted up front, where the error message can say what is actually wrong.
+      - name: Assert npm is new enough for trusted publishing
+        run: |
+          NPM_V="$(npm --version)"
+          echo "node $(node --version) / npm ${NPM_V}"
+          node -e '
+            const need = [11, 5, 1];
+            const got = process.argv[1].split(".").map(Number);
+            const ok = got[0] > need[0]
+              || (got[0] === need[0] && (got[1] > need[1] || (got[1] === need[1] && got[2] >= need[2])));
+            if (!ok) {
+              console.error(`npm ${process.argv[1]} is too old for trusted publishing; need >= 11.5.1.`);
+              console.error("Publishing would fail with a misleading E404. Raise node-version.");
+              process.exit(1);
+            }
+          ' "${NPM_V}"
 
       - run: npm ci
 
-      # The full suite, then the eight pre-publish checks. The pack script refuses to
-      # publish on any of them, including a runtime probe that stubs http/https/net/tls/fetch
-      # and fails if a free audit opens a socket. A release that cannot pass these should
-      # not reach anyone, and CI is where that gets enforced rather than remembered.
+      # The full suite, then the pre-publish checks. The pack script refuses to publish on
+      # any of them, including a runtime probe that stubs http/https/net/tls/fetch and fails
+      # if a free audit opens a socket. CI is where that gets enforced rather than remembered.
       - run: npm test
       - run: npm run pack:cli
 
