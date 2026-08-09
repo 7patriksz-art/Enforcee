@@ -10,6 +10,9 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Account — Enforcee' };
 
+// The value page is linked from here on purpose: this is the screen somebody opens when
+// they are already wondering whether to keep paying, so that is where the honest answer
+// belongs — not buried in a nav bar where only enthusiasts find it.
 export default async function Account() {
   if (!supabaseConfigured()) {
     return (
@@ -89,6 +92,19 @@ export default async function Account() {
               {access.plan === 'founder' ? 'Compare plans' : 'See what the next plan adds'}
             </Link>
           </section>
+
+          {access.plan !== 'free' && (
+            <Link
+              href="/value"
+              className="block rounded-2xl border border-clay-line bg-clay-pale px-5 py-4 transition-colors hover:border-clay"
+            >
+              <div className="text-[13.5px] font-semibold">Is this worth it?</div>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-mid">
+                What it has actually caught for you, from your own history — and a straight answer if the honest
+                one is no.
+              </p>
+            </Link>
+          )}
 
           <section className="rounded-2xl border hairline bg-paper-soft px-5 py-4">
             <div className="text-[13.5px] font-semibold">Changing or cancelling</div>
