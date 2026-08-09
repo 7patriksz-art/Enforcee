@@ -1,18 +1,17 @@
 name: Publish to npm
 
-# Trusted publishing. No NPM_TOKEN anywhere — npm mints a short-lived credential from
-# GitHub's OIDC identity for this workflow in this repo. Nothing long-lived to leak.
+# Publishes on a v* tag. One credential, stored once in this repository's Actions secrets,
+# used only by this workflow, never held by a person and never pasted into a chat.
 #
-# Node 24 is deliberate, not cosmetic. npm's docs: "Trusted publishing requires npm CLI
-# version 11.5.1 or later and Node version 22.14.0 or higher." Node 22 ships npm 10, the
-# OIDC handshake fails, the registry treats the request as anonymous, and an anonymous PUT
-# to an existing package returns a misleading `E404 Not Found` rather than an auth error.
-# That is what run #2 hit. Installing npm@latest as a separate step did not fix it, so this
-# uses the Node version that ships a new enough npm instead.
+# Why a token and not OIDC trusted publishing: OIDC needs a configuration on npmjs.com that
+# only the package owner can see. Three runs failed with a misleading `E404 Not Found` — the
+# response npm gives an unauthenticated PUT — and the config could not be inspected from
+# outside to find the mismatch. A working release beats an elegant one that costs an
+# afternoon. The OIDC block is kept below, commented out, so it can be switched on later
+# without rediscovering any of this.
 #
-# npmjs.com setup: Packages → enforcee → Settings → Trusted publishing. npm does not
-# validate that config when saved, so the workflow filename there must match this file
-# exactly, including the .yml.
+# To rotate: npmjs.com → Access Tokens → revoke, create a new granular token, then replace
+# NPM_TOKEN under Settings → Secrets and variables → Actions. Nothing else changes.
 
 on:
   push:
@@ -22,9 +21,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write        # required for OIDC; without it npm looks for a token and fails
     steps:
       - uses: actions/checkout@v6
 
@@ -34,32 +30,25 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
-      # Fail loudly and early rather than as an opaque 404 at the end. The last failure cost
-      # two runs to diagnose precisely because npm reports an unusable credential as "404
-      # not found" — so the version that determines whether the credential works at all
-      # gets asserted up front, where the error message can say what is actually wrong.
-      - name: Assert npm is new enough for trusted publishing
-        run: |
-          NPM_V="$(npm --version)"
-          echo "node $(node --version) / npm ${NPM_V}"
-          node -e '
-            const need = [11, 5, 1];
-            const got = process.argv[1].split(".").map(Number);
-            const ok = got[0] > need[0]
-              || (got[0] === need[0] && (got[1] > need[1] || (got[1] === need[1] && got[2] >= need[2])));
-            if (!ok) {
-              console.error(`npm ${process.argv[1]} is too old for trusted publishing; need >= 11.5.1.`);
-              console.error("Publishing would fail with a misleading E404. Raise node-version.");
-              process.exit(1);
-            }
-          ' "${NPM_V}"
-
       - run: npm ci
 
       # The full suite, then the pre-publish checks. The pack script refuses to publish on
       # any of them, including a runtime probe that stubs http/https/net/tls/fetch and fails
-      # if a free audit opens a socket. CI is where that gets enforced rather than remembered.
+      # if a free audit opens a socket. CI is where this gets enforced rather than remembered.
       - run: npm test
       - run: npm run pack:cli
 
       - run: npm publish ./npm-dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+# ── Later: trusted publishing, no token at all ──────────────────────────────────────────
+# Add `permissions: { contents: read, id-token: write }` to the job, drop the NODE_AUTH_TOKEN
+# env block, and on npmjs.com set Packages → enforcee → Settings → Trusted publishing to:
+#   Organization or user : 7patriksz-art
+#   Repository           : Enforcee          (case-sensitive)
+#   Workflow filename    : publish.yml
+#   Environment          : leave blank — if this is set, the job needs a matching
+#                          `environment:` key or the handshake fails with the same E404
+# npm does not validate that form when saved, which is why a mismatch surfaces only as a
+# failed publish. Requires npm >= 11.5.1, which Node 24 ships.
