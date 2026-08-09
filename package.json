@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build:cli": "esbuild cli/index.ts --bundle --platform=node --target=node20 --format=esm --minify --legal-comments=none --outfile=cli/dist/enforcee.mjs --banner:js=\"#!/usr/bin/env node\"",
+    "build:cli": "esbuild cli/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=cli/dist/enforcee.mjs --banner:js=\"#!/usr/bin/env node\"",
     "test:cli": "npm run build:cli && node cli/dist/enforcee.mjs --version",
     "pack:cli": "node scripts/pack-cli.mjs --check",
     "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist"

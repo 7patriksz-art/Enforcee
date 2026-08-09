@@ -14,3 +14,10 @@ npm-dist/
 !.env.example
 *.pem
 .enforcee/licence
+
+# Key material. Checked before going public; keep it that way.
+*.key
+*.pem
+*.p8
+*.pfx
+.enforcee/licence

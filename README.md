@@ -119,23 +119,27 @@ Stated up front, because the audience for this product is right to be skeptical.
 
 ---
 
-## What ships, and what that protects
+## What ships, and why it is readable
 
-The published bundle is minified. Stated precisely, because the difference matters: function
-names and control flow are mangled, which raises the cost of lifting the algorithm. **String
-literals survive minification**, so the deny patterns remain greppable by anyone who wants
-them. Minification is a speed bump, not a lock, and treating it as a lock would be exactly
-the kind of self-flattery this project exists to argue against.
+The published bundle is **not** minified, on purpose.
 
-`guard/guard.mjs` is deliberately **not** minified. It runs on every tool call in your
-session and decides whether to block it; you should be able to read it. It contains matching
-logic and no patterns — those live in the `policy.json` compiled on your machine.
+We looked at what obfuscation actually buys. String literals survive minification, so the deny
+patterns stay greppable either way; LLM deobfuscation costs cents per file; and every funded
+tool in this category reached the same conclusion — Greptile ships its CLI under MIT, Snyk
+under Apache-2.0, Codacy under AGPL-3.0. Nobody protects a client, because nobody can.
+
+So the client is readable. This product asks you not to take its word for anything, and
+shipping code you cannot read would be arguing against ourselves.
 
 The claim that a free audit makes no network call is not asked to be taken on trust either.
 The release script stubs `http`, `https`, `net`, `tls` and `fetch`, runs a real audit, and
-fails the build if anything dials. That is a stronger check than reading source.
+fails the build if anything dials. That is stronger evidence than reading source.
 
-## Stack
+**What is not in this repo** is the part that cannot be copied anyway: your audit history,
+your per-rule track record, drift detection across sessions, the hosted judge, the CI gate and
+signed receipts. Those run on our servers because that is where they have to run.
+
+## Stack## Stack
 
 Next.js 16 · TypeScript · Tailwind · Supabase (Postgres, auth, RLS from the first migration) ·
 Vercel · Anthropic API for the judged layer. Every model call is priced and written to a ledger,
