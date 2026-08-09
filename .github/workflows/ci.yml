@@ -1,0 +1,36 @@
+name: CI
+
+# Nothing ran on a normal push. Tests and the pre-publish checks only fired on a v* tag,
+# which meant a broken commit sat on main undiscovered until release time — and by then the
+# fix is a version bump, because npm will not let a version be republished.
+#
+# This runs the same checks on every push and pull request, publishing nothing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm test
+
+      # The same eight checks the release runs, including the runtime probe that stubs
+      # http/https/net/tls/fetch and fails if a free audit opens a socket. Running them here
+      # means a change that would break publishing is caught on the commit that caused it,
+      # not on the tag weeks later.
+      - run: npm run pack:cli
+
+      - run: npm run build
