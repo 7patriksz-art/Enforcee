@@ -14,7 +14,23 @@ export const dynamic = 'force-dynamic';
  * renewal is one command the CLI prints for you. Long enough that nobody is stranded on
  * a plane; short enough that the licence is not a permanent gift.
  */
-const TTL_DAYS = 45;
+/**
+ * Longest a licence may live, regardless of the subscription.
+ *
+ * Two rules, and the licence gets whichever is sooner:
+ *   1. never outlive the paid period it was issued against
+ *   2. never exceed MAX_TTL_DAYS
+ *
+ * Rule 1 was missing: a fixed 45 days was minted no matter what, so a cancelled subscriber
+ * kept the guard for up to six more weeks. An issued licence is checked offline against a
+ * public key on a laptop with no network — there is no revocation list and nothing can
+ * reach it once handed out, so the expiry date is the only control that exists.
+ *
+ * Rule 2 matters for the opposite case. An annual subscriber's period ends 365 days out,
+ * and minting a 365-day unrevocable licence would be worse than the bug being fixed. They
+ * re-issue with one command; the CLI prints it.
+ */
+const MAX_TTL_DAYS = 45;
 
 export async function POST() {
   const access = await getAccess();
@@ -41,6 +57,26 @@ export async function POST() {
 
   const now = Math.floor(Date.now() / 1000);
   const sub = access.email ?? 'unknown';
+
+  // Whichever comes first. periodEnd is null when Stripe has not reported one yet — a
+  // freshly created subscription, moments before customer.subscription.updated lands — so
+  // the cap is the fallback rather than an unbounded licence.
+  const cap = now + MAX_TTL_DAYS * 86_400;
+  const exp = access.periodEnd ? Math.min(access.periodEnd, cap) : cap;
+
+  // A period that has already passed means the subscription lapsed and the webhook has not
+  // caught up. Issuing a licence that is already dead is honest but useless; refusing and
+  // saying why is better than handing over something that fails on their machine.
+  if (exp <= now) {
+    return NextResponse.json(
+      {
+        error: 'That subscription period has ended.',
+        detail: 'Renew and the licence re-issues immediately. Auditing keeps working regardless.',
+        upgrade: '/pricing',
+      },
+      { status: 402 }
+    );
+  }
   const token = issueLicence(
     {
       // Stable per account per period, so re-issuing does not spray unique ids around,
@@ -48,14 +84,14 @@ export async function POST() {
       jti: createHash('sha256').update(`${sub}:${Math.floor(now / 86_400)}`).digest('hex').slice(0, 16),
       sub,
       plan: access.plan === 'founder' ? 'founder' : 'builder',
-      exp: now + TTL_DAYS * 86_400,
+      exp,
     },
     privateKey.replace(/\\n/g, '\n'),
     now
   );
 
   return NextResponse.json(
-    { licence: token, plan: access.plan, expiresAt: new Date((now + TTL_DAYS * 86_400) * 1000).toISOString() },
+    { licence: token, plan: access.plan, expiresAt: new Date(exp * 1000).toISOString() },
     { headers: { 'Cache-Control': 'no-store' } }
   );
 }

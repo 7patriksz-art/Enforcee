@@ -9,6 +9,24 @@ export const runtime = 'nodejs';
  * Stripe webhook. The signature is verified before anything is trusted — an unsigned
  * POST to this route must never be able to grant somebody a subscription.
  */
+/**
+ * When the paid period ends, as an ISO string.
+ *
+ * In Stripe's current API this lives on the subscription *item*, not the subscription —
+ * `sub.current_period_end` no longer exists and TypeScript says so. Reading the item is
+ * not a workaround for a type error; it is where the value actually is now, and casting
+ * past the error would have written null forever while looking fine.
+ *
+ * Takes the latest across items so a multi-item subscription is not cut off early.
+ */
+function periodEndOf(sub: Stripe.Subscription): string | null {
+  const ends = (sub.items?.data ?? [])
+    .map((i) => i.current_period_end)
+    .filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+  if (!ends.length) return null;
+  return new Date(Math.max(...ends) * 1000).toISOString();
+}
+
 export async function POST(req: Request) {
   const stripe = getStripe();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -41,6 +59,9 @@ export async function POST(req: Request) {
             plan: s.metadata?.plan ?? 'builder',
             interval: s.metadata?.interval ?? 'monthly',
             status: 'active',
+            // Recorded so a licence can expire with the subscription. Absent here on some
+            // session shapes; customer.subscription.updated fills it in moments later.
+            current_period_end: null,
           },
           { onConflict: 'stripe_subscription_id' }
         );
@@ -51,7 +72,11 @@ export async function POST(req: Request) {
         const sub = event.data.object as Stripe.Subscription;
         await db
           ?.from('subscriptions')
-          .update({ status: sub.status, plan: sub.metadata?.plan ?? undefined })
+          .update({
+            status: sub.status,
+            plan: sub.metadata?.plan ?? undefined,
+            current_period_end: periodEndOf(sub),
+          })
           .eq('stripe_subscription_id', sub.id);
         break;
       }
