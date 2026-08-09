@@ -1,0 +1,42 @@
+name: Publish to npm
+
+# Trusted publishing. No NPM_TOKEN anywhere — npm mints a short-lived credential from
+# GitHub's OIDC identity for this specific workflow in this specific repo. There is no
+# long-lived secret to leak, rotate, or accidentally paste into a chat window.
+#
+# Requires a one-off setup on npmjs.com: Packages → enforcee → Settings → Trusted publishing,
+# pointing at this repository and this workflow filename. npm does not validate that config
+# when you save it, so the filename below and the one entered there must match exactly.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # required for OIDC; without it npm falls back to looking for a token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # npm 11.5.1+ is required for trusted publishing.
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # The full suite, then the eight pre-publish checks. The pack script refuses to
+      # publish on any of them, including a runtime probe that stubs http/https/net/tls/fetch
+      # and fails if a free audit opens a socket. A release that cannot pass these should
+      # not reach anyone, and CI is where that gets enforced rather than remembered.
+      - run: npm test
+      - run: npm run pack:cli
+
+      - run: npm publish ./npm-dist
