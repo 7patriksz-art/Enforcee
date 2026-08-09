@@ -50,14 +50,42 @@ export async function getAccess(): Promise<Access> {
     return { plan: 'free', entitlements: entitlementsFor('free'), signedIn: true, trialing: false, email: user.email ?? null, periodEnd: null };
   }
 
-  const { data } = await db
-    .from('subscriptions')
-    .select('plan, status, current_period_end')
-    .eq('user_id', user.id)
-    .order('updated_at', { ascending: false })
-    .limit(1);
+  const select = 'plan, status, current_period_end';
+  const byUser = async () =>
+    (
+      await db
+        .from('subscriptions')
+        .select(select)
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+    ).data?.[0];
 
-  const row = data?.[0] as { plan?: string; status?: string; current_period_end?: string | null } | undefined;
+  let found = await byUser();
+
+  // Checkout does not require signing in — making somebody create an account before they
+  // can give you money is a conversion tax. The webhook therefore writes rows with
+  // user_id: null, and nothing ever claimed them, so anyone who paid without signing in
+  // first got a subscription that existed and entitled nothing.
+  //
+  // The claim matches on email, which is only safe because of where the email comes from.
+  // user.email is Supabase's *verified* address — the person proved control of that inbox
+  // to sign in. The row's email is whatever was typed at Stripe, and is never trusted as
+  // identity; it is only ever the thing being matched against. Someone who pays using
+  // another person's address gives that subscription away rather than stealing one.
+  //
+  // Only unclaimed rows are eligible. An assigned subscription can never be reassigned by
+  // this path, whatever anyone types into Stripe.
+  if (!found && user.email) {
+    await db
+      .from('subscriptions')
+      .update({ user_id: user.id })
+      .is('user_id', null)
+      .ilike('email', user.email);
+    found = await byUser();
+  }
+
+  const row = found as { plan?: string; status?: string; current_period_end?: string | null } | undefined;
   const entitled = row && ENTITLING_STATUSES.has(row.status ?? '');
   const plan = (entitled ? (row!.plan as PlanId) : 'free') ?? 'free';
 

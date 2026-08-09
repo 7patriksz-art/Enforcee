@@ -11,9 +11,11 @@ import { getServiceSupabase, getUser } from './supabase/server';
  *
  * The deterministic path is never metered. It costs nothing to run and it is the product.
  *
- * Fails OPEN on a storage error rather than blocking legitimate work — but the global
- * ceiling means an outage cannot turn into an unbounded bill either, because the ceiling
- * is also enforced by the Anthropic account's own spend limit.
+ * On a storage error it degrades the way the no-database case does: anonymous callers are
+ * refused, because there is no way to count them, and signed-in callers are let through,
+ * because they are attributable and we would rather absorb our own outage than block real
+ * work. Every such failure is logged. It used to fail open for everyone, silently, which on
+ * the one path that spends our money is the worst available default.
  */
 
 const ANON_DAILY = Number(process.env.ENFORCEE_JUDGE_ANON_DAILY ?? 5);
@@ -62,10 +64,35 @@ export async function checkJudgeQuota(req: Request): Promise<QuotaVerdict> {
   const limit = identified ? USER_DAILY : ANON_DAILY;
 
   try {
-    const [{ data: mine }, { data: global }] = await Promise.all([
+    const [{ data: mine, error: mineErr }, { data: global, error: globalErr }] = await Promise.all([
       db.rpc('bump_judge_quota', { p_bucket: bucket, p_limit: limit }).single(),
       db.rpc('bump_judge_quota', { p_bucket: '__global__', p_limit: GLOBAL_DAILY }).single(),
     ]);
+
+    // supabase-js RESOLVES with { data, error } instead of throwing, so an RPC failure
+    // arrived here as data: null, slid past both allowed checks, and returned allowed: true
+    // with nothing written anywhere. The judged path spends our money, so a silent
+    // fail-open on the meter is the one failure mode that cannot be tolerated quietly.
+    //
+    // Degrades exactly like the no-database branch above, for the same reason: an anonymous
+    // caller is refused because there is no way to count them, and a signed-in one is let
+    // through because they are attributable and we would rather absorb our own outage than
+    // block real work. The global ceiling is also enforced by the Anthropic account's own
+    // spend limit, so this cannot become an unbounded bill.
+    if (mineErr || globalErr) {
+      console.error('[enforcee] judge quota RPC failed', {
+        mine: mineErr?.message ?? null,
+        global: globalErr?.message ?? null,
+        identified,
+      });
+      return identified
+        ? { allowed: true, identified }
+        : {
+            allowed: false,
+            identified,
+            reason: 'The judged layer is briefly unavailable. Sign in, or use the deterministic audit — it is unlimited and unaffected.',
+          };
+    }
 
     const g = global as { allowed: boolean; used: number } | null;
     if (g && !g.allowed) {
@@ -88,8 +115,16 @@ export async function checkJudgeQuota(req: Request): Promise<QuotaVerdict> {
     }
 
     return { allowed: true, identified };
-  } catch {
-    // A counter outage must not take the product down.
-    return { allowed: true, identified };
+  } catch (err) {
+    // Same degradation as an RPC error, and logged for the same reason: a meter that stops
+    // working must never do so quietly.
+    console.error('[enforcee] judge quota threw', err instanceof Error ? err.message : err);
+    return identified
+      ? { allowed: true, identified }
+      : {
+          allowed: false,
+          identified,
+          reason: 'The judged layer is briefly unavailable. Sign in, or use the deterministic audit — it is unlimited and unaffected.',
+        };
   }
 }
