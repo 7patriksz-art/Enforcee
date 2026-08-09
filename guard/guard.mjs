@@ -83,7 +83,7 @@ function checkLicence(policyDir) {
   }
 }
 
-const GUARD_VERSION = 'guard@1.1.0';
+const GUARD_VERSION = 'guard@1.2.0';
 
 /**
  * Longest command line or path any deny pattern is matched against.
@@ -224,17 +224,52 @@ function main() {
     });
   }
 
+  const now = new Date().toISOString();
+  const base = { at: now, session: payload.session_id ?? null, event, guard: GUARD_VERSION };
+
+  // ── InstructionsLoaded ────────────────────────────────────────────────────────
+  //
+  // This is OBSERVED load evidence, and it is worth being precise about why that matters.
+  // Until now the product could only say a rule file was *probably* in context —
+  // RECONSTRUCTED, which the charter named as its candidate fatal flaw. Claude Code now
+  // reports each load directly, and the payload was verified against a live session rather
+  // than assumed from the docs, which document only the common fields:
+  //
+  //   { session_id, transcript_path, cwd, hook_event_name,
+  //     file_path, memory_type, load_reason }
+  //
+  // load_reason observed in practice: session_start (root CLAUDE.md), nested_traversal
+  // (a CLAUDE.md in a subdirectory), path_glob_match (a rule with paths: frontmatter).
+  // 'include' and 'compact' are documented matcher values that were not reproduced here,
+  // so they are recorded verbatim if they arrive rather than being special-cased.
+  //
+  // Recording only. This event must never block anything — it is evidence collection, and
+  // a guard that interfered with loading your own rules would be indefensible.
+  //
+  // Deliberately ABOVE the licence check. Load evidence belongs to VERIFY, which is free,
+  // not to ENFORCE, which is paid. Gating it would have meant an unlicensed guard silently
+  // recorded nothing while appearing installed — and 'free inspects, paid enforces' is the
+  // line the whole product is priced on.
+  if (event === 'InstructionsLoaded') {
+    log(policyPath, {
+      ...base,
+      decision: 'LOADED',
+      filePath: typeof payload.file_path === 'string' ? payload.file_path : null,
+      memoryType: typeof payload.memory_type === 'string' ? payload.memory_type : null,
+      loadReason: typeof payload.load_reason === 'string' ? payload.load_reason : null,
+      evidence: 'OBSERVED',
+    });
+    allow();
+  }
+
   const lic = checkLicence(dirname(policyPath));
   if (!lic.ok) {
     emit({
       systemMessage:
         `Enforcee: ${lic.message} Nothing is being enforced this session — your tools all still work. ` +
-        `Run \`npx enforcee licence\` to check, or start a trial at enforcee.vercel.app/pricing.`,
+        `Run \`npx enforcee licence\` to check, or see enforcee.vercel.app/pricing. Auditing stays free.`,
     });
   }
-
-  const now = new Date().toISOString();
-  const base = { at: now, session: payload.session_id ?? null, event, guard: GUARD_VERSION };
 
   if (event === 'PreToolUse') {
     const toolName = payload.tool_name ?? '';

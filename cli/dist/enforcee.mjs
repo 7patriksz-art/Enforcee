@@ -9986,7 +9986,7 @@ function licenceMessage(check) {
   if (check.ok) return `Licensed to ${check.payload.sub} \xB7 ${check.payload.plan}`;
   switch (check.reason) {
     case "missing":
-      return "No licence found. The guard is part of Builder \u2014 30 days free at enforcee.vercel.app/pricing.";
+      return "No licence found. The guard is part of Builder \u2014 enforcee.vercel.app/pricing. Auditing stays free.";
     case "expired":
       return `Licence expired${check.detail ? ` on ${check.detail}` : ""}. Renew at enforcee.vercel.app/pricing.`;
     case "bad-signature":
