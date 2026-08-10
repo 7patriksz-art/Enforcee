@@ -107,3 +107,27 @@ console.log('  check kinds:');
 for (const [k, n] of [...kinds].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
   console.log(`    ${String(n).padStart(5)}  ${k}`);
 }
+
+// ── Why the deterministic share is low, which is the finding that matters ──────────────
+//
+// Cleaning up extraction moved 4,761 -> 4,461 and left 19.4% exactly where it was. That is
+// the answer: the low number is not a measurement artefact, it is what our checkers cover.
+//
+// Our 16 deterministic checks are about the SHAPE OF TEXT — emoji, em-dashes, word counts,
+// JSON validity, markdown tables, citations, required and forbidden literals. Real
+// enterprise rules are about WHETHER SOMETHING HAPPENED: escalate within 24 hours, verify
+// the W-9 before payment, obtain a second approval above a threshold. No amount of reading
+// an output can settle those. They are not judged-vs-deterministic; they are unanswerable
+// from text alone.
+console.log('\n  --- what the un-decidable rules are actually asking for ---');
+const ACTION = /\b(escalate|notify|approve|verify|confirm|obtain|submit|file|record|log|route|assign|review|sign|archive|retain|within \d+|no later than|prior to|before proceeding)\b/i;
+let actionShaped = 0;
+for (const f of files) {
+  const { rules } = parseRuleset(htmlToText(readFileSync(f, 'utf8')), f);
+  for (const r of rules) {
+    const kind = (classify(r.text) as { kind?: string } | null)?.kind ?? 'none';
+    if (kind === 'judged' && ACTION.test(r.text)) actionShaped++;
+  }
+}
+console.log(`    ask whether an ACTION occurred   ${actionShaped}`);
+console.log(`    (a text output cannot settle these at all — they need the environment)\n`);

@@ -32,6 +32,66 @@ const UNENFORCEABLE =
 
 const CONDITIONAL = /^(when|whenever|if|for|while|during|unless|in case of|on)\b[^,.;]{2,80}[,.;]/i;
 
+/**
+ * Structural furniture that is never a rule, however it is formatted.
+ *
+ * Bullets used to be accepted unconditionally, which is correct for a hand-written CLAUDE.md
+ * — there, every bullet IS a rule. It is badly wrong for a real document, where bullets are
+ * also table-of-contents entries, definition lists, and section labels. Benchmarking against
+ * the HANDBOOK corpus of real enterprise SOPs pulled in "Purpose and Scope" and
+ * "Overview ......................." as rules, which then dragged the deterministic share
+ * down to a number that measured the parser rather than the engine.
+ *
+ * Deliberately narrow. Each pattern rejects a shape that cannot be an obligation, rather
+ * than trying to decide what is "rule-like" — a broad filter here would silently drop real
+ * rules, which is far worse than admitting a few non-rules.
+ */
+const NOT_A_RULE: { why: string; re: RegExp }[] = [
+  // Table of contents: dot leaders, with or without a trailing page number.
+  { why: 'toc-leader', re: /\.{4,}\s*\d*\s*$/ },
+  // "3.2 Vendor Onboarding" / "Section 4 — Scope": a numbered heading lifted into a list.
+  { why: 'numbered-heading', re: /^\d+(\.\d+)*\s*[-–—.)]?\s*[A-Z][\w ,'&/-]{0,60}$/ },
+  // A label introducing something else, e.g. "Required documents:" — the rule is below it.
+  { why: 'trailing-colon-label', re: /^[A-Z][\w ,'&/-]{0,60}:$/ },
+  // Bare page/figure/table references.
+  { why: 'reference', re: /^(page|figure|table|appendix|exhibit|annex|section)\s+[\dA-Z]/i },
+];
+
+/**
+ * A bullet has to look like it could carry an obligation.
+ *
+ * Weaker than IMPERATIVE on purpose. "- No emojis." and "- Tabs, not spaces." are real rules
+ * in a hand-written ruleset and contain no modal verb, so requiring one would break exactly
+ * the case the product is built for. This only rejects the shapes above, plus title-case
+ * fragments with no verb at all — the residue of a heading.
+ */
+function couldBeRule(text: string): boolean {
+  const t = text.trim();
+  for (const { re } of NOT_A_RULE) if (re.test(t)) return false;
+
+  // Title Case is the tell. A heading capitalises its significant words and lowercases its
+  // connectives — "Purpose and Scope", "Overview & Purpose". A rule does not.
+  //
+  // Measured on the significant words only, because counting "and" as a lowercase word let
+  // headings through: "Purpose and Scope" is 2 of 3 tokens capitalised, which looked like
+  // ordinary prose, but 2 of 2 significant words, which is unmistakably a heading.
+  //
+  // A constraint word anywhere is an immediate keep. "No emojis." and "Tabs, not spaces."
+  // are real rules in a hand-written ruleset, and losing those would break the product for
+  // its primary case while making the benchmark look better — the exact trade to refuse.
+  const STOP = /^(and|or|the|a|an|of|in|for|with|to|&)$/i;
+  const CONSTRAINT = /\b(no|not|never|must|shall|always|avoid|only|don't|do not|use|require[ds]?)\b/i;
+  if (CONSTRAINT.test(t)) return true;
+
+  const words = t.split(/\s+/).filter((w) => /[a-z]/i.test(w));
+  if (words.length <= 6) {
+    const significant = words.filter((w) => !STOP.test(w.replace(/[^\w']/g, '')));
+    const capitalised = significant.filter((w) => /^[A-Z]/.test(w)).length;
+    if (significant.length >= 2 && capitalised >= Math.ceil(significant.length * 0.75)) return false;
+  }
+  return true;
+}
+
 interface RawRule {
   text: string;
   startLine: number;
@@ -82,7 +142,7 @@ export function splitRules(text: string, artifact = 'ruleset'): RawRule[] {
         end++;
         body += ' ' + lines[end].trim();
       }
-      out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
+      if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
       i = end;
       continue;
     }
