@@ -6,12 +6,19 @@ import { checkPrecondition, preflight, verifyTool } from '../src/lib/prevent/pre
  * and only one of them is good news. Everything here exists to keep them apart.
  */
 describe('preconditions', () => {
-  it('detects a missing binary — the dig case, before it can produce a false negative', () => {
-    const r = checkPrecondition({ kind: 'binary', target: 'dig', why: 'domain availability check' });
-    // dig genuinely is not installed in this container, which is how the original bug happened.
+  it('detects a missing binary, before it can produce a false negative', () => {
+    // Deliberately NOT `dig`, even though dig is the story behind this whole module.
+    //
+    // The first version of this test asserted dig was absent, which is true in the build
+    // container and false on a GitHub runner, where dnsutils ships by default. It passed
+    // locally and failed in CI, which is how release 0.3.0 got a tag with nothing behind it.
+    //
+    // Writing an environment assumption into a test, in the module whose entire purpose is
+    // catching unstated environment assumptions, is worth leaving a note about.
+    const r = checkPrecondition({ kind: 'binary', target: 'enforcee-no-such-binary-xyz', why: 'the check itself' });
     expect(r.met).toBe(false);
     expect(r.detail).toMatch(/not on PATH/);
-    expect(r.evidence).toMatch(/command -v dig/);
+    expect(r.evidence).toMatch(/command -v enforcee-no-such-binary-xyz/);
   });
 
   it('detects a present binary', () => {
