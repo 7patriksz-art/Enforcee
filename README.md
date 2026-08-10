@@ -143,7 +143,7 @@ Stated up front, because the audience for this product is right to be skeptical.
 The audit exits non-zero on a violation, so it gates a pull request with no wrapper:
 
 ```yaml
-- uses: 7patriksz-art/Enforcee@v0.3.0
+- uses: 7patriksz-art/Enforcee@v0.3.1
   with:
     rules: CLAUDE.md
     output: generated/summary.md

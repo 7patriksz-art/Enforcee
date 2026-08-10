@@ -10193,7 +10193,7 @@ function preflight(preconditions, cwd = process.cwd()) {
 }
 
 // cli/index.ts
-var VERSION2 = "0.1.0";
+var VERSION2 = true ? "0.3.1" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

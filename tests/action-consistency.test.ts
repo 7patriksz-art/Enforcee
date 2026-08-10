@@ -30,3 +30,41 @@ describe('action version references', () => {
     expect(plugin.version).toBe(pkg.version);
   });
 });
+
+/**
+ * `enforcee --version` reported 0.1.0 through eight releases, because VERSION was a hardcoded
+ * string in cli/index.ts. Every bug report carried the wrong number and there was no way for
+ * a user to tell which build they had.
+ *
+ * Now injected at build time from package.json. This test asserts the build actually does it,
+ * because a define that silently stops working would restore the old lie with no visible change.
+ */
+describe('the CLI reports its real version', () => {
+  it('build:cli injects the version rather than hardcoding one', () => {
+    const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    expect(pkgRaw).toContain('__ENFORCEE_VERSION__');
+  });
+
+  it('cli/index.ts contains no hardcoded version literal', () => {
+    const cli = readFileSync(new URL('../cli/index.ts', import.meta.url), 'utf8');
+    const hardcoded = cli.match(/const VERSION = '(\d+\.\d+\.\d+)'/);
+    expect(hardcoded, `VERSION is hardcoded to ${hardcoded?.[1]}`).toBeNull();
+  });
+});
+
+/**
+ * package-lock.json carries its own copy of the version. Eight releases bumped package.json
+ * and left the lockfile at 0.1.0, and `npm ci` — which CI uses and local `npm install` does
+ * not — refuses to run when they disagree. That is why v0.3.0 never published.
+ *
+ * Eighth instance of one value living in two files on this project. The fix is a test, not
+ * a reminder.
+ */
+describe('package-lock stays in step with package.json', () => {
+  it('root version matches', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+    expect(lock.version, 'lockfile version is stale — npm ci will refuse to install').toBe(pkg.version);
+    expect(lock.packages?.['']?.version).toBe(pkg.version);
+  });
+});

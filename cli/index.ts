@@ -20,7 +20,15 @@ import { preflight } from '../src/lib/prevent/preconditions';
 import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
-const VERSION = '0.1.0';
+/**
+ * Injected at build time from package.json — see the --define in build:cli.
+ *
+ * This was a hardcoded '0.1.0' through eight releases, so `enforcee --version` lied to every
+ * user and every bug report carried the wrong number. Seventh instance of the same shape on
+ * this project: a value in two places, one updated, the other forgotten.
+ */
+declare const __ENFORCEE_VERSION__: string;
+const VERSION = typeof __ENFORCEE_VERSION__ === 'string' ? __ENFORCEE_VERSION__ : '0.0.0-dev';
 const C = {
   dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
   bold: (s: string) => `\x1b[1m${s}\x1b[0m`,
