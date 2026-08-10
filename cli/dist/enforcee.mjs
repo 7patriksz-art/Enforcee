@@ -6,8 +6,8 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync3, copyFileSync, chmodSync } from "node:fs";
-import { join as join2, dirname } from "node:path";
+import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync4, copyFileSync, chmodSync } from "node:fs";
+import { join as join3, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
@@ -10192,8 +10192,116 @@ function preflight(preconditions, cwd = process.cwd()) {
   };
 }
 
+// src/lib/prevent/claims.ts
+import { existsSync as existsSync3, statSync as statSync2 } from "node:fs";
+import { isAbsolute, join as join2 } from "node:path";
+var FILE_CLAIM = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
+var TESTS_PASS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
+var COMMITTED = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
+var INSTALLED = /\b(?:installed|added)\s+(?:the\s+)?(?:package\s+)?[`"']([\w@/-]+)[`"']\s+(?:as\s+a\s+)?dependency/gi;
+function extractClaims(text) {
+  const out = [];
+  const bounds = [0];
+  for (const m of text.matchAll(/[.!?](?=\s|$)/g)) bounds.push((m.index ?? 0) + 1);
+  bounds.push(text.length);
+  const sentenceOf = (idx) => {
+    let start = 0;
+    let end = text.length;
+    for (const b of bounds) {
+      if (b <= idx) start = b;
+      else {
+        end = b;
+        break;
+      }
+    }
+    return text.slice(start, end).replace(/\s+/g, " ").trim();
+  };
+  for (const m of text.matchAll(FILE_CLAIM)) {
+    out.push({ kind: "file-created", subject: m[1], quote: sentenceOf(m.index ?? 0) });
+  }
+  for (const m of text.matchAll(TESTS_PASS)) {
+    out.push({ kind: "tests-pass", subject: "test suite", quote: sentenceOf(m.index ?? 0) });
+  }
+  for (const m of text.matchAll(COMMITTED)) {
+    out.push({ kind: "committed", subject: "git", quote: sentenceOf(m.index ?? 0) });
+  }
+  for (const m of text.matchAll(INSTALLED)) {
+    out.push({ kind: "installed", subject: m[1], quote: sentenceOf(m.index ?? 0) });
+  }
+  return out;
+}
+function ranCommand(session, re) {
+  if (!session) return { ran: false, detail: "no session transcript supplied" };
+  for (const call of session.toolCalls) {
+    const cmd = typeof call.input.command === "string" ? call.input.command : "";
+    if (cmd && re.test(cmd)) return { ran: true, detail: `tool call #${call.index}: ${cmd.slice(0, 80)}` };
+  }
+  return { ran: false, detail: "no matching command appears in the transcript" };
+}
+function checkClaim(claim, ctx) {
+  switch (claim.kind) {
+    case "file-created": {
+      const full = isAbsolute(claim.subject) ? claim.subject : join2(ctx.cwd, claim.subject);
+      const there = existsSync3(full) && statSync2(full).isFile();
+      return {
+        ...claim,
+        verdict: there ? "CONFIRMED" : "REFUTED",
+        evidence: `stat ${full} \u2192 ${there ? "exists" : "ENOENT"}`,
+        reason: there ? "The file it said it created is there." : "It said it created this file. The file does not exist."
+      };
+    }
+    case "tests-pass": {
+      const { ran, detail } = ranCommand(ctx.session, /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test\b/);
+      if (!ctx.session) {
+        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: "No transcript, so we cannot see whether a test command was run." };
+      }
+      return {
+        ...claim,
+        verdict: ran ? "CONFIRMED" : "REFUTED",
+        evidence: detail,
+        reason: ran ? "A test command was run in this session before the claim." : "It said the tests pass. No test command was run in this session."
+      };
+    }
+    case "committed": {
+      const { ran, detail } = ranCommand(ctx.session, /\bgit\s+(commit|push)\b/);
+      if (!ctx.session) {
+        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: "No transcript, so we cannot see whether git ran." };
+      }
+      return {
+        ...claim,
+        verdict: ran ? "CONFIRMED" : "REFUTED",
+        evidence: detail,
+        reason: ran ? "A git commit or push appears in the session." : "It said it committed. No git commit or push appears in the session."
+      };
+    }
+    case "installed": {
+      const full = join2(ctx.cwd, "node_modules", claim.subject);
+      const there = existsSync3(full);
+      return {
+        ...claim,
+        verdict: there ? "CONFIRMED" : "REFUTED",
+        evidence: `stat ${full} \u2192 ${there ? "present" : "absent"}`,
+        reason: there ? "The package is installed." : "It said it installed this package. It is not in node_modules."
+      };
+    }
+  }
+}
+function checkClaims(text, ctx) {
+  const checked = extractClaims(text).map((c) => checkClaim(c, ctx));
+  const refuted = checked.filter((c) => c.verdict === "REFUTED").length;
+  const confirmed = checked.filter((c) => c.verdict === "CONFIRMED").length;
+  const uncheckable = checked.filter((c) => c.verdict === "UNCHECKABLE").length;
+  return {
+    checked,
+    confirmed,
+    refuted,
+    uncheckable,
+    summary: !checked.length ? "No checkable claims found. That is not the same as no false claims \u2014 only definite, past-tense statements about files, tests, commits and installs are read here." : refuted ? `${refuted} claim${refuted === 1 ? "" : "s"} contradicted by what actually happened.` : `${confirmed} claim${confirmed === 1 ? "" : "s"} checked and confirmed` + (uncheckable ? `, ${uncheckable} could not be checked.` : ".")
+  };
+}
+
 // cli/index.ts
-var VERSION2 = true ? "0.3.1" : "0.0.0-dev";
+var VERSION2 = true ? "0.3.2" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
@@ -10214,6 +10322,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
 
   ${C.bold("enforcee audit")} <rules-file> <output-file>   audit an output against a ruleset
   ${C.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
+  ${C.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
   ${C.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
   ${C.bold("enforcee learn")} <conversation-file>           propose rules from what you already said
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
@@ -10232,7 +10341,7 @@ ${C.dim("guard needs a licence, checked offline against a key compiled into this
 `);
 }
 function read(path2) {
-  if (!existsSync3(path2)) {
+  if (!existsSync4(path2)) {
     console.error(C.red(`Not found: ${path2}`));
     process.exit(2);
   }
@@ -10317,6 +10426,29 @@ async function main() {
     }
     console.log("");
     process.exit(report.ready ? 0 : 1);
+  }
+  if (cmd === "verify") {
+    const [, claimsPath, transcriptPath] = args;
+    if (!claimsPath) {
+      console.error(C.red("usage: enforcee verify <output-file> [transcript.jsonl]"));
+      process.exit(2);
+    }
+    const session = transcriptPath ? parseTranscript(read(transcriptPath)) : void 0;
+    const report = checkClaims(read(claimsPath), { cwd: process.cwd(), session });
+    console.log("");
+    for (const c of report.checked) {
+      const tag = c.verdict === "CONFIRMED" ? C.green("CONFIRMED  ") : c.verdict === "REFUTED" ? C.red("REFUTED    ") : C.yellow("UNCHECKABLE");
+      console.log(`  ${tag} ${c.reason}`);
+      console.log(C.grey(`              "${c.quote.slice(0, 96)}"`));
+      console.log(C.grey(`              ${c.evidence}`));
+    }
+    console.log("");
+    console.log(report.refuted ? `  ${C.red(C.bold(report.summary))}` : `  ${C.bold(report.summary)}`);
+    if (!transcriptPath) {
+      console.log(C.grey("  Pass a transcript to also check claims about tests and commits."));
+    }
+    console.log("");
+    process.exit(report.refuted > 0 ? 1 : 0);
   }
   if (cmd === "health") {
     const ruleset = read(args[1]);
@@ -10414,14 +10546,14 @@ async function main() {
       on.filter((p) => p.severity === "warn").map(strip2)
     );
     mkdirSync(".enforcee", { recursive: true });
-    writeFileSync(join2(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    writeFileSync(join3(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
     let runner = false;
     try {
       const here = dirname(fileURLToPath(import.meta.url));
-      for (const candidate of [join2(here, "..", "guard", "guard.mjs"), join2(here, "..", "..", "guard", "guard.mjs")]) {
-        if (existsSync3(candidate)) {
-          copyFileSync(candidate, join2(".enforcee", "guard.mjs"));
-          chmodSync(join2(".enforcee", "guard.mjs"), 493);
+      for (const candidate of [join3(here, "..", "guard", "guard.mjs"), join3(here, "..", "..", "guard", "guard.mjs")]) {
+        if (existsSync4(candidate)) {
+          copyFileSync(candidate, join3(".enforcee", "guard.mjs"));
+          chmodSync(join3(".enforcee", "guard.mjs"), 493);
           runner = true;
           break;
         }

@@ -36,6 +36,30 @@ Other commands: `enforcee preflight CLAUDE.md` checks what your rules assume bef
 `enforcee health CLAUDE.md` finds duplicates, contradictions and dead rules in the ruleset
 itself; `enforcee guard CLAUDE.md` compiles the blocking hook.
 
+## Verify — did it do what it said it did?
+
+```bash
+npx enforcee verify answer.md transcript.jsonl
+```
+
+```
+  REFUTED     It said it created this file. The file does not exist.
+              "I created `src/auth.ts` with the JWT middleware."
+              stat /tmp/project/src/auth.ts → ENOENT
+  REFUTED     It said the tests pass. No test command was run in this session.
+              "All tests pass and I committed the changes."
+              no matching command appears in the transcript
+```
+
+Every check is a `stat()` or a scan of the tool calls that actually ran — **no model call,
+no judgement.** It reads definite past-tense claims about files, tests, commits and installs;
+an intention (*"I'll create…"*) is never treated as a claim, because a false accusation costs
+more than a missed one.
+
+Measured incidence: a study of 20,574 real coding-agent sessions found **inaccurate
+self-reporting in 22.58% of misalignment episodes** — and that counts only the ones a
+developer noticed.
+
 ## Preflight — before, not after
 
 ```
@@ -143,7 +167,7 @@ Stated up front, because the audience for this product is right to be skeptical.
 The audit exits non-zero on a violation, so it gates a pull request with no wrapper:
 
 ```yaml
-- uses: 7patriksz-art/Enforcee@v0.3.2
+- uses: 7patriksz-art/Enforcee@v0.4.0
   with:
     rules: CLAUDE.md
     output: generated/summary.md

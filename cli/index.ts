@@ -17,6 +17,7 @@ import { analyseCapabilities } from '../src/lib/transcript/findings';
 import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
+import { checkClaims } from '../src/lib/prevent/claims';
 import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
@@ -51,6 +52,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
 
   ${C.bold('enforcee audit')} <rules-file> <output-file>   audit an output against a ruleset
   ${C.bold('enforcee preflight')} <rules-file>              check what your rules assume, before you start
+  ${C.bold('enforcee verify')} <output> [transcript]       did it do what it said it did?
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
   ${C.bold('enforcee learn')} <conversation-file>           propose rules from what you already said
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
@@ -169,6 +171,36 @@ async function main(): Promise<void> {
     console.log('');
     // Non-zero when something is missing, so it gates a pipeline step the same way audit does.
     process.exit(report.ready ? 0 : 1);
+  }
+
+  // verify — did what it said it did actually happen?
+  //
+  // Free and deterministic. No model call: every check here is a stat() or a scan of the
+  // tool calls in the transcript. The prose-judgement version of this belongs behind the
+  // same evidence gate as the audit judge, and is deliberately not mixed in here.
+  if (cmd === 'verify') {
+    const [, claimsPath, transcriptPath] = args;
+    if (!claimsPath) {
+      console.error(C.red('usage: enforcee verify <output-file> [transcript.jsonl]'));
+      process.exit(2);
+    }
+    const session = transcriptPath ? parseTranscript(read(transcriptPath)) : undefined;
+    const report = checkClaims(read(claimsPath), { cwd: process.cwd(), session });
+
+    console.log('');
+    for (const c of report.checked) {
+      const tag = c.verdict === 'CONFIRMED' ? C.green('CONFIRMED  ') : c.verdict === 'REFUTED' ? C.red('REFUTED    ') : C.yellow('UNCHECKABLE');
+      console.log(`  ${tag} ${c.reason}`);
+      console.log(C.grey(`              "${c.quote.slice(0, 96)}"`));
+      console.log(C.grey(`              ${c.evidence}`));
+    }
+    console.log('');
+    console.log(report.refuted ? `  ${C.red(C.bold(report.summary))}` : `  ${C.bold(report.summary)}`);
+    if (!transcriptPath) {
+      console.log(C.grey('  Pass a transcript to also check claims about tests and commits.'));
+    }
+    console.log('');
+    process.exit(report.refuted > 0 ? 1 : 0);
   }
 
   if (cmd === 'health') {
