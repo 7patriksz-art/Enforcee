@@ -32,8 +32,26 @@ npx enforcee audit CLAUDE.md some-output.md
 `coverage` is the headline number: the share of applicable rules that left **any observable
 trace**. A rule that left none is reported as such rather than quietly counted as passing.
 
-Other commands: `enforcee health CLAUDE.md` finds duplicates, contradictions and dead rules in
-the ruleset itself; `enforcee guard CLAUDE.md` compiles the blocking hook.
+Other commands: `enforcee preflight CLAUDE.md` checks what your rules assume before you start;
+`enforcee health CLAUDE.md` finds duplicates, contradictions and dead rules in the ruleset
+itself; `enforcee guard CLAUDE.md` compiles the blocking hook.
+
+## Preflight — before, not after
+
+```
+  ok      npm         command -v npm → /opt/node22/bin/npm
+  MISSING dig         dig is not on PATH
+          a rule says to run it: "Always run `dig` to confirm a domain is free"
+
+  Not ready: 1 of 3 preconditions unmet. Running anyway would produce results that
+  cannot be distinguished from real findings.
+```
+
+Preconditions are read out of the rules you already wrote — no extra file to maintain.
+
+It also lists the rules that **no output audit can settle**. A rule like *"escalate to
+compliance within 24 hours"* is not judged-instead-of-deterministic; it is unanswerable from
+a text answer by anyone. Those are named rather than quietly counted as passing.
 
 ---
 
@@ -125,7 +143,7 @@ Stated up front, because the audience for this product is right to be skeptical.
 The audit exits non-zero on a violation, so it gates a pull request with no wrapper:
 
 ```yaml
-- uses: 7patriksz-art/Enforcee@v0.2.0
+- uses: 7patriksz-art/Enforcee@v0.3.0
   with:
     rules: CLAUDE.md
     output: generated/summary.md

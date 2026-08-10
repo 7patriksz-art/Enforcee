@@ -15,6 +15,8 @@ import { extractPreferences, toRulesetMarkdown } from '../src/lib/preferences';
 import { parseTranscript } from '../src/lib/transcript/parse';
 import { analyseCapabilities } from '../src/lib/transcript/findings';
 import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
+import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
+import { preflight } from '../src/lib/prevent/preconditions';
 import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
@@ -40,6 +42,7 @@ function help(): void {
 ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follow your rules?')}
 
   ${C.bold('enforcee audit')} <rules-file> <output-file>   audit an output against a ruleset
+  ${C.bold('enforcee preflight')} <rules-file>              check what your rules assume, before you start
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
   ${C.bold('enforcee learn')} <conversation-file>           propose rules from what you already said
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
@@ -50,7 +53,8 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.dim('--json')}         emit the receipt as JSON instead of a table
   ${C.dim('--quiet')}        exit code only
 
-Exits non-zero when a rule is VIOLATED, so it works as a CI gate.
+Exits non-zero when a rule is VIOLATED, or when preflight finds a missing precondition,
+so both work as a CI gate.
 
 ${C.dim('audit, health, learn and session need no account, no key and no network.')}
 ${C.dim('guard needs a licence, checked offline against a key compiled into this binary.')}
@@ -110,6 +114,53 @@ async function main(): Promise<void> {
       console.log('');
     }
     process.exit(receipt.summary.violated > 0 ? 1 : 0);
+  }
+
+  // preflight — check what the rules assume BEFORE anything runs.
+  //
+  // Free, and deliberately so: this is VERIFY, not ENFORCE. It also has no model call and no
+  // network, so there is nothing to meter and nothing to gate.
+  if (cmd === 'preflight') {
+    // args[0] is the command itself — every other branch destructures past it.
+    const [, rulesPath] = args;
+    if (!rulesPath) {
+      console.error(C.red('usage: enforcee preflight <rules-file>'));
+      process.exit(2);
+    }
+    const { rules } = parseRuleset(read(rulesPath), rulesPath);
+    const inferred = inferPreconditions(rules);
+    const report = preflight(inferred);
+    const actions = actionShaped(rules);
+
+    console.log('');
+    if (!inferred.length) {
+      console.log(C.grey('  Nothing in this ruleset names a tool, file or variable it depends on.'));
+      console.log(C.grey('  That is a fine answer — it means there is nothing to check before you start.'));
+    }
+    for (const r of report.met) {
+      console.log(`  ${C.green('ok    ')} ${r.precondition.target}  ${C.grey(r.evidence)}`);
+    }
+    for (const r of report.missing) {
+      console.log(`  ${C.red('MISSING')} ${r.precondition.target}  ${C.grey(r.detail)}`);
+      console.log(`          ${C.grey(r.precondition.why)}`);
+    }
+    if (inferred.length) {
+      console.log('');
+      console.log(report.ready ? `  ${C.bold(report.summary)}` : `  ${C.red(C.bold(report.summary))}`);
+    }
+
+    if (actions.length) {
+      console.log('');
+      console.log(`  ${C.bold(String(actions.length))} rule${actions.length === 1 ? '' : 's'} ask whether an action happened.`);
+      console.log(C.grey('  Auditing an output cannot settle those — no tool can read a text answer and'));
+      console.log(C.grey('  learn whether an email was sent or an approval was obtained. Listed so they are'));
+      console.log(C.grey('  not quietly counted as passing:'));
+      for (const a of actions.slice(0, 5)) console.log(C.grey(`    · ${a.text.slice(0, 88)}`));
+      if (actions.length > 5) console.log(C.grey(`    · …and ${actions.length - 5} more`));
+    }
+    console.log('');
+    // Non-zero when something is missing, so it gates a pipeline step the same way audit does.
+    process.exit(report.ready ? 0 : 1);
   }
 
   if (cmd === 'health') {

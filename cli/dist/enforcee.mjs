@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync2, copyFileSync, chmodSync } from "node:fs";
+import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync3, copyFileSync, chmodSync } from "node:fs";
 import { join as join2, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,30 @@ function ruleId(normalized) {
 var IMPERATIVE = /\b(must|must not|mustn't|never|always|don't|do not|shall|should|should not|shouldn't|avoid|ensure|require[ds]?|required|prefer|use|only|no |not allowed|forbidden|refrain|limit|keep|write|respond|reply|answer|output|format|include|omit|exclude|cite|start|end|begin|finish)\b/i;
 var UNENFORCEABLE = /^(be (helpful|nice|good|smart|careful|thoughtful|concise)|use (good |common )?(judgment|sense)|do your best|act professionally|be professional|think step by step|be accurate|write well|make it good)\b/i;
 var CONDITIONAL = /^(when|whenever|if|for|while|during|unless|in case of|on)\b[^,.;]{2,80}[,.;]/i;
+var NOT_A_RULE = [
+  // Table of contents: dot leaders, with or without a trailing page number.
+  { why: "toc-leader", re: /\.{4,}\s*\d*\s*$/ },
+  // "3.2 Vendor Onboarding" / "Section 4 — Scope": a numbered heading lifted into a list.
+  { why: "numbered-heading", re: /^\d+(\.\d+)*\s*[-–—.)]?\s*[A-Z][\w ,'&/-]{0,60}$/ },
+  // A label introducing something else, e.g. "Required documents:" — the rule is below it.
+  { why: "trailing-colon-label", re: /^[A-Z][\w ,'&/-]{0,60}:$/ },
+  // Bare page/figure/table references.
+  { why: "reference", re: /^(page|figure|table|appendix|exhibit|annex|section)\s+[\dA-Z]/i }
+];
+function couldBeRule(text) {
+  const t = text.trim();
+  for (const { re } of NOT_A_RULE) if (re.test(t)) return false;
+  const STOP = /^(and|or|the|a|an|of|in|for|with|to|&)$/i;
+  const CONSTRAINT = /\b(no|not|never|must|shall|always|avoid|only|don't|do not|use|require[ds]?)\b/i;
+  if (CONSTRAINT.test(t)) return true;
+  const words = t.split(/\s+/).filter((w) => /[a-z]/i.test(w));
+  if (words.length <= 6) {
+    const significant = words.filter((w) => !STOP.test(w.replace(/[^\w']/g, "")));
+    const capitalised = significant.filter((w) => /^[A-Z]/.test(w)).length;
+    if (significant.length >= 2 && capitalised >= Math.ceil(significant.length * 0.75)) return false;
+  }
+  return true;
+}
 function splitRules(text, artifact = "ruleset") {
   const lines = text.split(/\r?\n/);
   const out = [];
@@ -53,7 +77,7 @@ function splitRules(text, artifact = "ruleset") {
         end++;
         body += " " + lines[end].trim();
       }
-      out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
+      if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
       i = end;
       continue;
     }
@@ -10018,6 +10042,156 @@ function checkLocalLicence(cwd) {
   return { ...verifyLicence(token, LICENCE_PUBLIC_KEY), from };
 }
 
+// src/lib/prevent/infer.ts
+var TOOL_HINTS = [
+  { re: /\b(npm|pnpm|yarn|bun)\b\s+(?:run\s+)?[\w:-]+/i, bin: (m) => m[1].toLowerCase() },
+  { re: /\b(git|docker|kubectl|terraform|make|cargo|go|python3?|pip3?|ruby|java|dotnet)\b\s+[\w:-]/i, bin: (m) => m[1].toLowerCase() },
+  { re: /\b(eslint|prettier|tsc|vitest|jest|pytest|mypy|ruff|black)\b/i, bin: (m) => m[1].toLowerCase() }
+];
+var RUN_VERB = /\b(run|runs|running|execute|executes|invoke|invokes|call|calls|use|uses)\b/i;
+var BARE_COMMAND = /`([a-z][\w-]{1,20})`/g;
+var PATH_RE = /[`"']([\w./-]+\.(?:json|ya?ml|toml|md|ts|tsx|js|mjs|cjs|py|sql|env|lock))[`"']/g;
+var ENV_RE = /\b([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+){1,6})\b/g;
+var HYPOTHETICAL = /\b(example|e\.g\.|such as|for instance|like|imagine|suppose|hypothetical|sample)\b/i;
+function inferPreconditions(rules) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const add = (p) => {
+    const key = `${p.kind}:${p.target}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(p);
+  };
+  for (const rule of rules) {
+    const text = rule.text;
+    if (HYPOTHETICAL.test(text)) continue;
+    for (const { re, bin } of TOOL_HINTS) {
+      const m = text.match(re);
+      if (m) {
+        add({
+          kind: "binary",
+          target: bin(m),
+          why: `named in a rule: "${text.slice(0, 70)}"`,
+          from: m[0],
+          ruleId: rule.id
+        });
+      }
+    }
+    if (RUN_VERB.test(text)) {
+      for (const m of text.matchAll(BARE_COMMAND)) {
+        const name = m[1];
+        if (name.includes(".")) continue;
+        add({
+          kind: "binary",
+          target: name,
+          why: `a rule says to run it: "${text.slice(0, 70)}"`,
+          from: m[0],
+          ruleId: rule.id
+        });
+      }
+    }
+    for (const m of text.matchAll(PATH_RE)) {
+      add({ kind: "file", target: m[1], why: `referenced by a rule: "${text.slice(0, 70)}"`, from: m[0], ruleId: rule.id });
+    }
+    for (const m of text.matchAll(ENV_RE)) {
+      if (/^(HTTP_|WWW_)/.test(m[1])) continue;
+      add({ kind: "env", target: m[1], why: `required by a rule: "${text.slice(0, 70)}"`, from: m[1], ruleId: rule.id });
+    }
+  }
+  return out;
+}
+var ACTION_RE = /\b(escalate|notify|approve|approval|verify|confirm|obtain|submit|file|record|log|route|assign|review|sign|archive|retain|deploy|publish|revoke|rotate|back ?up|within \d+\s*(?:minutes?|hours?|days?)|no later than|prior to|before proceeding)\b/i;
+function actionShaped(rules) {
+  return rules.filter((r) => ACTION_RE.test(r.text));
+}
+
+// src/lib/prevent/preconditions.ts
+import { execFileSync } from "node:child_process";
+import { existsSync as existsSync2, statSync } from "node:fs";
+function which(bin) {
+  try {
+    return execFileSync("sh", ["-c", `command -v ${JSON.stringify(bin).slice(1, -1)}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+function checkPrecondition(p, cwd = process.cwd()) {
+  const at = (t) => t.startsWith("/") ? t : `${cwd}/${t}`;
+  switch (p.kind) {
+    case "binary": {
+      const path2 = which(p.target);
+      return {
+        precondition: p,
+        met: path2 !== null,
+        detail: path2 ? `${p.target} found` : `${p.target} is not on PATH`,
+        evidence: path2 ? `command -v ${p.target} \u2192 ${path2}` : `command -v ${p.target} \u2192 not found`
+      };
+    }
+    case "file":
+    case "dir": {
+      const full = at(p.target);
+      const there = existsSync2(full);
+      const right = there && (p.kind === "dir" ? statSync(full).isDirectory() : statSync(full).isFile());
+      return {
+        precondition: p,
+        met: right,
+        detail: !there ? `${p.target} does not exist` : right ? `${p.target} present` : `${p.target} is not a ${p.kind}`,
+        evidence: `stat ${full} \u2192 ${there ? right ? "ok" : "wrong type" : "ENOENT"}`
+      };
+    }
+    case "env": {
+      const v = process.env[p.target];
+      const set = typeof v === "string" && v.trim() !== "";
+      return {
+        precondition: p,
+        met: set,
+        // Never echo the value. These are frequently credentials.
+        detail: set ? `${p.target} is set` : `${p.target} is not set`,
+        evidence: `env ${p.target} \u2192 ${set ? `set, ${v.length} chars` : "absent or empty"}`
+      };
+    }
+    case "command": {
+      try {
+        const out = execFileSync("sh", ["-c", p.target], {
+          encoding: "utf8",
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: 15e3
+        });
+        const ok = p.expect ? out.includes(p.expect) : true;
+        return {
+          precondition: p,
+          met: ok,
+          detail: ok ? "command succeeded" : `output did not contain ${JSON.stringify(p.expect)}`,
+          evidence: `${p.target} \u2192 exit 0, ${out.trim().slice(0, 120)}`
+        };
+      } catch (err) {
+        const e = err;
+        return {
+          precondition: p,
+          met: false,
+          detail: `command failed (exit ${e.status ?? "?"})`,
+          evidence: `${p.target} \u2192 exit ${e.status ?? "?"}, ${(e.stderr ?? "").toString().trim().slice(0, 120)}`
+        };
+      }
+    }
+  }
+}
+function preflight(preconditions, cwd = process.cwd()) {
+  const results = preconditions.map((p) => checkPrecondition(p, cwd));
+  const missing = results.filter((r) => !r.met);
+  const met = results.filter((r) => r.met);
+  return {
+    ready: missing.length === 0,
+    met,
+    missing,
+    summary: missing.length ? `Not ready: ${missing.length} of ${results.length} preconditions unmet. Running anyway would produce results that cannot be distinguished from real findings.` : `Ready: all ${results.length} preconditions met.`
+  };
+}
+
 // cli/index.ts
 var VERSION2 = "0.1.0";
 var C = {
@@ -10039,6 +10213,7 @@ function help() {
 ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually follow your rules?")}
 
   ${C.bold("enforcee audit")} <rules-file> <output-file>   audit an output against a ruleset
+  ${C.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
   ${C.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
   ${C.bold("enforcee learn")} <conversation-file>           propose rules from what you already said
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
@@ -10049,14 +10224,15 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.dim("--json")}         emit the receipt as JSON instead of a table
   ${C.dim("--quiet")}        exit code only
 
-Exits non-zero when a rule is VIOLATED, so it works as a CI gate.
+Exits non-zero when a rule is VIOLATED, or when preflight finds a missing precondition,
+so both work as a CI gate.
 
 ${C.dim("audit, health, learn and session need no account, no key and no network.")}
 ${C.dim("guard needs a licence, checked offline against a key compiled into this binary.")}
 `);
 }
 function read(path2) {
-  if (!existsSync2(path2)) {
+  if (!existsSync3(path2)) {
     console.error(C.red(`Not found: ${path2}`));
     process.exit(2);
   }
@@ -10103,6 +10279,44 @@ async function main() {
       console.log("");
     }
     process.exit(receipt.summary.violated > 0 ? 1 : 0);
+  }
+  if (cmd === "preflight") {
+    const [, rulesPath] = args;
+    if (!rulesPath) {
+      console.error(C.red("usage: enforcee preflight <rules-file>"));
+      process.exit(2);
+    }
+    const { rules } = parseRuleset(read(rulesPath), rulesPath);
+    const inferred = inferPreconditions(rules);
+    const report = preflight(inferred);
+    const actions = actionShaped(rules);
+    console.log("");
+    if (!inferred.length) {
+      console.log(C.grey("  Nothing in this ruleset names a tool, file or variable it depends on."));
+      console.log(C.grey("  That is a fine answer \u2014 it means there is nothing to check before you start."));
+    }
+    for (const r of report.met) {
+      console.log(`  ${C.green("ok    ")} ${r.precondition.target}  ${C.grey(r.evidence)}`);
+    }
+    for (const r of report.missing) {
+      console.log(`  ${C.red("MISSING")} ${r.precondition.target}  ${C.grey(r.detail)}`);
+      console.log(`          ${C.grey(r.precondition.why)}`);
+    }
+    if (inferred.length) {
+      console.log("");
+      console.log(report.ready ? `  ${C.bold(report.summary)}` : `  ${C.red(C.bold(report.summary))}`);
+    }
+    if (actions.length) {
+      console.log("");
+      console.log(`  ${C.bold(String(actions.length))} rule${actions.length === 1 ? "" : "s"} ask whether an action happened.`);
+      console.log(C.grey("  Auditing an output cannot settle those \u2014 no tool can read a text answer and"));
+      console.log(C.grey("  learn whether an email was sent or an approval was obtained. Listed so they are"));
+      console.log(C.grey("  not quietly counted as passing:"));
+      for (const a of actions.slice(0, 5)) console.log(C.grey(`    \xB7 ${a.text.slice(0, 88)}`));
+      if (actions.length > 5) console.log(C.grey(`    \xB7 \u2026and ${actions.length - 5} more`));
+    }
+    console.log("");
+    process.exit(report.ready ? 0 : 1);
   }
   if (cmd === "health") {
     const ruleset = read(args[1]);
@@ -10205,7 +10419,7 @@ async function main() {
     try {
       const here = dirname(fileURLToPath(import.meta.url));
       for (const candidate of [join2(here, "..", "guard", "guard.mjs"), join2(here, "..", "..", "guard", "guard.mjs")]) {
-        if (existsSync2(candidate)) {
+        if (existsSync3(candidate)) {
           copyFileSync(candidate, join2(".enforcee", "guard.mjs"));
           chmodSync(join2(".enforcee", "guard.mjs"), 493);
           runner = true;
