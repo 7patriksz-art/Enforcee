@@ -2,6 +2,12 @@ import Link from 'next/link';
 
 const STEPS = [
   {
+    n: '00',
+    t: 'Check what your rules assume, before anything runs',
+    d: 'A rule that tells the agent to run a tool is worthless if the tool is not installed — the command returns nothing, and nothing is indistinguishable from a clean result. Preflight reads the tools, files and variables your rules depend on straight out of the rules themselves, and reports a missing one as its own outcome rather than as a finding. It also refuses to trust a negative unless a positive control passed in the same run: if the instrument cannot answer a question we already know the answer to, it did not find nothing — it failed.',
+    tag: 'free',
+  },
+  {
     n: '01',
     t: 'Split into atomic rules',
     d: 'Your file is broken into individually addressable rules — markdown bullets, numbered items, and directive sentences in prose. Each rule gets a content-addressed id (the first 12 hex of sha256 over its normalized text), so the same rule keeps the same id across edits, files and audits.',
@@ -30,6 +36,12 @@ const STEPS = [
     t: 'Seal the receipt',
     d: 'Ruleset hash, output hash, every rule, every verdict, the method behind each one, engine versions, and the measured cost of the audit — canonicalized with sorted keys and hashed. Chain a receipt to the previous one and you get a tamper-evident history for that assistant.',
     tag: 'deterministic',
+  },
+  {
+    n: '06',
+    t: 'Check what it said it did',
+    d: 'The last step is the one nothing else does. Every agent-observability tool evaluates the transcript, and the transcript is the model\'s own account of itself — a false claim lives inside it and is perfectly consistent with everything around it. So we read somewhere else. It said it created a file: does the file exist? It said the tests pass: was a test command run at all? Each answer is a stat() or a scan of the commands that actually executed. No model call, no judgement. Across 20,574 measured coding sessions, inaccurate self-reporting accounted for 22.58% of failures.',
+    tag: 'free',
   },
 ];
 

@@ -43,6 +43,18 @@ export default function Home() {
           <span className="font-mono text-[12px] text-skip">no account · 20 seconds · free forever</span>
         </div>
 
+        <div className="readable mt-6 max-w-prose rounded-xl border hairline bg-paper-soft px-5 py-4 text-[14.5px]">
+          A study of <strong>1,650 real coding sessions</strong> measured how often agents follow the rules
+          in a <code className="rounded bg-white px-1 py-0.5 font-mono text-[13px]">CLAUDE.md</code>: about{' '}
+          <strong>two thirds</strong>, falling roughly <strong>5% with every function it writes</strong>, with
+          the first violation typically arriving at function four. File size, instruction order, structure and
+          even contradictions between files made <em>no measurable difference</em>.
+          <span className="hi font-semibold text-ink"> You cannot fix this by writing a better rules file.</span>{' '}
+          <a href="https://arxiv.org/abs/2605.10039" className="text-brand underline" target="_blank" rel="noreferrer">
+            arXiv 2605.10039
+          </a>
+        </div>
+
         <div className="mt-10 grid max-w-3xl gap-x-8 gap-y-3 border-t hairline pt-6 sm:grid-cols-3">
           {[
             ['4 in 5', 'of your rules answered instantly, by code, with no model in the loop'],
@@ -133,6 +145,14 @@ export default function Home() {
               {
                 k: 'It refuses to guess',
                 d: 'UNVERIFIABLE is a real answer here. A judged verdict must cite at least ten characters we can then locate in your own text; if we cannot find it, the verdict is thrown away, not softened. Across 48 verdicts on three models: zero false accusations, zero invented evidence. What this stops is a model inventing a sentence — it is not a claim that every cited quote is the most apt one.',
+              },
+              {
+                k: 'It checks the claim, not the transcript',
+                d: 'Every observability tool grades the trace — and the trace is the model\'s own account of itself, so a false claim sits inside it, perfectly consistent. Enforcee reads somewhere else: the filesystem, the exit code, the commands that actually ran. It said it created the file; the file is not there. Inaccurate self-reporting is 22.58% of agent failures across 20,574 measured sessions, and nothing else on the market looks for it.',
+              },
+              {
+                k: 'It checks before, not only after',
+                d: 'A rule that says to run a tool is worthless if the tool is missing — the command returns nothing and nothing looks the same as clean. Preflight names what your rules assume and refuses to report a negative unless a positive control passed in the same run. An absent instrument and a genuine finding produce identical silence, and telling them apart is the whole job.',
               },
               {
                 k: 'It blocks, not just reports',

@@ -129,7 +129,7 @@ Two layers, never blurred, badged on every row:
 
 - **Deterministic** — decided by code, no model involved, reproducible. Required and forbidden
   literals, regex, emoji, em dashes, word and character limits, JSON validity, markdown tables,
-  code-fence tagging, required headings, citations, output language. On a hand-written ruleset — a `CLAUDE.md`, an `AGENTS.md`, a `.cursorrules` — this settles
+  code-fence tagging, required headings, citations, output language. On a hand-written ruleset — a `CLAUDE.md`, an `AGENTS.md`, a `.cursor/rules` file — this settles
   about **80% of rules with zero model calls**. On a 100-page enterprise SOP it is much lower,
   and the parser is the reason; we are measuring that honestly before claiming anything wider.
 - **Judged** — only the remainder. The judge must return a quote of at least 10 characters from the
