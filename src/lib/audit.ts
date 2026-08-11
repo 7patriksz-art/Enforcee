@@ -74,6 +74,26 @@ export async function runAudit(input: AuditInput): Promise<AuditOutcome> {
       results.push(det);
       continue;
     }
+    // An action rule is not sent to the judge, because the judge cannot answer it either.
+    //
+    // "Always run `npm test` before committing" is not a question about the text. Reading an
+    // output can never establish whether a command ran, and asking a model to try invites
+    // exactly the confident guess this product exists to replace. The honest answer names
+    // the layer that CAN settle it, which reads the environment rather than the answer.
+    if (rule.check.kind === 'action') {
+      results.push({
+        ruleId: rule.id,
+        verdict: 'UNVERIFIABLE',
+        method: 'structural',
+        evidence: [],
+        rationale:
+          'This rule asks whether an action happened. No reading of an output can settle that — ' +
+          `run \`${rule.check.hint}\` against the session instead, which checks what actually ran.`,
+        engaged: false,
+      });
+      continue;
+    }
+
     // A rule nobody could adjudicate should not be handed to a model and dressed up
     // as a verdict. Saying so costs nothing and is the honest answer.
     if (isUnenforceable(rule.text)) {

@@ -159,6 +159,11 @@ function classify(text) {
   if (/\b(cite|citation|source|reference|link)s?\b/i.test(lower) && /\b(always|must|include|provide|add|end with|required)\b/i.test(lower) && !negative2) {
     return { kind: "citation_required" };
   }
+  const ACTION_VERB = /\b(run|execute|invoke|call|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
+  const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|output|respond|reply|format)\b/i;
+  if (ACTION_VERB.test(t) && !ABOUT_TEXT.test(t)) {
+    return { kind: "action", hint: "enforcee verify" };
+  }
   const lits = literals(t);
   if (lits.length > 0) {
     return negative2 ? { kind: "forbidden_literal", needles: lits, caseSensitive: false } : { kind: "required_literal", needles: lits, caseSensitive: false };
@@ -9312,6 +9317,17 @@ async function runAudit(input) {
       results.push(det);
       continue;
     }
+    if (rule.check.kind === "action") {
+      results.push({
+        ruleId: rule.id,
+        verdict: "UNVERIFIABLE",
+        method: "structural",
+        evidence: [],
+        rationale: `This rule asks whether an action happened. No reading of an output can settle that \u2014 run \`${rule.check.hint}\` against the session instead, which checks what actually ran.`,
+        engaged: false
+      });
+      continue;
+    }
     if (isUnenforceable(rule.text)) {
       results.push({
         ruleId: rule.id,
@@ -9429,6 +9445,16 @@ var SECRET_PATHS = "(^|/)\\.env(\\.|$)|(^|/)id_rsa$|\\.pem$|(^|/)\\.aws/|(^|/)\\
 function pid(text) {
   return "D-" + hashText(text).slice(0, 8);
 }
+function literalsOf(text) {
+  const out = [];
+  const re = /[`"'“‘]([^`"'”’]{1,60})[`"'”’]/g;
+  let m;
+  while (m = re.exec(text)) {
+    const v = m[1].trim();
+    if (v.length >= 1) out.push(v);
+  }
+  return out;
+}
 function proposeDenyRules(rules) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
@@ -9454,8 +9480,9 @@ function proposeDenyRules(rules) {
       });
       continue;
     }
-    if (c.kind === "forbidden_literal") {
-      for (const needle of c.needles) {
+    const needles = c.kind === "forbidden_literal" ? c.needles : c.kind === "action" && /\b(never|not|don't|do not|avoid|no)\b/i.test(rule.text) ? literalsOf(rule.text) : [];
+    if (needles.length) {
+      for (const needle of needles) {
         const looksOperational = /[\s/\\.-]/.test(needle) && needle.length >= 3;
         if (!looksOperational) continue;
         push({
@@ -10100,9 +10127,8 @@ function inferPreconditions(rules) {
   }
   return out;
 }
-var ACTION_RE = /\b(escalate|notify|approve|approval|verify|confirm|obtain|submit|file|record|log|route|assign|review|sign|archive|retain|deploy|publish|revoke|rotate|back ?up|within \d+\s*(?:minutes?|hours?|days?)|no later than|prior to|before proceeding)\b/i;
 function actionShaped(rules) {
-  return rules.filter((r) => ACTION_RE.test(r.text));
+  return rules.filter((r) => classify(r.text).kind === "action");
 }
 
 // src/lib/prevent/preconditions.ts
@@ -10509,7 +10535,7 @@ function alreadyDeclined(memory, id) {
 }
 
 // cli/index.ts
-var VERSION2 = true ? "0.5.0" : "0.0.0-dev";
+var VERSION2 = true ? "0.5.1" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitRules } from '../src/lib/rules/parse';
+import { splitRules, classify } from '../src/lib/rules/parse';
 
 /**
  * Bullets used to be accepted unconditionally. That is correct for a hand-written CLAUDE.md,
@@ -57,5 +57,45 @@ describe('rule extraction keeps real rules', () => {
 
   it('keeps a numbered rule, which looks like a numbered heading but is not', () => {
     expect(parse('1. Never commit secrets to the repository.')).toHaveLength(1);
+  });
+});
+
+/**
+ * The false accusation this prevents, found by walking a first run as a stranger on a
+ * ruleset any real user would write.
+ *
+ * "Always run `npm test` before committing" was classified required_literal: the backticked
+ * command was extracted, then required to appear in the model's OUTPUT, and reported VIOLATED
+ * because an answer about refactoring auth does not contain the string "npm test".
+ *
+ * That is a false accusation, and "zero false accusations" is on the landing page. These
+ * rules are not judged-instead-of-deterministic — no reading of a text output settles whether
+ * a command ran, by us or by anyone.
+ */
+describe('action rules are not mistaken for text rules', () => {
+  const kindOf = (text: string) => classify(text).kind;
+
+  it('does not read "always run `npm test`" as a required literal', () => {
+    expect(kindOf('Always run `npm test` before committing.')).toBe('action');
+  });
+
+  it('covers the other action shapes a real ruleset contains', () => {
+    for (const r of [
+      'Always deploy through the pipeline, never `vercel --prod` by hand.',
+      'Escalate to the compliance officer within 24 hours.',
+      'Never force-push to a shared branch.',
+      'Obtain a second approval before merging.',
+    ]) {
+      expect(kindOf(r), `not detected: ${r}`).toBe('action');
+    }
+  });
+
+  it('does NOT steal rules that really are about the text', () => {
+    // The costly direction. A rule about output shape must keep its deterministic checker.
+    expect(kindOf('Always include `## Summary` as the first heading.')).not.toBe('action');
+    expect(kindOf('Never mention `internal-only` in a reply.')).not.toBe('action');
+    expect(kindOf('Always respond in English.')).not.toBe('action');
+    expect(kindOf('Never use emojis.')).not.toBe('action');
+    expect(kindOf('Keep responses under 200 words.')).not.toBe('action');
   });
 });

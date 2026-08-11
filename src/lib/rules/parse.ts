@@ -252,6 +252,28 @@ export function classify(text: string): CheckSpec {
     return { kind: 'citation_required' };
   }
 
+  // A rule about DOING something is not a rule about the text containing something.
+  //
+  // "Always run `npm test` before committing" was being read as required_literal — the
+  // backticked command extracted, then required to appear in the model's output — and
+  // reported VIOLATED because the answer did not contain the string "npm test". That is a
+  // FALSE ACCUSATION, and "zero false accusations" is on the landing page. Found by walking
+  // a first run as a stranger, on a ruleset any real user would write.
+  //
+  // These rules are not judged-instead-of-deterministic. No reading of a text output settles
+  // whether a command was run, by us or by anyone. The honest answer is that this needs the
+  // environment, which is what `enforcee verify` reads.
+  //
+  // Deliberately narrow: it fires only on an action verb, and never when the rule is
+  // explicitly about the text ("include", "mention", "start with"). A missed action rule
+  // costs an unnecessary judged call; a false positive here costs someone's trust.
+  const ACTION_VERB =
+    /\b(run|execute|invoke|call|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
+  const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|output|respond|reply|format)\b/i;
+  if (ACTION_VERB.test(t) && !ABOUT_TEXT.test(t)) {
+    return { kind: 'action', hint: 'enforcee verify' };
+  }
+
   // Quoted literals are the highest-signal deterministic case.
   const lits = literals(t);
   if (lits.length > 0) {

@@ -85,6 +85,13 @@ export type CheckSpec =
   | { kind: 'heading_required'; heading: string }
   | { kind: 'citation_required' }
   | { kind: 'language'; code: string; name: string }
+  /**
+   * The rule asks whether an ACTION happened — run the tests, escalate, obtain approval.
+   * No reading of a text output settles it, by us or by anyone, so it is never sent to the
+   * judge and never guessed at. It resolves to UNVERIFIABLE with a pointer to the layer that
+   * CAN answer it, which reads the environment rather than the answer.
+   */
+  | { kind: 'action'; hint: string }
   | { kind: 'judged'; reason: string };
 
 /** A literal span of the audited output that supports a verdict. */

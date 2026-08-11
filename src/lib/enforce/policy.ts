@@ -120,6 +120,18 @@ function pid(text: string): string {
  *  - a standing library of destructive operations, offered whether or not the ruleset
  *    mentions them, because most people forget to write these down until after the incident
  */
+/** Backticked or quoted literals in a rule — the command an action rule is about. */
+function literalsOf(text: string): string[] {
+  const out: string[] = [];
+  const re = /[`"'“‘]([^`"'”’]{1,60})[`"'”’]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const v = m[1].trim();
+    if (v.length >= 1) out.push(v);
+  }
+  return out;
+}
+
 export function proposeDenyRules(rules: Rule[]): Proposal[] {
   const out: Proposal[] = [];
   const seen = new Set<string>();
@@ -150,8 +162,24 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
       continue;
     }
 
-    if (c.kind === 'forbidden_literal') {
-      for (const needle of c.needles) {
+    // 'action' rules land here too, and that distinction is worth stating.
+    //
+    // An action rule — "never run `supabase db push` against production" — is UNVERIFIABLE
+    // to the audit layer, because no reading of a text output can establish whether a command
+    // ran. It is the single most enforceable thing the GUARD has, because the guard watches
+    // the command itself. Same rule, unanswerable by one layer and exactly answerable by
+    // another, which is the clearest argument for having both.
+    //
+    // Classifying action rules separately broke this until the literals were routed back in.
+    const needles =
+      c.kind === 'forbidden_literal'
+        ? c.needles
+        : c.kind === 'action' && /\b(never|not|don't|do not|avoid|no)\b/i.test(rule.text)
+          ? literalsOf(rule.text)
+          : [];
+
+    if (needles.length) {
+      for (const needle of needles) {
         // Only worth enforcing at the tool boundary if it looks like a command or a path.
         const looksOperational = /[\s/\\.-]/.test(needle) && needle.length >= 3;
         if (!looksOperational) continue;

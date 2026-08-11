@@ -1,5 +1,6 @@
 import type { Precondition } from './preconditions';
 import type { Rule } from '../types';
+import { classify } from '../rules/parse';
 
 /**
  * Derive preconditions from rules a person already wrote.
@@ -112,14 +113,14 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
 /**
  * Rules that ask whether an ACTION happened, which no reading of a text output can settle.
  *
- * Measured on the HANDBOOK corpus of real enterprise SOPs: 731 of the un-decidable rules are
- * this shape — escalate within 24 hours, verify the W-9 before payment, obtain a second
- * approval. They are not "judged rather than deterministic"; they are unanswerable from text
- * by anyone, and saying so is more honest than sending them to a model that will guess.
+ * Delegates to classify() rather than carrying its own pattern. It used to have one, and the
+ * two definitions immediately disagreed: an audit reported two action rules UNVERIFIABLE
+ * while preflight listed none, on the same file, in the same minute. Ninth instance of one
+ * idea living in two places on this project.
+ *
+ * The classifier is the right home because it already has to make this decision to keep the
+ * literal checker off these rules — the false-accusation fix. Everything else reads it.
  */
-const ACTION_RE =
-  /\b(escalate|notify|approve|approval|verify|confirm|obtain|submit|file|record|log|route|assign|review|sign|archive|retain|deploy|publish|revoke|rotate|back ?up|within \d+\s*(?:minutes?|hours?|days?)|no later than|prior to|before proceeding)\b/i;
-
 export function actionShaped(rules: Rule[]): Rule[] {
-  return rules.filter((r) => ACTION_RE.test(r.text));
+  return rules.filter((r) => classify(r.text).kind === 'action');
 }
