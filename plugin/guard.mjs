@@ -185,6 +185,31 @@ function findPolicy(startDir) {
   return null;
 }
 
+/**
+ * Has this exact load already been recorded for this session?
+ *
+ * Reads the tail of the ledger rather than holding state, because a hook is a fresh process
+ * every time — there is nowhere else to remember. Bounded to the last 400 entries so a long
+ * session cannot turn this into a linear scan of a large file on every event.
+ */
+function alreadyLogged(policyPath, session, filePath, loadReason) {
+  if (!policyPath) return false;
+  try {
+    const lines = readFileSync(join(dirname(policyPath), 'ledger.jsonl'), 'utf8').trim().split('\n');
+    for (const line of lines.slice(-400)) {
+      if (!line) continue;
+      let e;
+      try { e = JSON.parse(line); } catch { continue; }
+      if (e.decision === 'LOADED' && e.session === session && e.filePath === filePath && e.loadReason === loadReason) {
+        return true;
+      }
+    }
+  } catch {
+    // No ledger yet, or unreadable. Recording a duplicate is better than losing the first one.
+  }
+  return false;
+}
+
 function log(policyPath, entry) {
   if (!policyPath) return;
   try {
@@ -322,12 +347,28 @@ function main() {
   // recorded nothing while appearing installed — and 'free inspects, paid enforces' is the
   // line the whole product is priced on.
   if (event === 'InstructionsLoaded') {
+    const filePath = typeof payload.file_path === 'string' ? payload.file_path : null;
+    const loadReason = typeof payload.load_reason === 'string' ? payload.load_reason : null;
+
+    // Deduplicate on (session, file_path, load_reason).
+    //
+    // claude-code#52176, open since 23 April 2026: "InstructionsLoaded hook fires 3x per file
+    // per compact event". A reporter with ~50 rules files measured 261 KB of reload against an
+    // expected 87 KB. Separately observed here: in headless -p mode, --continue fires a fresh
+    // session_start load for the root CLAUDE.md on EVERY turn.
+    //
+    // Either would make a ledger count of "your rules were loaded N times" wrong by 3x or
+    // more — a number that is embarrassing to discover in a customer's screenshot and cheap
+    // to prevent here. The de-duplication is the honest reading anyway: the same file loading
+    // for the same reason in the same session is one fact, however many times it is announced.
+    if (filePath && alreadyLogged(policyPath, base.session, filePath, loadReason)) allow();
+
     log(policyPath, {
       ...base,
       decision: 'LOADED',
-      filePath: typeof payload.file_path === 'string' ? payload.file_path : null,
+      filePath,
       memoryType: typeof payload.memory_type === 'string' ? payload.memory_type : null,
-      loadReason: typeof payload.load_reason === 'string' ? payload.load_reason : null,
+      loadReason,
       evidence: 'OBSERVED',
     });
     allow();
