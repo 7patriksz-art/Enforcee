@@ -18,6 +18,8 @@ import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
 import { checkClaims } from '../src/lib/prevent/claims';
+import { propose, readyToOffer, needsDecision, selfCheckable } from '../src/lib/prevent/supersede';
+import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference } from '../src/lib/prevent/memory';
 import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
@@ -222,15 +224,62 @@ async function main(): Promise<void> {
     const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : undefined;
     const found = extractPreferences(text, { existingRuleIds: existing });
     if (json) return console.log(JSON.stringify(found, null, 2));
+
+    // Per-project memory. Counts mentions across runs, remembers what was declined, and
+    // knows which rules are already active so a new preference cannot silently undo one.
+    const memory = loadMemory();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const c of found) noteMention(memory, c.id, c.rule, c.quote, today);
+
+    const proposals = propose(found, activeRules(memory), (c) =>
+      memory.entries.find((e) => e.id === c.id || samePreference(e.rule, c.rule))?.mentions ?? 1
+    );
+
+    const conflicts = needsDecision(proposals);
+    // One offer per preference, not per phrasing. Saying the same thing two ways is what
+    // reached the threshold in the first place; showing it back twice would be absurd.
+    const fresh = readyToOffer(proposals)
+      .filter((p) => !alreadyDeclined(memory, p.candidate.id))
+      .filter((p, i, all) => all.findIndex((q) => samePreference(q.candidate.rule, p.candidate.rule)) === i);
+    const held = proposals.filter((p) => p.disposition.kind === 'new' && p.mentions < 2);
+
     console.log('');
-    for (const c of found) {
-      console.log(`  ${C.bold(c.rule)}`);
-      console.log(C.grey(`    ${c.strength} · ${c.basis}`));
-      console.log(C.grey(`    "${c.quote.replace(/\s+/g, ' ').slice(0, 90)}"`));
+
+    // Conflicts first, always. This is the one thing that must not scroll past.
+    for (const p of conflicts) {
+      console.log(`  ${C.red('NEEDS YOU')} ${C.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
       console.log('');
     }
-    if (found.length) console.log(C.dim('  Nothing above is active. Paste what you want into your ruleset:\n'));
-    console.log(toRulesetMarkdown(found));
+
+    for (const p of fresh) {
+      const check = selfCheckable(p.candidate);
+      console.log(`  ${check.ok ? C.green('READY    ') : C.yellow('WEAK     ')} ${C.bold(p.candidate.rule)}`);
+      console.log(C.grey(`    heard ${p.mentions}× · ${check.why}`));
+      console.log(C.grey(`    "${p.candidate.quote.replace(/\s+/g, ' ').slice(0, 84)}"`));
+      console.log('');
+    }
+
+    if (held.length) {
+      console.log(C.grey(`  ${held.length} heard once, held back — a single remark is not a preference.`));
+      console.log('');
+    }
+
+    saveMemory(memory);
+
+    if (conflicts.length) {
+      console.log(`  ${C.red(C.bold(`${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} with rules you already have. Nothing was changed or removed.`))}`);
+      console.log('');
+    }
+
+    const offerable = fresh.filter((p) => selfCheckable(p.candidate).ok);
+    if (offerable.length) {
+      console.log(C.dim('  Nothing below is active. Paste what you want into your ruleset:\n'));
+      console.log(toRulesetMarkdown(offerable.map((p) => p.candidate)));
+    } else if (!conflicts.length) {
+      console.log(C.grey('  Nothing new to offer. That is a real answer, not an empty one.'));
+      console.log('');
+    }
     return;
   }
 

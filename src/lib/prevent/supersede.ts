@@ -191,6 +191,29 @@ export function propose(
   });
 }
 
+/**
+ * Would the audit engine actually be able to check this rule?
+ *
+ * Snyk's Agent Fix does the equivalent before showing anything: "Before you even see a fix,
+ * Snyk Agent Fix runs all generated auto-fixes through a Snyk Code SAST scan… If any fix
+ * recommendation doesn't pass any of our SAST tests, we won't show it to you."
+ *
+ * Same principle, applied to a learned rule. Offering one that nothing can adjudicate hands
+ * the user a rule that will report NOT_APPLICABLE or UNVERIFIABLE forever — which looks
+ * identical to a rule being obeyed, and is the exact confusion this product exists to
+ * remove. A rule we cannot check is worse than no rule, because it manufactures false
+ * reassurance.
+ */
+export function selfCheckable(candidate: PreferenceCandidate): { ok: boolean; why: string } {
+  if (candidate.check === 'judged') {
+    return {
+      ok: false,
+      why: 'nothing in the engine can decide this one by code — it would need the judge every time, and may still come back unverifiable',
+    };
+  }
+  return { ok: true, why: `checkable by code (${candidate.check})` };
+}
+
 /** Proposals safe to offer without arbitration: new, and heard enough times. */
 export function readyToOffer(proposals: Proposal[], opts: ProposeOptions = {}): Proposal[] {
   const minMentions = opts.minMentions ?? 2;

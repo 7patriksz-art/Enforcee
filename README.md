@@ -36,6 +36,39 @@ Other commands: `enforcee preflight CLAUDE.md` checks what your rules assume bef
 `enforcee health CLAUDE.md` finds duplicates, contradictions and dead rules in the ruleset
 itself; `enforcee guard CLAUDE.md` compiles the blocking hook.
 
+## Learn — and never quietly undo a decision
+
+```bash
+npx enforcee learn conversation.md
+```
+
+Reads preferences out of things you already said. **One remark is not a preference** — it is
+held until you say it again. Rephrasings count as repeats, so saying the same thing two ways
+reaches the threshold the way you would expect.
+
+When something you now say contradicts a rule you already have, it is **never applied
+automatically**:
+
+```
+  NEEDS YOU  Force-pushing is fine on my branches.
+    This contradicts a rule you already have (set March): "Never force-push to a
+    shared branch" — your words then: "never force push, it destroys history".
+    That rule is ENFORCED: it currently blocks tool calls in your sessions.
+    Nothing has been changed or removed — pick which one you meant.
+```
+
+Both sides quoted and dated. Nothing deleted, nothing applied, and the old rule keeps working
+until you choose. **Repetition promotes a new rule; it never promotes a reversal** — saying a
+new opinion twenty times is not evidence the old rule was wrong.
+
+A proposed rule the engine cannot actually check is marked `WEAK` and left out of the paste
+block. A rule nothing can adjudicate reports "not applicable" forever, which looks identical
+to a rule being obeyed.
+
+Everything lives in `.enforcee/learned.json` in your own project — readable, diffable,
+deletable, and never sent anywhere. Declines persist, so nothing is re-proposed after you say
+no. Nothing is ever removed from that file; a retired rule stays, marked retired, with the date.
+
 ## Verify — did it do what it said it did?
 
 ```bash
@@ -167,7 +200,7 @@ Stated up front, because the audience for this product is right to be skeptical.
 The audit exits non-zero on a violation, so it gates a pull request with no wrapper:
 
 ```yaml
-- uses: 7patriksz-art/Enforcee@v0.5.0
+- uses: 7patriksz-art/Enforcee@v0.5.1
   with:
     rules: CLAUDE.md
     output: generated/summary.md

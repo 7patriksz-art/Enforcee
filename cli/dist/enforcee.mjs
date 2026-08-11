@@ -6,8 +6,8 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync2, writeFileSync, mkdirSync, existsSync as existsSync4, copyFileSync, chmodSync } from "node:fs";
-import { join as join3, dirname } from "node:path";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, existsSync as existsSync5, copyFileSync, chmodSync } from "node:fs";
+import { join as join4, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
@@ -38,12 +38,12 @@ var NOT_A_RULE = [
 function couldBeRule(text) {
   const t = text.trim();
   for (const { re } of NOT_A_RULE) if (re.test(t)) return false;
-  const STOP = /^(and|or|the|a|an|of|in|for|with|to|&)$/i;
+  const STOP3 = /^(and|or|the|a|an|of|in|for|with|to|&)$/i;
   const CONSTRAINT = /\b(no|not|never|must|shall|always|avoid|only|don't|do not|use|require[ds]?)\b/i;
   if (CONSTRAINT.test(t)) return true;
-  const words = t.split(/\s+/).filter((w) => /[a-z]/i.test(w));
-  if (words.length <= 6) {
-    const significant = words.filter((w) => !STOP.test(w.replace(/[^\w']/g, "")));
+  const words2 = t.split(/\s+/).filter((w) => /[a-z]/i.test(w));
+  if (words2.length <= 6) {
+    const significant = words2.filter((w) => !STOP3.test(w.replace(/[^\w']/g, "")));
     const capitalised = significant.filter((w) => /^[A-Z]/.test(w)).length;
     if (significant.length >= 2 && capitalised >= Math.ceil(significant.length * 0.75)) return false;
   }
@@ -124,17 +124,17 @@ var LANGUAGES = {
 function classify(text) {
   const t = text.trim();
   const lower = t.toLowerCase();
-  const negative = /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|not allowed)\b/i.test(lower);
+  const negative2 = /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|not allowed)\b/i.test(lower);
   const rx = /(?:^|\s)\/((?:[^/\\]|\\.){2,120})\/([gimsuy]{0,5})(?=\s|$)/.exec(t);
   if (rx) {
     try {
       new RegExp(rx[1], rx[2]);
-      return negative ? { kind: "forbidden_regex", pattern: rx[1], flags: rx[2] || "g" } : { kind: "required_regex", pattern: rx[1], flags: rx[2] || "g" };
+      return negative2 ? { kind: "forbidden_regex", pattern: rx[1], flags: rx[2] || "g" } : { kind: "required_regex", pattern: rx[1], flags: rx[2] || "g" };
     } catch {
     }
   }
-  if (/\bem[- ]?dash(es)?\b/i.test(lower) && negative) return { kind: "no_em_dash" };
-  if (/\bemoji(s)?\b/i.test(lower) && negative) return { kind: "no_emoji" };
+  if (/\bem[- ]?dash(es)?\b/i.test(lower) && negative2) return { kind: "no_em_dash" };
+  if (/\bemoji(s)?\b/i.test(lower) && negative2) return { kind: "no_emoji" };
   const lang = /\b(?:respond|reply|answer|write|output)\b[^.]{0,40}\bin\s+([a-z]+)\b/i.exec(lower);
   if (lang && LANGUAGES[lang[1]]) {
     return { kind: "language", code: LANGUAGES[lang[1]], name: lang[1] };
@@ -145,26 +145,26 @@ function classify(text) {
   if (minWords) return { kind: "min_words", n: Number(minWords[1]) };
   const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
   if (maxChars) return { kind: "max_chars", n: Number(maxChars[1]) };
-  if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative) {
+  if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative2) {
     return { kind: "format_json" };
   }
-  if (/\b(markdown\s+)?table\b/i.test(lower) && /\b(use|include|present|format|as|show)\b/i.test(lower) && !negative) {
+  if (/\b(markdown\s+)?table\b/i.test(lower) && /\b(use|include|present|format|as|show)\b/i.test(lower) && !negative2) {
     return { kind: "format_markdown_table" };
   }
   const fenceLang = /\bcode\s+(?:block|fence)s?\b[^.]{0,30}\b(?:tagged|labell?ed|marked|with)\b[^.]{0,20}?\b([a-z+#]{1,12})\b/i.exec(lower);
   if (fenceLang) return { kind: "code_fence_language", language: fenceLang[1] };
-  if (/\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative) return { kind: "format_code_fence" };
+  if (/\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative2) return { kind: "format_code_fence" };
   const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*["'`“]?([^"'`”.]{2,50})/i.exec(t);
   if (headingReq) return { kind: "heading_required", heading: headingReq[1].trim() };
-  if (/\b(cite|citation|source|reference|link)s?\b/i.test(lower) && /\b(always|must|include|provide|add|end with|required)\b/i.test(lower) && !negative) {
+  if (/\b(cite|citation|source|reference|link)s?\b/i.test(lower) && /\b(always|must|include|provide|add|end with|required)\b/i.test(lower) && !negative2) {
     return { kind: "citation_required" };
   }
   const lits = literals(t);
   if (lits.length > 0) {
-    return negative ? { kind: "forbidden_literal", needles: lits, caseSensitive: false } : { kind: "required_literal", needles: lits, caseSensitive: false };
+    return negative2 ? { kind: "forbidden_literal", needles: lits, caseSensitive: false } : { kind: "required_literal", needles: lits, caseSensitive: false };
   }
   const wordAfter = /\b(?:the\s+)?(?:word|phrase|term)s?\s+([a-z][a-z' -]{1,40})/i.exec(t);
-  if (wordAfter && negative) {
+  if (wordAfter && negative2) {
     const needles = wordAfter[1].split(/\s*(?:,|\bor\b|\band\b)\s*/i).map((w) => w.trim()).filter((w) => w.length > 1);
     if (needles.length) return { kind: "forbidden_literal", needles, caseSensitive: false };
   }
@@ -9138,8 +9138,8 @@ var GENERIC = /* @__PURE__ */ new Set([
 ]);
 var POLARITY_AND_FILLER = /\b(always|never|must not|must|should not|should|don't|do not|cannot|can't|avoid|omit|exclude|refrain from|ensure|please|you|the|a|an|to|in|of|and|or|for|with|that|this|it|is|are|be)\b/g;
 function subjectWords(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9\s'-]/g, " ").replace(POLARITY_AND_FILLER, " ").split(/\s+/).filter((w) => w.length > 2);
-  return new Set(words);
+  const words2 = text.toLowerCase().replace(/[^a-z0-9\s'-]/g, " ").replace(POLARITY_AND_FILLER, " ").split(/\s+/).filter((w) => w.length > 2);
+  return new Set(words2);
 }
 function overlap(a, b) {
   if (a.size === 0 || b.size === 0) return 0;
@@ -10300,8 +10300,216 @@ function checkClaims(text, ctx) {
   };
 }
 
+// src/lib/prevent/supersede.ts
+var STOP = /* @__PURE__ */ new Set([
+  "never",
+  "always",
+  "must",
+  "not",
+  "do",
+  "don't",
+  "should",
+  "avoid",
+  "prefer",
+  "use",
+  "no",
+  "is",
+  "are",
+  "be",
+  "to",
+  "the",
+  "a",
+  "an",
+  "of",
+  "in",
+  "on",
+  "for",
+  "with",
+  "my",
+  "your",
+  "it",
+  "that",
+  "this",
+  "fine",
+  "ok",
+  "okay",
+  "allowed",
+  "permitted"
+]);
+function subject(text) {
+  return new Set(
+    text.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/(ing|ed|es|s)$/, ""))
+  );
+}
+function overlap2(a, b) {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const w of a) if (b.has(w)) shared++;
+  return shared / Math.min(a.size, b.size);
+}
+var NEGATIVE2 = /\b(never|not|don't|do not|avoid|no|forbid|without|exclude|omit)\b/i;
+var SAME_SUBJECT = 0.6;
+function contradicts(a, b) {
+  if (NEGATIVE2.test(a) === NEGATIVE2.test(b)) return false;
+  const sa = subject(a);
+  const sb = subject(b);
+  let shared = 0;
+  for (const w of sa) if (sb.has(w)) shared++;
+  const ratio = overlap2(sa, sb);
+  return (shared >= 2 || ratio === 1 && shared >= 1) && ratio >= SAME_SUBJECT;
+}
+function equivalent(a, b) {
+  if (NEGATIVE2.test(a) !== NEGATIVE2.test(b)) return false;
+  return overlap2(subject(a), subject(b)) >= 0.8;
+}
+function propose(candidates, existing, mentionsOf, opts = {}) {
+  const minMentions = opts.minMentions ?? 2;
+  return candidates.map((candidate) => {
+    const mentions = mentionsOf(candidate);
+    const dupe = existing.find((e) => equivalent(e.text, candidate.rule));
+    if (dupe) {
+      return {
+        candidate,
+        mentions,
+        disposition: { kind: "duplicate", existing: dupe },
+        message: `Already covered by an existing rule. Nothing to change.`
+      };
+    }
+    const clash = existing.find((e) => contradicts(e.text, candidate.rule));
+    if (clash) {
+      const when = clash.since ? ` (set ${clash.since})` : "";
+      const said = clash.quote ? ` \u2014 your words then: "${clash.quote}"` : "";
+      const weight = clash.consequence === "enforced" ? `That rule is ENFORCED: it currently blocks tool calls in your sessions. Changing it changes what gets stopped, so it will not be changed without you.` : `That rule is audited: it affects verdicts on your receipts, not what gets blocked.`;
+      return {
+        candidate,
+        mentions,
+        disposition: {
+          kind: "contradicts",
+          existing: clash,
+          autoApplicable: false,
+          why: "same subject, opposite polarity"
+        },
+        message: `This contradicts a rule you already have${when}: "${clash.text}"${said}. You now said: "${candidate.quote}". ${weight} Nothing has been changed or removed \u2014 pick which one you meant.`
+      };
+    }
+    return {
+      candidate,
+      mentions,
+      disposition: { kind: "new" },
+      message: mentions >= minMentions ? `Heard ${mentions} times. Offered as a new rule.` : `Heard once. Held back until you say it again \u2014 a single remark is not a preference.`
+    };
+  });
+}
+function selfCheckable(candidate) {
+  if (candidate.check === "judged") {
+    return {
+      ok: false,
+      why: "nothing in the engine can decide this one by code \u2014 it would need the judge every time, and may still come back unverifiable"
+    };
+  }
+  return { ok: true, why: `checkable by code (${candidate.check})` };
+}
+function readyToOffer(proposals, opts = {}) {
+  const minMentions = opts.minMentions ?? 2;
+  return proposals.filter((p) => p.disposition.kind === "new" && p.mentions >= minMentions);
+}
+function needsDecision(proposals) {
+  return proposals.filter((p) => p.disposition.kind === "contradicts");
+}
+
+// src/lib/prevent/memory.ts
+import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+var MEMORY_VERSION = "memory@1.0.0";
+var FILE = "learned.json";
+var STOP2 = /* @__PURE__ */ new Set([
+  "never",
+  "always",
+  "must",
+  "not",
+  "do",
+  "should",
+  "avoid",
+  "prefer",
+  "use",
+  "the",
+  "a",
+  "an",
+  "of",
+  "in",
+  "on",
+  "for",
+  "with",
+  "my",
+  "your",
+  "and",
+  "or",
+  "to",
+  "any"
+]);
+function words(rule) {
+  return new Set(
+    rule.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w.length > 2 && !STOP2.has(w)).map((w) => w.replace(/(ing|ed|es|s)$/, ""))
+  );
+}
+function negative(rule) {
+  return /\b(never|not|don't|do not|avoid|no|forbid|without|exclude|omit)\b/i.test(rule);
+}
+function samePreference(a, b) {
+  if (negative(a) !== negative(b)) return false;
+  const wa = words(a);
+  const wb = words(b);
+  if (!wa.size || !wb.size) return false;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  return shared / Math.min(wa.size, wb.size) >= 0.6;
+}
+function memoryPath(cwd = process.cwd()) {
+  return join3(cwd, ".enforcee", FILE);
+}
+function loadMemory(cwd = process.cwd()) {
+  const path2 = memoryPath(cwd);
+  if (!existsSync4(path2)) return { version: MEMORY_VERSION, entries: [] };
+  try {
+    const parsed = JSON.parse(readFileSync2(path2, "utf8"));
+    if (!Array.isArray(parsed.entries)) return { version: MEMORY_VERSION, entries: [] };
+    return parsed;
+  } catch {
+    return { version: MEMORY_VERSION, entries: [] };
+  }
+}
+function saveMemory(memory, cwd = process.cwd()) {
+  const dir = join3(cwd, ".enforcee");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(memoryPath(cwd), JSON.stringify({ ...memory, version: MEMORY_VERSION }, null, 2) + "\n");
+}
+function noteMention(memory, id, rule, quote, today) {
+  const found = memory.entries.find((e) => e.id === id || samePreference(e.rule, rule));
+  if (found) {
+    found.mentions += 1;
+    return found;
+  }
+  const entry = {
+    id,
+    rule,
+    quote,
+    firstSeen: today,
+    mentions: 1,
+    status: "proposed",
+    consequence: "audited"
+  };
+  memory.entries.push(entry);
+  return entry;
+}
+function activeRules(memory) {
+  return memory.entries.filter((e) => e.status === "accepted").map((e) => ({ id: e.id, text: e.rule, consequence: e.consequence, since: e.firstSeen, quote: e.quote }));
+}
+function alreadyDeclined(memory, id) {
+  return memory.entries.find((e) => e.id === id && (e.status === "declined" || e.status === "retired"));
+}
+
 // cli/index.ts
-var VERSION2 = true ? "0.4.2" : "0.0.0-dev";
+var VERSION2 = true ? "0.5.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
@@ -10341,11 +10549,11 @@ ${C.dim("guard needs a licence, checked offline against a key compiled into this
 `);
 }
 function read(path2) {
-  if (!existsSync4(path2)) {
+  if (!existsSync5(path2)) {
     console.error(C.red(`Not found: ${path2}`));
     process.exit(2);
   }
-  return readFileSync2(path2, "utf8");
+  return readFileSync3(path2, "utf8");
 }
 async function main() {
   const argv = process.argv.slice(2);
@@ -10468,15 +10676,47 @@ async function main() {
     const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : void 0;
     const found = extractPreferences(text, { existingRuleIds: existing });
     if (json) return console.log(JSON.stringify(found, null, 2));
+    const memory = loadMemory();
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    for (const c of found) noteMention(memory, c.id, c.rule, c.quote, today);
+    const proposals = propose(
+      found,
+      activeRules(memory),
+      (c) => memory.entries.find((e) => e.id === c.id || samePreference(e.rule, c.rule))?.mentions ?? 1
+    );
+    const conflicts = needsDecision(proposals);
+    const fresh = readyToOffer(proposals).filter((p) => !alreadyDeclined(memory, p.candidate.id)).filter((p, i, all) => all.findIndex((q) => samePreference(q.candidate.rule, p.candidate.rule)) === i);
+    const held = proposals.filter((p) => p.disposition.kind === "new" && p.mentions < 2);
     console.log("");
-    for (const c of found) {
-      console.log(`  ${C.bold(c.rule)}`);
-      console.log(C.grey(`    ${c.strength} \xB7 ${c.basis}`));
-      console.log(C.grey(`    "${c.quote.replace(/\s+/g, " ").slice(0, 90)}"`));
+    for (const p of conflicts) {
+      console.log(`  ${C.red("NEEDS YOU")} ${C.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
       console.log("");
     }
-    if (found.length) console.log(C.dim("  Nothing above is active. Paste what you want into your ruleset:\n"));
-    console.log(toRulesetMarkdown(found));
+    for (const p of fresh) {
+      const check = selfCheckable(p.candidate);
+      console.log(`  ${check.ok ? C.green("READY    ") : C.yellow("WEAK     ")} ${C.bold(p.candidate.rule)}`);
+      console.log(C.grey(`    heard ${p.mentions}\xD7 \xB7 ${check.why}`));
+      console.log(C.grey(`    "${p.candidate.quote.replace(/\s+/g, " ").slice(0, 84)}"`));
+      console.log("");
+    }
+    if (held.length) {
+      console.log(C.grey(`  ${held.length} heard once, held back \u2014 a single remark is not a preference.`));
+      console.log("");
+    }
+    saveMemory(memory);
+    if (conflicts.length) {
+      console.log(`  ${C.red(C.bold(`${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} with rules you already have. Nothing was changed or removed.`))}`);
+      console.log("");
+    }
+    const offerable = fresh.filter((p) => selfCheckable(p.candidate).ok);
+    if (offerable.length) {
+      console.log(C.dim("  Nothing below is active. Paste what you want into your ruleset:\n"));
+      console.log(toRulesetMarkdown(offerable.map((p) => p.candidate)));
+    } else if (!conflicts.length) {
+      console.log(C.grey("  Nothing new to offer. That is a real answer, not an empty one."));
+      console.log("");
+    }
     return;
   }
   if (cmd === "session") {
@@ -10545,15 +10785,15 @@ async function main() {
       on.filter((p) => p.severity === "deny").map(strip2),
       on.filter((p) => p.severity === "warn").map(strip2)
     );
-    mkdirSync(".enforcee", { recursive: true });
-    writeFileSync(join3(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    mkdirSync2(".enforcee", { recursive: true });
+    writeFileSync2(join4(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
     let runner = false;
     try {
       const here = dirname(fileURLToPath(import.meta.url));
-      for (const candidate of [join3(here, "..", "guard", "guard.mjs"), join3(here, "..", "..", "guard", "guard.mjs")]) {
-        if (existsSync4(candidate)) {
-          copyFileSync(candidate, join3(".enforcee", "guard.mjs"));
-          chmodSync(join3(".enforcee", "guard.mjs"), 493);
+      for (const candidate of [join4(here, "..", "guard", "guard.mjs"), join4(here, "..", "..", "guard", "guard.mjs")]) {
+        if (existsSync5(candidate)) {
+          copyFileSync(candidate, join4(".enforcee", "guard.mjs"));
+          chmodSync(join4(".enforcee", "guard.mjs"), 493);
           runner = true;
           break;
         }
