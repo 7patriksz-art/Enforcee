@@ -55,6 +55,12 @@ Everything else in this repository, and in particular:
                         deterministic check library, the judge and its
                         literal-evidence gate, ruleset health, the receipt
                         format, the preference extractor, and the licence system
+    src/lib/prevent/**  the precondition, control and claim-check corpus — the
+                        accumulated definitions of what an action requires, what
+                        a control must prove, and which observation settles which
+                        claim. Named separately because it is the part that grows
+                        with use, and because a corpus is only an asset if the
+                        terms on it are stated before it is worth copying.
     src/app/**          the web application
     tests/**            the test suite, including the gold set
 
@@ -65,6 +71,15 @@ reused. Specifically, no licence is granted to copy, modify, redistribute,
 sublicense, or create derivative works from these files, or to use them — or the
 methodology, rule taxonomy, evaluation prompts, thresholds or scoring they
 contain — to build or train a competing product.
+
+This mirrors a distinction the industry has already settled in practice rather
+than in argument. Semgrep publishes its engine under LGPL 2.1 and puts its rules
+under a separate licence, explicitly "to clarify that other vendors may not use
+Semgrep Community Edition rules as part of a competing Software as a Service
+offering." ESLint took the other path, could not sustain owning its rule corpus,
+froze it at ~280 rules, and watched the ecosystem's value accrue to everyone
+except ESLint. The engine here is readable for the reasons in section 1. The
+corpus is reserved for the reasons in this one.
 
 You may read it. You may quote short excerpts when discussing or reviewing it.
 You may report bugs against it. You may run it locally to satisfy yourself that
