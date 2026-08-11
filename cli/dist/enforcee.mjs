@@ -10301,7 +10301,7 @@ function checkClaims(text, ctx) {
 }
 
 // cli/index.ts
-var VERSION2 = true ? "0.3.2" : "0.0.0-dev";
+var VERSION2 = true ? "0.4.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

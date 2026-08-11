@@ -102,6 +102,77 @@ function readStdin() {
   }
 }
 
+
+// ── Claim checking at Stop ────────────────────────────────────────────────────────────────
+//
+// The guard cannot import from src/lib — it is standalone and dependency-free by design, so
+// it can run as a hook on a machine that has never installed anything. That means a second
+// implementation of the claim checks, which is the duplicated-source shape that has bitten
+// this project eight times.
+//
+// Handled by testing BEHAVIOUR rather than bytes: tests/guard-claims-parity.test.ts runs the
+// same fixtures through both this code and src/lib/prevent/claims.ts and asserts identical
+// verdicts. A byte-comparison would be wrong here, because the two are legitimately
+// different code; agreeing on every answer is the property that actually matters.
+//
+// Everything below is deterministic — a stat() or a scan of the tool calls that ran. The
+// guard never makes a model call and never will.
+
+const CLAIM_FILE = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
+const CLAIM_TESTS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
+const CLAIM_COMMIT = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
+const RAN_TESTS = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test\b/;
+const RAN_COMMIT = /\bgit\s+(commit|push)\b/;
+
+/** Last assistant prose, plus every bash command that ran, read from the transcript. */
+function readTranscript(file) {
+  const text = [];
+  const commands = [];
+  let raw = '';
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(line); } catch { continue; }
+    const content = rec?.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part?.type === 'text' && typeof part.text === 'string') text.push(part.text);
+      if (part?.type === 'tool_use' && typeof part?.input?.command === 'string') commands.push(part.input.command);
+    }
+  }
+  return { text: text.join('\n'), commands };
+}
+
+function checkClaimsLocally(text, commands, cwd) {
+  const out = [];
+  const ran = (re) => commands.some((c) => re.test(c));
+
+  for (const m of text.matchAll(CLAIM_FILE)) {
+    const target = m[1];
+    const full = target.startsWith('/') ? target : join(cwd, target);
+    out.push({
+      kind: 'file-created',
+      subject: target,
+      verdict: existsSync(full) ? 'CONFIRMED' : 'REFUTED',
+      evidence: `stat ${full}`,
+    });
+  }
+  if (CLAIM_TESTS.test(text)) {
+    CLAIM_TESTS.lastIndex = 0;
+    out.push({ kind: 'tests-pass', subject: 'test suite', verdict: ran(RAN_TESTS) ? 'CONFIRMED' : 'REFUTED', evidence: 'transcript tool calls' });
+  }
+  if (CLAIM_COMMIT.test(text)) {
+    CLAIM_COMMIT.lastIndex = 0;
+    out.push({ kind: 'committed', subject: 'git', verdict: ran(RAN_COMMIT) ? 'CONFIRMED' : 'REFUTED', evidence: 'transcript tool calls' });
+  }
+  return out;
+}
+
 function findPolicy(startDir) {
   let dir = resolve(startDir || process.cwd());
   for (let i = 0; i < 12; i++) {
@@ -262,6 +333,40 @@ function main() {
     allow();
   }
 
+  // Above the licence gate, deliberately — and this is the second time that placement has
+  // been got wrong on this file. Claim checking is VERIFY, which is free; enforcement is
+  // what is paid for. `enforcee verify` is a free command, so gating the hook version would
+  // make the same capability free by CLI and paid by hook, which is incoherent.
+  if (event === 'Stop' || event === 'SessionEnd') {
+    log(policyPath, { ...base, decision: 'SESSION_MARK', transcript: payload.transcript_path ?? null });
+
+    // Check the session's claims before it ends. This is the difference between a tool you
+    // remember to run and a safety net: the moment a false claim is most costly is exactly
+    // the moment nobody is going to type a command.
+    const t = typeof payload.transcript_path === 'string' ? readTranscript(payload.transcript_path) : null;
+    if (t) {
+      const claims = checkClaimsLocally(t.text, t.commands, dirname(dirname(policyPath)));
+      const refuted = claims.filter((c) => c.verdict === 'REFUTED');
+      for (const c of claims) {
+        log(policyPath, { ...base, decision: 'CLAIM', kind: c.kind, subject: c.subject, verdict: c.verdict, evidence: c.evidence });
+      }
+      if (refuted.length) {
+        // Reported, never blocked. Blocking a turn over a claim check would be the wrong
+        // trade: this is an evidence layer, the checks are heuristic about WHICH sentences
+        // are claims, and Claude Code overrides a Stop hook after 8 consecutive blocks
+        // anyway. Say it plainly and let the person decide.
+        return emit({
+          systemMessage:
+            `Enforcee checked ${claims.length} claim${claims.length === 1 ? '' : 's'} made in this session and ` +
+            `${refuted.length} did not hold up: ` +
+            refuted.map((c) => `${c.subject} (${c.kind})`).join(', ') +
+            `. Full detail in .enforcee/ledger.jsonl.`,
+        });
+      }
+    }
+    allow();
+  }
+
   const lic = checkLicence(dirname(policyPath));
   if (!lic.ok) {
     emit({
@@ -387,10 +492,6 @@ function main() {
     });
   }
 
-  if (event === 'Stop' || event === 'SessionEnd') {
-    log(policyPath, { ...base, decision: 'SESSION_MARK', transcript: payload.transcript_path ?? null });
-    allow();
-  }
 
   allow();
 }
