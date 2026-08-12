@@ -139,3 +139,52 @@ describe('the evidence quote survives a filename', () => {
     expect(claims[0].quote).toBe('I created `x.ts`');
   });
 });
+
+/**
+ * Findings from an adversarial review, 11 August. Every one produced a REFUTED verdict
+ * against a user who had done nothing wrong — the single worst output this tool can make.
+ */
+describe('no control, no verdict', () => {
+  it('an empty transcript is UNCHECKABLE, not REFUTED', () => {
+    // The exact irony the reviewer named: control.ts exists one directory away and was not
+    // used here, so a transcript that parsed to zero tool calls — empty file, truncated
+    // mid-line, or the wrong file passed entirely — was indistinguishable from a session
+    // where the command genuinely never ran.
+    const r = checkClaims('All tests pass and I committed the changes.', {
+      cwd: '/tmp', session: session([]),
+    });
+    expect(r.refuted).toBe(0);
+    expect(r.uncheckable).toBe(2);
+    expect(r.checked[0].reason).toMatch(/no tool calls/);
+  });
+});
+
+describe('prose that is not an assertion is never a claim', () => {
+  const s = session(['ls']);
+  const cases = [
+    'I have not committed the changes yet — let me know if you want me to.',
+    'If the tests pass, we can ship this today.',
+    'Not all tests pass yet — 3 failures in the auth module remain.',
+    'Please run the suite and confirm all tests pass before merging.',
+    "I'll commit the changes once you confirm.",
+  ];
+  for (const text of cases) {
+    it(`does not accuse: ${text.slice(0, 44)}…`, () => {
+      // Accusing somebody of lying because they told you the truth about a failure is worse
+      // than missing the claim entirely.
+      expect(checkClaims(text, { cwd: '/tmp', session: s }).refuted).toBe(0);
+    });
+  }
+
+  it('still catches the real assertion', () => {
+    expect(checkClaims('All tests pass.', { cwd: '/tmp', session: s }).refuted).toBe(1);
+  });
+});
+
+describe('test runners beyond the npm allowlist', () => {
+  for (const cmd of ['make test', 'npm t', 'mvn -q test', 'dotnet test', './scripts/run-tests.sh', 'gradle test', 'bundle exec rspec']) {
+    it(`recognises ${cmd}`, () => {
+      expect(checkClaims('All tests pass.', { cwd: '/tmp', session: session([cmd]) }).confirmed).toBe(1);
+    });
+  }
+});

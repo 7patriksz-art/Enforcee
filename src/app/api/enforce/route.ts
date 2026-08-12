@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parseRuleset } from '@/lib/rules/parse';
-import { compilePolicy, proposeDenyRules, type DenyRule } from '@/lib/enforce/policy';
+import { compilePolicy, proposeDenyRules, type DenyRule , toDenyRule } from '@/lib/enforce/policy';
 import { installScript } from '@/lib/enforce/bundle';
 import { getAccess } from '@/lib/entitlements';
 
@@ -72,21 +72,12 @@ export async function POST(req: Request) {
   }
 
   const picked = new Set(chosen);
-  const strip = (p: (typeof proposals)[number]): DenyRule => ({
-    id: p.id,
-    rule: p.rule,
-    tool: p.tool,
-    pattern: p.pattern,
-    flags: p.flags,
-    reason: p.reason,
-  });
-
   const on = proposals.filter((p) => picked.has(p.id));
   const policy = compilePolicy(
     ruleset,
     rules,
-    on.filter((p) => p.severity === 'deny').map(strip),
-    on.filter((p) => p.severity === 'warn').map(strip)
+    on.filter((p) => p.severity === 'deny').map(toDenyRule),
+    on.filter((p) => p.severity === 'warn').map(toDenyRule)
   );
 
   return new NextResponse(installScript(policy, { merge: merge ?? true }), {

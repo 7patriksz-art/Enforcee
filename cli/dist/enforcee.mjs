@@ -9385,6 +9385,17 @@ async function runAudit(input) {
 
 // src/lib/enforce/policy.ts
 var POLICY_VERSION = "policy@1.0.0";
+function toDenyRule(p) {
+  return {
+    id: p.id,
+    rule: p.rule,
+    tool: p.tool,
+    pattern: p.pattern,
+    flags: p.flags,
+    reason: p.reason,
+    ...p.trusted ? { trusted: true } : {}
+  };
+}
 var DANGEROUS = [
   {
     // Linear by construction. The previous form used -?[a-zA-Z]*[rf][a-zA-Z]*, which
@@ -9508,6 +9519,7 @@ function proposeDenyRules(rules) {
       flags: "i",
       reason: `${d.label} is irreversible or reaches outside this working copy.`,
       basis: "Enforcee standing library of destructive operations",
+      trusted: true,
       defaultOn: d.on,
       severity: d.severity
     });
@@ -9520,6 +9532,7 @@ function proposeDenyRules(rules) {
     flags: "i",
     reason: "Keys and .env files should not pass through a model context.",
     basis: "Enforcee standing library of sensitive paths",
+    trusted: true,
     defaultOn: true,
     severity: "deny"
   });
@@ -9531,6 +9544,7 @@ function proposeDenyRules(rules) {
     flags: "i",
     reason: "Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.",
     basis: "Enforcee standing library of sensitive paths",
+    trusted: true,
     defaultOn: true,
     severity: "deny"
   });
@@ -10092,6 +10106,7 @@ function inferPreconditions(rules) {
   for (const rule of rules) {
     const text = rule.text;
     if (HYPOTHETICAL.test(text)) continue;
+    if (/\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i.test(text)) continue;
     for (const { re, bin } of TOOL_HINTS) {
       const m = text.match(re);
       if (m) {
@@ -10225,6 +10240,7 @@ var FILE_CLAIM = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\
 var TESTS_PASS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
 var COMMITTED = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
 var INSTALLED = /\b(?:installed|added)\s+(?:the\s+)?(?:package\s+)?[`"']([\w@/-]+)[`"']\s+(?:as\s+a\s+)?dependency/gi;
+var NOT_AN_ASSERTION = /\b(not|n't|never|unless|if|once|when|after|before|should|would|could|please|let me know|do you want|shall i|will i|going to|i'll|i will|todo|to do|need to|needs to|make sure|ensure|confirm|verify that)\b/i;
 function extractClaims(text) {
   const out = [];
   const bounds = [0];
@@ -10246,10 +10262,14 @@ function extractClaims(text) {
     out.push({ kind: "file-created", subject: m[1], quote: sentenceOf(m.index ?? 0) });
   }
   for (const m of text.matchAll(TESTS_PASS)) {
-    out.push({ kind: "tests-pass", subject: "test suite", quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: "tests-pass", subject: "test suite", quote });
   }
   for (const m of text.matchAll(COMMITTED)) {
-    out.push({ kind: "committed", subject: "git", quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: "committed", subject: "git", quote });
   }
   for (const m of text.matchAll(INSTALLED)) {
     out.push({ kind: "installed", subject: m[1], quote: sentenceOf(m.index ?? 0) });
@@ -10257,17 +10277,21 @@ function extractClaims(text) {
   return out;
 }
 function ranCommand(session, re) {
-  if (!session) return { ran: false, detail: "no session transcript supplied" };
+  if (!session) return { ran: false, usable: false, detail: "no session transcript supplied" };
+  if (!session.toolCalls?.length) {
+    return { ran: false, usable: false, detail: "the transcript contains no tool calls \u2014 empty, truncated, or not a transcript" };
+  }
   for (const call of session.toolCalls) {
     const cmd = typeof call.input.command === "string" ? call.input.command : "";
-    if (cmd && re.test(cmd)) return { ran: true, detail: `tool call #${call.index}: ${cmd.slice(0, 80)}` };
+    if (cmd && re.test(cmd)) return { ran: true, usable: true, detail: `tool call #${call.index}: ${cmd.slice(0, 80)}` };
   }
-  return { ran: false, detail: "no matching command appears in the transcript" };
+  return { ran: false, usable: true, detail: "no matching command appears in the transcript" };
 }
 function checkClaim(claim, ctx) {
   switch (claim.kind) {
     case "file-created": {
-      const full = isAbsolute(claim.subject) ? claim.subject : join2(ctx.cwd, claim.subject);
+      const base = ctx.session?.cwd || ctx.cwd;
+      const full = isAbsolute(claim.subject) ? claim.subject : join2(base, claim.subject);
       const there = existsSync3(full) && statSync2(full).isFile();
       return {
         ...claim,
@@ -10277,9 +10301,12 @@ function checkClaim(claim, ctx) {
       };
     }
     case "tests-pass": {
-      const { ran, detail } = ranCommand(ctx.session, /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test\b/);
-      if (!ctx.session) {
-        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: "No transcript, so we cannot see whether a test command was run." };
+      const { ran, usable, detail } = ranCommand(
+        ctx.session,
+        /\b(npm|pnpm|yarn|bun)\s+(run\s+)?t(est)?\b|vitest|jest|pytest|go\s+test|cargo\s+test|mvn\b.*\btest|gradle\b.*\btest|dotnet\s+test|make\b.*\btest|rspec|phpunit|tox|\btest(s)?\.(sh|ps1|bat)\b|run-tests/
+      );
+      if (!usable) {
+        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: `Cannot check: ${detail}.` };
       }
       return {
         ...claim,
@@ -10289,9 +10316,9 @@ function checkClaim(claim, ctx) {
       };
     }
     case "committed": {
-      const { ran, detail } = ranCommand(ctx.session, /\bgit\s+(commit|push)\b/);
-      if (!ctx.session) {
-        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: "No transcript, so we cannot see whether git ran." };
+      const { ran, usable, detail } = ranCommand(ctx.session, /\bgit\s+(commit|push)\b|\bgh\s+pr\s+create\b/);
+      if (!usable) {
+        return { ...claim, verdict: "UNCHECKABLE", evidence: detail, reason: `Cannot check: ${detail}.` };
       }
       return {
         ...claim,
@@ -10535,7 +10562,7 @@ function alreadyDeclined(memory, id) {
 }
 
 // cli/index.ts
-var VERSION2 = true ? "0.5.1" : "0.0.0-dev";
+var VERSION2 = true ? "0.6.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
@@ -10575,6 +10602,10 @@ ${C.dim("guard needs a licence, checked offline against a key compiled into this
 `);
 }
 function read(path2) {
+  if (!path2) {
+    console.error(C.red("Missing a file argument. Run `enforcee` with no arguments to see usage."));
+    process.exit(2);
+  }
   if (!existsSync5(path2)) {
     console.error(C.red(`Not found: ${path2}`));
     process.exit(2);
@@ -10588,8 +10619,8 @@ async function main() {
   const cmd = args[0];
   const json = flags.has("--json");
   const quiet = flags.has("--quiet");
-  if (!cmd || cmd === "help" || flags.has("--help")) return help();
   if (cmd === "version" || flags.has("--version")) return console.log(VERSION2);
+  if (!cmd || cmd === "help" || flags.has("--help")) return help();
   if (cmd === "audit") {
     const [, rulesPath, outputPath] = args;
     if (!rulesPath || !outputPath) return help();
@@ -10698,6 +10729,10 @@ async function main() {
     process.exit(receipt.health.some((h) => h.severity === "error") ? 1 : 0);
   }
   if (cmd === "learn") {
+    if (!args[1]) {
+      console.error(C.red("usage: enforcee learn <file>"));
+      process.exit(2);
+    }
     const text = read(args[1]);
     const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : void 0;
     const found = extractPreferences(text, { existingRuleIds: existing });
@@ -10797,19 +10832,11 @@ async function main() {
     const { rules } = parseRuleset(ruleset, rulesPath);
     const proposals = proposeDenyRules(rules);
     const on = proposals.filter((p) => p.defaultOn);
-    const strip2 = (p) => ({
-      id: p.id,
-      rule: p.rule,
-      tool: p.tool,
-      pattern: p.pattern,
-      flags: p.flags,
-      reason: p.reason
-    });
     const policy = compilePolicy(
       ruleset,
       rules,
-      on.filter((p) => p.severity === "deny").map(strip2),
-      on.filter((p) => p.severity === "warn").map(strip2)
+      on.filter((p) => p.severity === "deny").map(toDenyRule),
+      on.filter((p) => p.severity === "warn").map(toDenyRule)
     );
     mkdirSync2(".enforcee", { recursive: true });
     writeFileSync2(join4(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));

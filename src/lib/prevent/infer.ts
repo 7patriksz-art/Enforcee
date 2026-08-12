@@ -67,6 +67,14 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
     // "run something like `npm test`" names a tool as an illustration, not a dependency.
     if (HYPOTHETICAL.test(text)) continue;
 
+    // A rule that FORBIDS something does not require it to be present.
+    //
+    // "Never log or commit `DATABASE_URL`" made preflight demand that DATABASE_URL be
+    // exported into the shell, and fail CI until it was — a security ruleset producing a
+    // demand to put production secrets in the environment. "Never run `terraform apply` by
+    // hand" demanded terraform be installed. Polarity was simply never consulted.
+    if (/\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i.test(text)) continue;
+
     for (const { re, bin } of TOOL_HINTS) {
       const m = text.match(re);
       if (m) {

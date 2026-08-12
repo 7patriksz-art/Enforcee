@@ -260,7 +260,50 @@ function allow() {
 }
 
 /** Build a RegExp, tolerating a bad pattern rather than throwing mid-session. */
-function safeRe(pattern, flags) {
+/**
+ * Shapes that permit exponential backtracking. A standalone copy of the audit engine's
+ * checkRegexSafety, because the guard cannot import from src/ — see the parity test.
+ *
+ * The audit engine has refused these since the August security audit. The guard did not,
+ * and the consequence was worse there: V8's regex engine is not interruptible, so a slow
+ * pattern runs past the 10-second hook timeout, and Claude Code treats a timed-out hook as
+ * a NON-BLOCKING error. One bad user-authored rule therefore skipped every remaining deny
+ * rule — root delete, force push, secret paths, the guard's own self-protection — and the
+ * destructive command proceeded. Fail-open, from a rule the user wrote in good faith.
+ */
+function unsafePattern(source) {
+  if (typeof source !== 'string' || source.length > 200) return true;
+  // An UNBOUNDED repetition whose body also repeats unboundedly: (x+x+)+, (a+)+, (\w+\s?)+
+  //
+  // Bounded repetition is not the risk and must not be rejected — the standing library's own
+  // rules use shapes like (?:-{1,2}[a-zA-Z-]{1,20}\s+){0,6}, which is capped at 120
+  // iterations and cannot blow up. A first cut of this filter flagged those and disarmed
+  // nine of the guard's own protections, which is a worse outcome than the bug it fixed.
+  const UNBOUNDED = /(?<!\\)[*+]|\{\d+,\}/;
+  for (const m of source.matchAll(/\(([^()]*)\)\s*(?:[*+]|\{\d+,\})/g)) {
+    const body = m[1] ?? '';
+    if (UNBOUNDED.test(body)) return true;
+    // Alternation whose branches can match the same text: (a|a)+, (a|ab)+
+    const parts = body.split('|');
+    if (parts.length > 1 && new Set(parts.map((x) => x.trim())).size < parts.length) return true;
+  }
+  return false;
+}
+
+/**
+ * Shape-check only what the user wrote.
+ *
+ * The standing library's own patterns fail a conservative shape test — `checkRegexSafety`
+ * rejects every one of them — and they are nonetheless safe, because they were hardened by
+ * MEASUREMENT during the August security audit, not by shape. The rm pattern went from 15.7
+ * seconds to fast and was timed to prove it.
+ *
+ * So the line is origin, and it is a defensible one: ours are vetted by timing, theirs by
+ * shape. A first cut applied the shape test to everything and disarmed nine of the guard's
+ * own protections — a worse outcome than the bug it was fixing.
+ */
+function safeRe(pattern, flags, trusted) {
+  if (!trusted && unsafePattern(pattern)) return null;
   try {
     return new RegExp(pattern, flags ?? 'i');
   } catch {
@@ -450,10 +493,20 @@ function main() {
       });
     }
 
+    // Rules we could not compile or dare not run. Collected rather than skipped, because
+    // silently continuing logs ALLOW for a call nothing actually checked — which is the
+    // failure this whole product exists to name. deterministic.ts already handles the same
+    // situation the opposite way: "we would rather tell you than report a pass we did not earn".
+    const unchecked = [];
+
     for (const rule of policy.deny ?? []) {
       if (!toolMatches(rule.tool, toolName)) continue;
-      const re = safeRe(rule.pattern, rule.flags);
-      if (!re || !re.test(subject)) continue;
+      const re = safeRe(rule.pattern, rule.flags, rule.trusted === true);
+      if (!re) {
+        unchecked.push(rule);
+        continue;
+      }
+      if (!re.test(subject)) continue;
 
       const priorDenials = recentDenials(policyPath, payload.session_id, rule.id);
 
@@ -501,7 +554,7 @@ function main() {
 
     for (const rule of policy.warn ?? []) {
       if (!toolMatches(rule.tool, toolName)) continue;
-      const re = safeRe(rule.pattern, rule.flags);
+      const re = safeRe(rule.pattern, rule.flags, rule.trusted === true);
       if (!re || !re.test(subject)) continue;
       log(policyPath, { ...base, decision: 'WARN', ruleId: rule.id, rule: rule.rule, tool: toolName });
       return emit({
@@ -509,6 +562,22 @@ function main() {
           hookEventName: 'PreToolUse',
           additionalContext: `Enforcee warning on rule ${rule.id}: ${rule.rule}. ${rule.reason ?? ''}`.trim(),
         },
+      });
+    }
+
+    if (unchecked.length) {
+      log(policyPath, {
+        ...base,
+        decision: 'UNCHECKED',
+        tool: toolName,
+        rules: unchecked.map((r) => r.id),
+        reason: 'pattern could not be compiled or is unsafe to run',
+      });
+      return emit({
+        systemMessage:
+          `Enforcee could not check ${unchecked.length} of your deny rule${unchecked.length === 1 ? '' : 's'} on this call ` +
+          `(${unchecked.map((r) => r.id).join(', ')}): the pattern will not compile, or its shape can hang the matcher. ` +
+          `This call was NOT blocked and was NOT checked against ${unchecked.length === 1 ? 'that rule' : 'those rules'}. Fix the pattern in .enforcee/policy.json.`,
       });
     }
 

@@ -11,6 +11,13 @@ export const POLICY_VERSION = 'policy@1.0.0';
  */
 export interface DenyRule {
   id: string;
+  /**
+   * True only for Enforcee's standing library. Those patterns were hardened by measurement
+   * during the August security audit and are exempt from the guard's shape check, which a
+   * conservative checker would otherwise reject — disarming the guard's own protections.
+   * A pattern derived from a user's ruleset is never trusted.
+   */
+  trusted?: boolean;
   /** The human rule this came from, verbatim. */
   rule: string;
   /** Tool name, a |-separated list, or '*'. */
@@ -28,6 +35,27 @@ export interface Policy {
   deny: DenyRule[];
   warn: DenyRule[];
   reinject: { text: string };
+}
+
+/**
+ * The single definition of what a proposal contributes to a compiled policy.
+ *
+ * This existed as three separate inline `strip` functions — in the CLI, in the enforce API
+ * route, and in the guard test — and adding one field to DenyRule updated one of them. The
+ * result: policies written by the CLI carried `trusted`, policies written by the test did
+ * not, and nine guard protections silently stopped matching. Tenth instance of one idea in
+ * several places on this project, so it is a function now.
+ */
+export function toDenyRule(p: Proposal): DenyRule {
+  return {
+    id: p.id,
+    rule: p.rule,
+    tool: p.tool,
+    pattern: p.pattern,
+    flags: p.flags,
+    reason: p.reason,
+    ...(p.trusted ? { trusted: true } : {}),
+  };
 }
 
 export interface Proposal extends DenyRule {
@@ -208,6 +236,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
       flags: 'i',
       reason: `${d.label} is irreversible or reaches outside this working copy.`,
       basis: 'Enforcee standing library of destructive operations',
+      trusted: true,
       defaultOn: d.on,
       severity: d.severity,
     });
@@ -221,6 +250,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     flags: 'i',
     reason: 'Keys and .env files should not pass through a model context.',
     basis: 'Enforcee standing library of sensitive paths',
+    trusted: true,
     defaultOn: true,
     severity: 'deny',
   });
@@ -238,6 +268,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     flags: 'i',
     reason: 'Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.',
     basis: 'Enforcee standing library of sensitive paths',
+    trusted: true,
     defaultOn: true,
     severity: 'deny',
   });

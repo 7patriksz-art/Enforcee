@@ -10,7 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAudit } from '../src/lib/audit';
 import { parseRuleset } from '../src/lib/rules/parse';
-import { proposeDenyRules, compilePolicy } from '../src/lib/enforce/policy';
+import { proposeDenyRules, compilePolicy, toDenyRule } from '../src/lib/enforce/policy';
 import { extractPreferences, toRulesetMarkdown } from '../src/lib/preferences';
 import { parseTranscript } from '../src/lib/transcript/parse';
 import { analyseCapabilities } from '../src/lib/transcript/findings';
@@ -73,7 +73,14 @@ ${C.dim('guard needs a licence, checked offline against a key compiled into this
 `);
 }
 
-function read(path: string): string {
+function read(path: string | undefined): string {
+  // "Not found: undefined" is what a user saw when they typed `enforcee health` with no
+  // argument. Guarding here rather than at each call site, because the call sites are
+  // exactly where the next command added will forget to do it.
+  if (!path) {
+    console.error(C.red('Missing a file argument. Run `enforcee` with no arguments to see usage.'));
+    process.exit(2);
+  }
   if (!existsSync(path)) {
     console.error(C.red(`Not found: ${path}`));
     process.exit(2);
@@ -89,8 +96,12 @@ async function main(): Promise<void> {
   const json = flags.has('--json');
   const quiet = flags.has('--quiet');
 
-  if (!cmd || cmd === 'help' || flags.has('--help')) return help();
+  // --version is checked BEFORE the help fallthrough. It used to come second, and since
+  // flags are filtered out of `args`, `enforcee --version` had no cmd, matched the help
+  // branch and printed the whole help screen instead of the version. `npm run test:cli`
+  // asserted only exit 0, so it passed — the same shape as the hardcoded-version bug.
   if (cmd === 'version' || flags.has('--version')) return console.log(VERSION);
+  if (!cmd || cmd === 'help' || flags.has('--help')) return help();
 
   if (cmd === 'audit') {
     const [, rulesPath, outputPath] = args;
@@ -220,6 +231,10 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'learn') {
+    if (!args[1]) {
+      console.error(C.red('usage: enforcee learn <file>'));
+      process.exit(2);
+    }
     const text = read(args[1]);
     const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : undefined;
     const found = extractPreferences(text, { existingRuleIds: existing });
@@ -341,14 +356,11 @@ async function main(): Promise<void> {
     const { rules } = parseRuleset(ruleset, rulesPath);
     const proposals = proposeDenyRules(rules);
     const on = proposals.filter((p) => p.defaultOn);
-    const strip = (p: (typeof proposals)[number]) => ({
-      id: p.id, rule: p.rule, tool: p.tool, pattern: p.pattern, flags: p.flags, reason: p.reason,
-    });
     const policy = compilePolicy(
       ruleset,
       rules,
-      on.filter((p) => p.severity === 'deny').map(strip),
-      on.filter((p) => p.severity === 'warn').map(strip)
+      on.filter((p) => p.severity === 'deny').map(toDenyRule),
+      on.filter((p) => p.severity === 'warn').map(toDenyRule)
     );
     mkdirSync('.enforcee', { recursive: true });
     writeFileSync(join('.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));

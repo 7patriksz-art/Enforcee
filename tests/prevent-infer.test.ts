@@ -17,8 +17,18 @@ describe('inferring preconditions from rules people already wrote', () => {
   });
 
   it('infers a file the rule depends on', () => {
-    const p = inferPreconditions(rules('- Never edit `package-lock.json` by hand.'));
+    const p = inferPreconditions(rules('- Always keep `package-lock.json` committed.'));
     expect(p.find((x) => x.kind === 'file' && x.target === 'package-lock.json')).toBeTruthy();
+  });
+
+  it('does NOT require something a rule forbids', () => {
+    // The original version of this test used "Never edit `package-lock.json`", which taught
+    // the inferrer to demand things rules prohibit. On a real security ruleset —
+    // "Never log or commit `DATABASE_URL`" — preflight demanded production secrets be
+    // exported into the shell and failed CI until they were. Polarity was never consulted.
+    const p = inferPreconditions(rules('- Never log or commit `DATABASE_URL` or `STRIPE_SECRET_KEY`.'));
+    expect(p.find((x) => x.target === 'DATABASE_URL')).toBeFalsy();
+    expect(inferPreconditions(rules('- Never run `terraform apply` by hand.')).find((x) => x.target === 'terraform')).toBeFalsy();
   });
 
   it('infers an environment variable', () => {

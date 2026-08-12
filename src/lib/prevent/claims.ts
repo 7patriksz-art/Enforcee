@@ -56,6 +56,18 @@ const COMMITTED = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\
 
 const INSTALLED = /\b(?:installed|added)\s+(?:the\s+)?(?:package\s+)?[`"']([\w@/-]+)[`"']\s+(?:as\s+a\s+)?dependency/gi;
 
+/**
+ * Sentences that are NOT assertions, however much they look like one.
+ *
+ * "I have not committed the changes yet", "If the tests pass, we can ship", "Not all tests
+ * pass yet — 3 failures remain", "Please run the suite and confirm all tests pass" — every
+ * one of these was reported REFUTED. Accusing somebody of lying because they told you the
+ * truth about a failure is the worst output this tool can produce, and it is worse than
+ * missing the claim entirely.
+ */
+const NOT_AN_ASSERTION =
+  /\b(not|n't|never|unless|if|once|when|after|before|should|would|could|please|let me know|do you want|shall i|will i|going to|i'll|i will|todo|to do|need to|needs to|make sure|ensure|confirm|verify that)\b/i;
+
 /** Read the checkable claims out of a block of model prose. */
 export function extractClaims(text: string): Claim[] {
   const out: Claim[] = [];
@@ -82,10 +94,14 @@ export function extractClaims(text: string): Claim[] {
     out.push({ kind: 'file-created', subject: m[1], quote: sentenceOf(m.index ?? 0) });
   }
   for (const m of text.matchAll(TESTS_PASS)) {
-    out.push({ kind: 'tests-pass', subject: 'test suite', quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: 'tests-pass', subject: 'test suite', quote });
   }
   for (const m of text.matchAll(COMMITTED)) {
-    out.push({ kind: 'committed', subject: 'git', quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: 'committed', subject: 'git', quote });
   }
   for (const m of text.matchAll(INSTALLED)) {
     out.push({ kind: 'installed', subject: m[1], quote: sentenceOf(m.index ?? 0) });
@@ -100,22 +116,39 @@ export interface ClaimContext {
   session?: ParsedSession;
 }
 
-/** Did the session actually run a command matching this pattern? */
-function ranCommand(session: ParsedSession | undefined, re: RegExp): { ran: boolean; detail: string } {
-  if (!session) return { ran: false, detail: 'no session transcript supplied' };
+/**
+ * Did the session actually run a command matching this pattern?
+ *
+ * `usable` is the positive control, and its absence was the exact failure this codebase
+ * exists to name: an empty, truncated or wrong-file transcript parsed to zero tool calls,
+ * which is indistinguishable from a session where the command genuinely never ran — so
+ * `verify` returned confident REFUTED verdicts against a file it had never read. control.ts
+ * was written for precisely this and sits one directory away, unused.
+ *
+ * A transcript with no tool calls at all cannot answer a question about which commands ran.
+ */
+function ranCommand(session: ParsedSession | undefined, re: RegExp): { ran: boolean; usable: boolean; detail: string } {
+  if (!session) return { ran: false, usable: false, detail: 'no session transcript supplied' };
+  if (!session.toolCalls?.length) {
+    return { ran: false, usable: false, detail: 'the transcript contains no tool calls — empty, truncated, or not a transcript' };
+  }
   for (const call of session.toolCalls) {
     const cmd = typeof (call.input as { command?: unknown }).command === 'string'
       ? ((call.input as { command: string }).command)
       : '';
-    if (cmd && re.test(cmd)) return { ran: true, detail: `tool call #${call.index}: ${cmd.slice(0, 80)}` };
+    if (cmd && re.test(cmd)) return { ran: true, usable: true, detail: `tool call #${call.index}: ${cmd.slice(0, 80)}` };
   }
-  return { ran: false, detail: 'no matching command appears in the transcript' };
+  return { ran: false, usable: true, detail: 'no matching command appears in the transcript' };
 }
 
 export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
   switch (claim.kind) {
     case 'file-created': {
-      const full = isAbsolute(claim.subject) ? claim.subject : join(ctx.cwd, claim.subject);
+      // The transcript records the directory the session actually ran in. Using
+      // process.cwd() instead false-accused every file claim in a monorepo or any CI job
+      // invoked from the repo root.
+      const base = ctx.session?.cwd || ctx.cwd;
+      const full = isAbsolute(claim.subject) ? claim.subject : join(base, claim.subject);
       const there = existsSync(full) && statSync(full).isFile();
       return {
         ...claim,
@@ -131,9 +164,12 @@ export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
       // Not "are the tests passing now" — that would re-run them and could pass for reasons
       // unrelated to the claim. The question is whether the model ran them AT ALL before
       // saying so. An assertion with no test run behind it is the exact failure mode.
-      const { ran, detail } = ranCommand(ctx.session, /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test\b/);
-      if (!ctx.session) {
-        return { ...claim, verdict: 'UNCHECKABLE', evidence: detail, reason: 'No transcript, so we cannot see whether a test command was run.' };
+      const { ran, usable, detail } = ranCommand(
+        ctx.session,
+        /\b(npm|pnpm|yarn|bun)\s+(run\s+)?t(est)?\b|vitest|jest|pytest|go\s+test|cargo\s+test|mvn\b.*\btest|gradle\b.*\btest|dotnet\s+test|make\b.*\btest|rspec|phpunit|tox|\btest(s)?\.(sh|ps1|bat)\b|run-tests/
+      );
+      if (!usable) {
+        return { ...claim, verdict: 'UNCHECKABLE', evidence: detail, reason: `Cannot check: ${detail}.` };
       }
       return {
         ...claim,
@@ -146,9 +182,9 @@ export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
     }
 
     case 'committed': {
-      const { ran, detail } = ranCommand(ctx.session, /\bgit\s+(commit|push)\b/);
-      if (!ctx.session) {
-        return { ...claim, verdict: 'UNCHECKABLE', evidence: detail, reason: 'No transcript, so we cannot see whether git ran.' };
+      const { ran, usable, detail } = ranCommand(ctx.session, /\bgit\s+(commit|push)\b|\bgh\s+pr\s+create\b/);
+      if (!usable) {
+        return { ...claim, verdict: 'UNCHECKABLE', evidence: detail, reason: `Cannot check: ${detail}.` };
       }
       return {
         ...claim,

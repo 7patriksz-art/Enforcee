@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { generateKeyPairSync } from 'node:crypto';
 import { parseRuleset } from '@/lib/rules/parse';
-import { buildReinjectText, compilePolicy, hookSettings, proposeDenyRules } from '@/lib/enforce/policy';
+import { buildReinjectText, compilePolicy, hookSettings, proposeDenyRules, toDenyRule } from '@/lib/enforce/policy';
 import { issueLicence } from '@/lib/licence';
 
 const REAL_GUARD = join(process.cwd(), 'guard', 'guard.mjs');
@@ -52,10 +52,9 @@ beforeAll(() => {
 
   const { rules } = parseRuleset(RULESET);
   const proposals = proposeDenyRules(rules);
-  const strip = ({ id, rule, tool, pattern, flags, reason }: (typeof proposals)[number]) => ({ id, rule, tool, pattern, flags, reason });
   const on = proposals.filter((p) => p.defaultOn || /supabase/.test(p.pattern));
-  const chosen = on.filter((p) => p.severity === 'deny').map(strip);
-  const warn = on.filter((p) => p.severity === 'warn').map(strip);
+  const chosen = on.filter((p) => p.severity === 'deny').map(toDenyRule);
+  const warn = on.filter((p) => p.severity === 'warn').map(toDenyRule);
 
   const policy = compilePolicy(RULESET, rules, chosen, warn);
   writeFileSync(join(project, '.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));
