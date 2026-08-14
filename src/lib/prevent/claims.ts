@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import pathDefault, { isAbsolute, join, resolve, type PlatformPath } from 'node:path';
 import type { ParsedSession } from '../transcript/parse';
 
 /**
@@ -21,6 +21,35 @@ import type { ParsedSession } from '../transcript/parse';
  * audit judge; this module is the part that can be trusted absolutely, and it is kept
  * separate so the two can never be confused in a receipt.
  */
+
+/**
+ * Is `full` genuinely inside `base`?
+ *
+ * `!relative(base, full).startsWith('..')` is the obvious way to write this and it FAILS
+ * OPEN on Windows. When the two paths are on different drives there is no relative route
+ * between them at all, so `relative()` returns an ABSOLUTE path — `D:\etc\hosts` — which
+ * does not begin with `..`, so the check read "different drive" as "inside the project".
+ *
+ * Found by CI on windows-latest, where the checkout is on `D:` and the temp directory is on
+ * `C:`. The claim `/etc/hosts` resolved to `D:\etc\hosts`, the containment check waved it
+ * through, and the module stat'ed a path chosen by model prose — which is the exact thing
+ * this check exists to prevent.
+ *
+ * The path module is a parameter so the property can be PROVEN for Windows semantics from
+ * any machine, rather than only on the machine that happens to be Windows. `resolve` and
+ * `relative` are platform-bound, and a rule about Windows that can only be tested on
+ * Windows is a rule that gets tested once a release.
+ */
+export function isInside(base: string, full: string, p: Pick<PlatformPath, 'resolve' | 'relative' | 'isAbsolute'> = pathDefault): boolean {
+  const b = p.resolve(base);
+  const target = p.resolve(full);
+  if (target === b) return true;
+  const rel = p.relative(b, target);
+  if (rel === '') return true;
+  // No relative route exists — a different root or drive. Definitively outside.
+  if (p.isAbsolute(rel)) return false;
+  return rel.split(/[\\/]/)[0] !== '..';
+}
 
 export type ClaimVerdict = 'CONFIRMED' | 'REFUTED' | 'UNCHECKABLE';
 
@@ -163,7 +192,7 @@ export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
       // back with the resolved absolute path in the evidence line. A claim about a file
       // outside the project is not a claim we can adjudicate, and saying so is the honest
       // answer as well as the safe one.
-      const inside = resolve(base) === full || !relative(resolve(base), full).startsWith('..');
+      const inside = isInside(base, full);
       if (!inside) {
         return {
           ...claim,

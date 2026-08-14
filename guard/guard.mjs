@@ -211,6 +211,25 @@ function sentenceAt(text, idx) {
   return text.slice(start, end).replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Is `full` genuinely inside `base`?
+ *
+ * `!relative(base, full).startsWith('..')` FAILS OPEN on Windows. Across drives there is no
+ * relative route at all, so `relative()` returns an ABSOLUTE path — `D:\\etc\\hosts` — which
+ * does not begin with `..`, so the check read "different drive" as "inside the project" and
+ * stat'ed a path chosen by model prose. Found by CI on windows-latest, where the checkout is
+ * on D: and the temp directory is on C:. Mirrors isInside() in src/lib/prevent/claims.ts.
+ */
+function isInside(base, full) {
+  const b = resolve(base);
+  const target = resolve(full);
+  if (target === b) return true;
+  const rel = relative(b, target);
+  if (rel === '') return true;
+  if (isAbsolute(rel)) return false;
+  return rel.split(/[\\/]/)[0] !== '..';
+}
+
 function checkClaimsLocally(text, commands, cwd, toolCalls) {
   const out = [];
   // The positive control. A transcript with no tool calls at all cannot answer a question
@@ -230,7 +249,7 @@ function checkClaimsLocally(text, commands, cwd, toolCalls) {
     // The path came out of model prose. A claim about a file outside the project is not one
     // we can adjudicate, and checking it would make this a filesystem oracle the model
     // steers. Same rule as src/lib/prevent/claims.ts.
-    const inside = resolve(cwd) === full || !relative(resolve(cwd), full).startsWith('..');
+    const inside = isInside(cwd, full);
     out.push({
       kind: 'file-created',
       subject: target,

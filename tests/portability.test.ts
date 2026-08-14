@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkPrecondition, preflight } from '../src/lib/prevent/preconditions';
+import { isInside } from '../src/lib/prevent/claims';
+import { win32, posix } from 'node:path';
 
 /**
  * The suite was green on Linux and 36 tests failed the first time it ran on Windows.
@@ -133,5 +135,42 @@ describe('the environment probe works on the platform it is running on', () => {
   it('runs a command through whatever shell this platform has', () => {
     const r = checkPrecondition({ kind: 'command', target: 'node -e "console.log(42)"', why: 'x', expect: '42' });
     expect(r.met, `the platform shell could not run node on ${process.platform}`).toBe(true);
+  });
+});
+
+describe('path containment does not fail open across drives', () => {
+  // The obvious spelling of this check — !relative(base, full).startsWith('..') — is wrong
+  // on Windows and right everywhere else, which is why it survived nine releases and was
+  // found by CI rather than by reading. Across drives there is no relative route, so
+  // relative() returns an ABSOLUTE path, which does not begin with '..'.
+  //
+  // Proven here for BOTH platforms' semantics from whichever one is running, because a rule
+  // about Windows that can only be checked on Windows gets checked once a release.
+
+  it('rejects a different drive on Windows semantics', () => {
+    const base = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\claims-abc';
+    expect(isInside(base, 'D:\\etc\\hosts', win32), 'a different drive is not inside the project').toBe(false);
+    expect(isInside(base, 'C:\\etc\\hosts', win32)).toBe(false);
+  });
+
+  it('still accepts a real child on Windows semantics', () => {
+    const base = 'C:\\proj';
+    expect(isInside(base, 'C:\\proj\\src\\a.ts', win32)).toBe(true);
+    expect(isInside(base, 'C:\\proj', win32)).toBe(true);
+  });
+
+  it('rejects an escape on POSIX semantics', () => {
+    expect(isInside('/tmp/claims-abc', '/etc/hosts', posix)).toBe(false);
+    expect(isInside('/tmp/claims-abc', '/tmp/claims-abc/../x', posix)).toBe(false);
+  });
+
+  it('still accepts a real child on POSIX semantics', () => {
+    expect(isInside('/proj', '/proj/src/a.ts', posix)).toBe(true);
+    expect(isInside('/proj', '/proj', posix)).toBe(true);
+  });
+
+  it('is not fooled by a sibling with the same prefix', () => {
+    expect(isInside('/proj', '/project/secrets', posix)).toBe(false);
+    expect(isInside('C:\\proj', 'C:\\project\\secrets', win32)).toBe(false);
   });
 });

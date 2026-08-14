@@ -10626,7 +10626,16 @@ function preflight(preconditions, cwd = process.cwd()) {
 
 // src/lib/prevent/claims.ts
 import { existsSync as existsSync3, statSync as statSync2 } from "node:fs";
-import { isAbsolute as isAbsolute2, join as join3, relative, resolve } from "node:path";
+import pathDefault, { isAbsolute as isAbsolute2, join as join3, resolve } from "node:path";
+function isInside(base, full, p = pathDefault) {
+  const b = p.resolve(base);
+  const target = p.resolve(full);
+  if (target === b) return true;
+  const rel = p.relative(b, target);
+  if (rel === "") return true;
+  if (p.isAbsolute(rel)) return false;
+  return rel.split(/[\\/]/)[0] !== "..";
+}
 var FILE_CLAIM = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
 var TESTS_PASS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
 var COMMITTED = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
@@ -10687,7 +10696,7 @@ function checkClaim(claim, ctx) {
     case "file-created": {
       const base = ctx.session?.cwd || ctx.cwd;
       const full = resolve(isAbsolute2(claim.subject) ? claim.subject : join3(base, claim.subject));
-      const inside = resolve(base) === full || !relative(resolve(base), full).startsWith("..");
+      const inside = isInside(base, full);
       if (!inside) {
         return {
           ...claim,
@@ -11051,7 +11060,7 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
-var VERSION2 = true ? "0.8.2" : "0.0.0-dev";
+var VERSION2 = true ? "0.8.3" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
