@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 import Link from 'next/link';
 
-export const metadata: Metadata = {
-  title: 'What Claude Code already does for free — Enforcee',
+export const metadata: Metadata = pageMeta({
+  title: 'What Claude Code already does for free',
   description:
     'The parts of this problem Anthropic has already solved, with links to their docs, and the parts they have not. Written by the people trying to sell you the second list.',
-};
+  path: '/what-is-already-free',
+});
 
 interface Item {
   what: string;

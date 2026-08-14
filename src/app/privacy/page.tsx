@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 import { Callout, Clause, DataTable, LegalShell } from '@/components/Legal';
 import { CONTACT_EMAIL } from '@/lib/contact';
 
-export const metadata: Metadata = {
-  title: 'Privacy Policy — Enforcee',
-  description: 'What Enforcee collects, why, how long it is kept, and who else touches it.',
-};
+export const metadata: Metadata = pageMeta({
+  title: 'Privacy Policy',
+  description:
+    'What Enforcee collects, why, how long it is kept, and who else touches it.',
+  path: '/privacy',
+});
 
 export default function Privacy() {
   return (

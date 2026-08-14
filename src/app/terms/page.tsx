@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 import Link from 'next/link';
 import { Callout, Clause, LegalShell } from '@/components/Legal';
 import { CONTACT_EMAIL } from '@/lib/contact';
 
-export const metadata: Metadata = {
-  title: 'Terms of Service — Enforcee',
-  description: 'The agreement between you and Enforcee: what we promise, what we do not, and what happens if either of us walks away.',
-};
+export const metadata: Metadata = pageMeta({
+  title: 'Terms of Service',
+  description:
+    'The agreement between you and Enforcee: what we promise, what we do not, and what happens if either of us walks away.',
+  path: '/terms',
+});
 
 export default function Terms() {
   return (

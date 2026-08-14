@@ -9,6 +9,10 @@ const ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.S
   { path: '/enforce', priority: 0.9, changeFrequency: 'weekly' },
   { path: '/pricing', priority: 0.8, changeFrequency: 'monthly' },
   { path: '/how-it-works', priority: 0.8, changeFrequency: 'monthly' },
+  { path: '/faq', priority: 0.8, changeFrequency: 'monthly' },
+  // Was missing entirely — the most distinctive page on the site, and the one most
+  // likely to be linked by somebody else, was not in the sitemap at all.
+  { path: '/what-is-already-free', priority: 0.8, changeFrequency: 'monthly' },
   { path: '/install', priority: 0.7, changeFrequency: 'monthly' },
   { path: '/learn', priority: 0.7, changeFrequency: 'monthly' },
   { path: '/session', priority: 0.6, changeFrequency: 'monthly' },

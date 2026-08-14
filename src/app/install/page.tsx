@@ -1,4 +1,14 @@
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 import Link from 'next/link';
+import CopyLine from '@/components/CopyLine';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Install',
+  description:
+    'Five steps, about a minute. A plugin and a command-line tool that sit in your project and run on every turn — macOS, Linux and Windows.',
+  path: '/install',
+});
 
 const STEPS = [
   {
@@ -66,9 +76,7 @@ export default function Install() {
               </div>
               <p className="mt-1.5 pl-[36px] text-[14px] leading-relaxed text-ink-mid">{s.d}</p>
               {s.code && (
-                <pre className="counter-theme ml-[36px] mt-3 overflow-x-auto rounded-lg bg-paper px-4 py-2.5 font-mono text-[13px] text-ink">
-                  {s.code}
-                </pre>
+                <CopyLine code={s.code} label={`step ${s.n}`} tone="invert" className="ml-[36px] mt-3" />
               )}
             </li>
           ))}
@@ -158,8 +166,9 @@ export default function Install() {
           <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[14px]">audit</code> exits non-zero when any
           rule is violated, so the same check that runs on your laptop can fail a pull request.
         </p>
-        <pre className="counter-theme mt-4 overflow-x-auto rounded-lg bg-paper px-4 py-3.5 font-mono text-[12.5px] leading-relaxed text-ink">{`- name: Enforcee
-  run: npx enforcee audit CLAUDE.md build/answer.md`}</pre>
+        <CopyLine tone="invert" className="mt-4" label="the GitHub Action step" code={`- name: Enforcee
+  run: npx enforcee audit CLAUDE.md build/answer.md`}
+        />
       </section>
 
       <section className="mt-12 rounded-2xl border border-clay-line bg-clay-pale px-6 py-6">

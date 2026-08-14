@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Mark from '@/components/Mark';
 import './globals.css';
 import { SITE_URL } from '@/lib/site-url';
 import { CONTACT_EMAIL } from '@/lib/contact';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
+import { softwareSchema, organizationSchema, jsonLd } from '@/lib/seo';
 import ThemeToggle from '@/components/ThemeToggle';
 
 const TITLE = 'Enforcee — stop fighting your own AI';
@@ -27,6 +29,7 @@ const NAV = [
   ['/session', 'Sessions'],
   ['/pricing', 'Pricing'],
   ['/how-it-works', 'How it works'],
+  ['/faq', 'FAQ'],
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -42,12 +45,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             paint means every dark-mode visitor gets a white flash on every
             navigation, and that one frame undoes a lot of "premium". */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+
+        {/* Structured data. The site had none. Two audiences read it and neither reads
+            prose: search engines deciding whether to show a rich result, and AI assistants
+            answering "what tool checks whether my agent followed my CLAUDE.md" — which is
+            increasingly how someone finds a tool in this category at all. */}
+        <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(softwareSchema)} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(organizationSchema)} />
       </head>
       <body className="min-h-screen font-sans antialiased">
         <header className="sticky top-0 z-30 border-b hairline bg-paper/85 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center gap-5 px-5 py-3">
             <Link href="/" className="flex items-center gap-2.5">
-              <span className="grid h-7 w-7 place-items-center rounded-lg bg-ink text-[13px] font-bold text-white">E</span>
+              <Mark size={28} />
               <span className="font-display text-[17px] tracking-tight">Enforcee</span>
             </Link>
             <nav className="ml-auto hidden items-center gap-5 text-[13.5px] text-ink-mid md:flex">
@@ -96,7 +106,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto max-w-6xl px-5 py-10">
             <div className="flex flex-wrap items-start justify-between gap-x-12 gap-y-6">
               <div className="max-w-xs">
-                <div className="font-display text-[17px] tracking-tight">Enforcee</div>
+                <div className="flex items-center gap-2.5">
+                  <Mark size={22} />
+                  <span className="font-display text-[17px] tracking-tight">Enforcee</span>
+                </div>
                 <p className="mt-2 text-[13px] leading-relaxed text-ink-mid">
                   Proof that your AI followed your rules.
                 </p>
@@ -109,6 +122,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <li><Link href="/audit" className="transition-colors hover:text-ink">Audit</Link></li>
                     <li><Link href="/install" className="transition-colors hover:text-ink">Install</Link></li>
                     <li><Link href="/pricing" className="transition-colors hover:text-ink">Pricing</Link></li>
+                    <li><Link href="/faq" className="transition-colors hover:text-ink">Questions</Link></li>
                   </ul>
                 </div>
                 <div>

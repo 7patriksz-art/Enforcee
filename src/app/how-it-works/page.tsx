@@ -1,6 +1,15 @@
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 import Link from 'next/link';
 import PageHead from '@/components/PageHead';
 import { MethodSplit, CoverageMeter } from '@/components/Visuals';
+
+export const metadata: Metadata = pageMeta({
+  title: 'How the checking works',
+  description:
+    'About four fifths of a ruleset is decided by code with no model call. The rest goes to a judge whose evidence quote must be found literally in the output, or the verdict is thrown out.',
+  path: '/how-it-works',
+});
 
 const STEPS = [
   {

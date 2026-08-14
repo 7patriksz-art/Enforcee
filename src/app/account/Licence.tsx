@@ -1,5 +1,6 @@
 'use client';
 
+import CopyLine from '@/components/CopyLine';
 import { useState } from 'react';
 import Link from 'next/link';
 
@@ -34,11 +35,19 @@ export default function Licence({ entitled }: { entitled: boolean }) {
           Auditing needs no licence and never will. The guard does.{' '}
           <span className="hi font-semibold text-ink">Auditing stays free and unlimited.</span>
         </p>
+        {/* Said "Start the trial" until 2026-08-14. There is no trial — D-021, decided
+            9 August, and one of the load-bearing honesty claims on the pricing page.
+            Nobody noticed for five days because the button only renders for a signed-in
+            user without a subscription, which is a state almost nothing exercises.
+
+            The invariants test missed it too: it only read pricing/page.tsx and plans.ts.
+            Widened to every page in the same commit — a decision enforced on one file is
+            enforced nowhere. */}
         <Link
           href="/pricing"
-          className="mt-4 inline-block rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-ink-soft"
+          className="press mt-4 inline-block rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white hover:bg-ink-soft"
         >
-          Start the trial
+          See what a licence costs
         </Link>
       </section>
     );
@@ -94,9 +103,11 @@ export default function Licence({ entitled }: { entitled: boolean }) {
           <p className="mt-4 text-[13px] leading-relaxed text-ink-mid">
             Then, once per machine — the same command on macOS, Linux and Windows:
           </p>
-          <pre className="mt-2 overflow-x-auto rounded-lg bg-paper-soft px-4 py-2.5 font-mono text-[12.5px] leading-relaxed">
-            {'npx enforcee licence set <paste it here>\nnpx enforcee licence                 # confirms it verified'}
-          </pre>
+          <CopyLine
+            className="mt-2"
+            label="the licence install commands"
+            code={'npx enforcee licence set <paste it here>\nnpx enforcee licence'}
+          />
         </div>
       )}
 

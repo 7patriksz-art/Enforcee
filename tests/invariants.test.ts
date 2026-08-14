@@ -78,10 +78,21 @@ describe('D-021 · no free trials', () => {
     expect(/trial_period_days/i.test(plans), 'a Stripe trial period reappeared').toBe(false);
   });
 
-  it('the pricing page does not advertise one', () => {
-    const page = read('src/app/pricing/page.tsx');
-    // "No trial" as a statement is fine and desirable; "start your free trial" is not.
-    expect(/start (your |a )?(free )?trial|free trial today|try free for/i.test(page)).toBe(false);
+  it('NO page or component offers one', () => {
+    // Scoped to pricing/page.tsx until 2026-08-14, and it missed a live "Start the trial"
+    // button in account/Licence.tsx that had been there five days. A decision enforced on
+    // one file is enforced nowhere — the whole surface, or it is not a control.
+    const offenders: string[] = [];
+    for (const f of src.filter((f) => f.endsWith('.tsx'))) {
+      const text = lines(code(readFileSync(f, 'utf8')));
+      text.forEach((line, i) => {
+        // "No trial" as a statement is desirable; offering one is the violation.
+        if (/\b(start|begin|claim|get) (the |your |a )?(free )?trial\b|free trial today|try free for/i.test(line)) {
+          offenders.push(`${relative(ROOT, f)}:${i + 1}`);
+        }
+      });
+    }
+    expect(offenders, `a trial is offered in: ${offenders.join(', ')}`).toEqual([]);
   });
 
   it('trialing and past_due still entitle', () => {

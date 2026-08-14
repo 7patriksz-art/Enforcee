@@ -15,7 +15,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 const BASE = process.env.BASE ?? 'http://localhost:3000';
 const PAGES = [
-  '/', '/audit', '/pricing', '/install', '/enforce', '/how-it-works',
+  '/', '/audit', '/pricing', '/install', '/enforce', '/how-it-works', '/faq',
   '/learn', '/session', '/signin', '/what-is-already-free', '/privacy', '/terms',
 ];
 

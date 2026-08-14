@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import CopyLine from '@/components/CopyLine';
 import Funnel from '@/components/Funnel';
 import { ReceiptPreview, GuardPreview, Glow, Stat, ClaimCheck } from '@/components/Visuals';
 
@@ -52,11 +53,9 @@ export default function Home() {
           <p className="mt-3 font-mono text-[12px] text-skip">free · no account · about 20 seconds</p>
         </div>
 
-        <div className="counter-theme mt-9 max-w-[54ch] overflow-x-auto rounded-xl border hairline bg-paper px-5 py-4">
-          <code className="font-mono text-[13.5px] text-ink">
-            <span className="text-ink-light">$ </span>npx enforcee audit CLAUDE.md answer.md
-          </code>
-          <p className="mt-2 font-mono text-[12px] text-ink-mid">
+        <div className="mt-9 max-w-[54ch]">
+          <CopyLine tone="invert" code="npx enforcee audit CLAUDE.md answer.md" label="the audit command" />
+          <p className="mt-2 font-mono text-[12px] text-ink-light">
             or run it here in the browser, if you&rsquo;d rather not install anything
           </p>
         </div>
@@ -76,6 +75,60 @@ export default function Home() {
           <Stat value="4 in 5" label="answered by code" sub="No model in the loop, and free forever." />
           <Stat value="0" label="invented verdicts" sub="A judged claim must quote your text, or it is thrown out." />
           <Stat value="10 / 10" label="destructive commands stopped" sub="Tested as a real subprocess, not a mock." />
+        </div>
+      </section>
+
+      {/* ── The turn ─────────────────────────────────────────────────────────
+          Added 2026-08-14. The page went hero → features → features → and only
+          reached "here is the problem" fourth, by which point a visitor has been
+          asked to care about a solution to something nobody has named yet.
+
+          This is the beat that was missing. Three lines, in the order the thing
+          actually happens to you, at a size that makes them unskippable. No new
+          argument and almost no new words — the drama is pace and scale, not
+          adjectives. A product selling sobriety cannot get its tension from
+          exclamation marks; it gets it from a short sentence in large type with
+          air around it.
+
+          Deliberately no CTA here. It would compete with the hero's, and the
+          reader is three seconds in. Let it land. */}
+      <section className="border-y hairline bg-paper">
+        <div className="mx-auto max-w-6xl px-5 py-16 sm:py-20">
+          <div className="reveal grid gap-x-12 gap-y-10 sm:grid-cols-3">
+            {[
+              {
+                n: '01',
+                h: 'You wrote the rules.',
+                d: 'Once, carefully. Then twice more, longer each time.',
+              },
+              {
+                n: '02',
+                h: 'It stopped following them.',
+                d: 'Not loudly. Around function four, and never in the same place twice.',
+                hi: true,
+              },
+              {
+                n: '03',
+                h: 'Nobody told you.',
+                d: 'Not the model, not the editor, not the logs. Until now, there was nothing that could.',
+              },
+            ].map((b) => (
+              <div key={b.n}>
+                <div className="num text-[12px] tracking-[0.16em] text-clay">{b.n}</div>
+                <h2 className="mt-3 font-display text-[26px] leading-[1.15] tracking-tight sm:text-[30px]">
+                  {b.hi ? <span className="hi">{b.h}</span> : b.h}
+                </h2>
+                <p className="readable mt-2.5 text-[14.5px]">{b.d}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* The pivot, on its own line. One sentence, because it is the sentence. */}
+          <p className="measure mt-14 font-display text-[24px] leading-[1.35] tracking-tight sm:text-[28px]">
+            Enforcee reads the answer your agent actually gave, and tells you{' '}
+            <span className="hi-clay hi font-semibold">which of your rules survived</span> — with the
+            line that proves each one.
+          </p>
         </div>
       </section>
 
