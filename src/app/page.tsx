@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Funnel from '@/components/Funnel';
+import { ReceiptPreview, GuardPreview, Glow, Stat } from '@/components/Visuals';
 
 /**
  * Homepage.
@@ -19,7 +20,8 @@ export default function Home() {
   return (
     <main>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-5 pt-16 pb-14 sm:pt-24">
+      <section className="relative mx-auto max-w-6xl px-5 pt-16 pb-14 sm:pt-24">
+        <Glow />
         <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay">
           rule checking for AI coding agents
         </p>
@@ -43,7 +45,7 @@ export default function Home() {
         <div className="mt-9">
           <Link
             href="/audit"
-            className="inline-block rounded-xl bg-ink px-7 py-3.5 text-[15px] font-medium text-white shadow-sm transition-colors hover:bg-ink-soft"
+            className="press inline-block rounded-xl bg-ink px-7 py-3.5 text-[15px] font-medium text-white shadow-sm transition-colors hover:bg-ink-soft"
           >
             Try it on your own rules
           </Link>
@@ -58,18 +60,35 @@ export default function Home() {
             or run it here in the browser, if you&rsquo;d rather not install anything
           </p>
         </div>
+
+        {/* THE PRODUCT, ABOVE THE FOLD.
+            Every compliance competitor — Vanta, Drata, Credo, Galileo — hides the product
+            behind a demo form, because their product is not self-serve and they cannot
+            show it. Ours is. So the first thing a visitor sees is a real receipt with a
+            real VIOLATED row and a real NOT_APPLICABLE row, which a competitor would have
+            cropped out to make the screenshot tidier. */}
+        <div className="reveal mt-12 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+          <ReceiptPreview />
+          <GuardPreview />
+        </div>
+
+        <div className="reveal mt-12 grid gap-x-10 gap-y-8 border-t hairline pt-9 sm:grid-cols-3">
+          <Stat value="4 in 5" label="answered by code" sub="No model in the loop, and free forever." />
+          <Stat value="0" label="invented verdicts" sub="A judged claim must quote your text, or it is thrown out." />
+          <Stat value="10 / 10" label="destructive commands stopped" sub="Tested as a real subprocess, not a mock." />
+        </div>
       </section>
 
       {/* ── What you get back ────────────────────────────────────────────── */}
       <section className="border-y hairline bg-paper-soft">
         <div className="mx-auto max-w-6xl px-5 py-16">
           <h2 className="font-display text-[30px] leading-tight tracking-tight">What you get back</h2>
-          <p className="readable mt-3 max-w-[52ch]">
+          <p className="readable measure mt-3">
             A verdict for every rule. Four possible answers, and we&rsquo;re strict about the
             difference between them.
           </p>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="reveal mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ['✓', 'Followed', 'It complied. Here&rsquo;s the sentence that shows it.', 'border-pass-line bg-pass-pale text-pass'],
               ['✕', 'Violated', 'It broke this rule. Here&rsquo;s the sentence that shows it.', 'border-fail-line bg-fail-pale text-fail'],
@@ -97,11 +116,11 @@ export default function Home() {
       {/* ── Three places it runs ─────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-5 py-16">
         <h2 className="font-display text-[30px] leading-tight tracking-tight">Three places it runs</h2>
-        <p className="readable mt-3 max-w-[52ch]">
+        <p className="readable measure mt-3">
           Same engine, same verdicts, same receipt. Pick whichever fits how you work.
         </p>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        <div className="reveal mt-8 grid gap-4 lg:grid-cols-3">
           {[
             {
               t: 'On your machine',
@@ -125,7 +144,7 @@ export default function Home() {
               cta: 'See what it blocks',
             },
           ].map((c) => (
-            <div key={c.t} className="flex flex-col rounded-xl border hairline bg-paper-soft px-5 py-5">
+            <div key={c.t} className="lift flex flex-col rounded-xl border hairline bg-paper-soft px-5 py-5">
               <div className="text-[15px] font-semibold">{c.t}</div>
               <code className="mt-1.5 font-mono text-[12.5px] text-clay">{c.s}</code>
               <p className="mt-3 flex-1 text-[13.5px] leading-relaxed text-ink-mid">{c.d}</p>
@@ -141,12 +160,12 @@ export default function Home() {
       <section className="border-y hairline bg-paper-soft">
         <div className="mx-auto max-w-6xl px-5 py-16">
           <h2 className="font-display text-[30px] leading-tight tracking-tight">You&rsquo;re not imagining it</h2>
-          <p className="readable mt-3 max-w-[52ch]">
+          <p className="readable measure mt-3">
             Researchers followed 1,650 real coding sessions. Agents obeyed a{' '}
             <code className="rounded bg-white px-1 py-0.5 font-mono text-[13px]">CLAUDE.md</code> about{' '}
             <strong>two thirds of the time</strong>, and got worse with every function they wrote.
           </p>
-          <p className="readable mt-3 max-w-[52ch]">
+          <p className="readable measure mt-3">
             File size didn&rsquo;t matter. Instruction order didn&rsquo;t matter. Neither did structure.
             So no, you can&rsquo;t fix this by writing a better rules file.{' '}
             <a
@@ -159,14 +178,14 @@ export default function Home() {
             </a>
           </p>
 
-          <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="reveal mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ['The rewrite spiral', 'Every few weeks you rewrite the ruleset, longer each time, with no way to tell if it helped.'],
               ['The canary emoji', 'You hide a silly instruction in the file and watch for the turn it stops appearing. This is the state of the art.'],
               ['The silent skip', 'It never says "I ignored rule 11." It writes something confident and slightly wrong.'],
               ['The 3am command', 'It ran a migration against production, because that rule was on line 47 of a file it had stopped weighting.'],
             ].map(([t, d]) => (
-              <div key={t} className="rounded-xl border hairline bg-white px-5 py-4">
+              <div key={t} className="lift rounded-xl border hairline bg-white px-5 py-4">
                 <div className="text-[14.5px] font-semibold">{t}</div>
                 <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-mid">{d}</p>
               </div>
@@ -269,7 +288,7 @@ export default function Home() {
             linked so you can read the whole thing.
           </p>
 
-          <div className="mt-9 grid gap-4 lg:grid-cols-3">
+          <div className="reveal mt-9 grid gap-4 lg:grid-cols-3">
             {[
               {
                 q: 'Agents can ignore or forget about what AGENTS.md says, and this becomes more and more apparent as a repo grows.',
@@ -287,7 +306,7 @@ export default function Home() {
                 url: 'https://arxiv.org/abs/2607.25398',
               },
             ].map((c) => (
-              <figure key={c.q} className="flex flex-col rounded-2xl border hairline bg-white px-5 py-5">
+              <figure key={c.q} className="lift flex flex-col rounded-2xl border hairline bg-white px-5 py-5">
                 <blockquote className="text-[14.5px] leading-relaxed text-ink">&ldquo;{c.q}&rdquo;</blockquote>
                 <figcaption className="mt-auto pt-4 font-mono text-[11px] text-skip">
                   <a href={c.url} target="_blank" rel="noreferrer" className="hover:text-ink">
@@ -322,7 +341,7 @@ export default function Home() {
           <div className="mt-8">
             <Link
               href="/audit"
-              className="inline-block rounded-xl bg-ink px-7 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-ink-soft"
+              className="press inline-block rounded-xl bg-ink px-7 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-ink-soft"
             >
               Run an audit
             </Link>

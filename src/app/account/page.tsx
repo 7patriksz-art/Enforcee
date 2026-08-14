@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import type { Metadata } from 'next';
 import { getAccess } from '@/lib/entitlements';
 import { planById } from '@/lib/plans';
 import { supabaseConfigured } from '@/lib/supabase/server';
@@ -7,8 +6,6 @@ import Licence from './Licence';
 import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const dynamic = 'force-dynamic';
-
-export const metadata: Metadata = { title: 'Account — Enforcee' };
 
 // The value page is linked from here on purpose: this is the screen somebody opens when
 // they are already wondering whether to keep paying, so that is where the honest answer
@@ -84,7 +81,34 @@ export default async function Account() {
               </div>
             )}
             <p className="mt-3 text-[13px] leading-relaxed text-ink-mid">{plan.who}</p>
-            <p className="mt-3 font-mono text-[11.5px] text-skip">{access.email}</p>
+
+            {/* What am I on, what will I pay next, and when. A plan name with no
+                next-charge date is the commonest cheap-billing-page tell. */}
+            <dl className="mt-4 space-y-2 border-t hairline pt-4 text-[12.5px]">
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-ink-mid">Next charge</dt>
+                <dd className="num text-ink">
+                  {access.plan === 'free' ? 'nothing, ever' : `$${plan.price.monthly}/mo`}
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-ink-mid">{access.plan === 'free' ? 'Expires' : 'Paid through'}</dt>
+                {/* periodEnd is the real field, written by the Stripe webhook. If it is
+                    null we say we do not know rather than printing a plausible date —
+                    a billing page that guesses is worse than one that admits a gap. */}
+                <dd className="num text-ink">
+                  {access.plan === 'free'
+                    ? 'never'
+                    : access.periodEnd
+                      ? new Date(access.periodEnd * 1000).toISOString().slice(0, 10)
+                      : 'not recorded yet'}
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-ink-mid">Account</dt>
+                <dd className="num truncate text-ink">{access.email}</dd>
+              </div>
+            </dl>
             <Link
               href="/pricing"
               className="mt-4 block rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-center text-[14px] font-medium transition-colors hover:border-ink/30"
@@ -121,11 +145,5 @@ export default async function Account() {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="mx-auto max-w-5xl px-5 py-12">
-      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay">account</p>
-      <h1 className="mt-3 font-display text-[32px] tracking-tight">Your subscription</h1>
-      <div className="mt-8">{children}</div>
-    </main>
-  );
+  return <>{children}</>;
 }

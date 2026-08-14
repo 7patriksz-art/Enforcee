@@ -102,3 +102,157 @@ textarea {
   border-color: #fbbf9b;
   background: #fff8f3;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOTION SYSTEM
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Durations and easings taken from Linear's published spec, because it is the
+   most rigorously documented one in this category and it matches what we are:
+   fast, precise, never playful.
+
+   Spring and overshoot curves are DELIBERATELY ABSENT. cubic-bezier with a
+   y-value above 1 makes UI chrome bounce, and a product whose whole argument is
+   sobriety should not bounce. The 2026 mainstream is maximalism, neon and
+   kinetic type; this cohort does the opposite, and the restraint IS the trust
+   signal. Matching the broad trend would cost us credibility.
+
+   Only four properties are ever animated on interaction: background-color,
+   border-color, box-shadow, transform. Never layout — animating width, height,
+   margin or padding on hover causes reflow and reads cheap on a slow machine.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --dur-micro: 100ms;
+  --dur-fast: 150ms;
+  --dur-normal: 200ms;
+  --dur-moderate: 300ms;
+
+  --ease-default: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-enter: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-material: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Elevation is a hairline first and a shadow only when something genuinely
+     floats. Vercel's base is a 1px ring; Resend's level 1 is literally a 1px
+     border. Shadows on flat cards are the single clearest "template" tell. */
+  --ring-hairline: 0 0 0 1px rgba(26, 22, 20, 0.08);
+  --shadow-raised: 0 1px 2px rgba(26, 22, 20, 0.04), 0 4px 12px rgba(26, 22, 20, 0.06);
+  --shadow-float: 0 0 3px rgba(26, 22, 20, 0.05), 0 8px 12px rgba(26, 22, 20, 0.05),
+    0 12px 20px rgba(26, 22, 20, 0.05);
+}
+
+/* ── Interactive surfaces ───────────────────────────────────────────────────
+   One class, used everywhere a card is clickable. Lifts 1px and deepens its
+   hairline. No scale, no glow, no colour change — the movement is the feedback
+   and it is almost subliminal, which is the point. */
+.lift {
+  transition:
+    transform var(--dur-fast) var(--ease-default),
+    box-shadow var(--dur-fast) var(--ease-default),
+    border-color var(--dur-fast) var(--ease-default);
+  will-change: transform;
+}
+@media (hover: hover) {
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-raised);
+    border-color: #d6cdb8;
+  }
+}
+.lift:active {
+  transform: translateY(0);
+  transition-duration: var(--dur-micro);
+}
+
+/* Buttons press rather than bounce. */
+.press {
+  transition:
+    background-color var(--dur-fast) var(--ease-default),
+    border-color var(--dur-fast) var(--ease-default),
+    box-shadow var(--dur-fast) var(--ease-default),
+    transform var(--dur-micro) var(--ease-material);
+}
+.press:active {
+  transform: scale(0.985);
+}
+
+/* ── Focus: two layers, always visible ──────────────────────────────────────
+   A halo on the page colour then the accent, so the ring reads on any surface.
+   Never remove this. Keyboard users are not an edge case and a missing focus
+   ring is the most common accessibility failure on otherwise good sites. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px #fdfcf9,
+    0 0 0 4px #b45309;
+  border-radius: 6px;
+}
+
+/* ── Scroll reveal, on the compositor ───────────────────────────────────────
+   CSS scroll-driven animation. No JavaScript, no library, no layout thrash, and
+   nothing to hydrate. Browsers without support simply show the content — the
+   fallback is the content itself, which is the correct fallback.
+
+   Removing framer-motion from comparable sites measured LCP -280ms and TTI
+   -480ms. That is worth more than any animation it would have bought. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-in both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── The one non-negotiable ─────────────────────────────────────────────────
+   Vestibular disorders are real and motion can cause nausea. If the operating
+   system says reduce motion, everything above becomes instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .lift:hover {
+    transform: none;
+  }
+}
+
+/* ── Numbers ────────────────────────────────────────────────────────────────
+   Every quantity, identifier, price and timestamp is monospace with tabular
+   figures, so columns line up and a changing number does not shift its
+   neighbours. Every token set in this category does this. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Measure ────────────────────────────────────────────────────────────────
+   66 characters is the researched optimum; WCAG caps at 80. Applied as a class
+   rather than to every <p>, so tables and code are unaffected. */
+.measure {
+  max-width: 66ch;
+}
+
+/* Sticky nav that earns its blur only once you have scrolled past the hero. */
+.nav-blur {
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  background: rgba(253, 252, 249, 0.82);
+  transition: background-color var(--dur-normal) var(--ease-default);
+}

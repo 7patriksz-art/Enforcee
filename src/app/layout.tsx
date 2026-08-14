@@ -62,28 +62,50 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {children}
 
+        {/* Minimal, but not thin.
+            Nobody credible in this category ships a two-link footer — but the sprawling
+            SEO footer (20+ frameworks, 12 resource collections) belongs to companies
+            selling to procurement. Four things carry almost all the trust here and cost
+            nothing: the legal entity in the copyright, "Legal & Trust" as a label rather
+            than "Legal", the honesty note, and a contact address that is a person.
+            Deliberately absent: newsletter capture. For a product selling trust it is the
+            one footer element that reads as marketing rather than infrastructure. */}
         <footer className="border-t hairline bg-paper-soft">
           <div className="mx-auto max-w-6xl px-5 py-10">
-            <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-4">
-              <div className="max-w-sm">
+            <div className="flex flex-wrap items-start justify-between gap-x-12 gap-y-6">
+              <div className="max-w-xs">
                 <div className="font-display text-[17px] tracking-tight">Enforcee</div>
                 <p className="mt-2 text-[13px] leading-relaxed text-ink-mid">
-                  An audit and enforcement layer for the rules you give your AI. Deterministic where it can be, honest
-                  where it cannot.
+                  Proof that your AI followed your rules.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-[12.5px] text-ink-mid">
-                <Link href="/account" className="transition-colors hover:text-ink">Account</Link>
-                <Link href="/privacy" className="transition-colors hover:text-ink">Privacy</Link>
-                <Link href="/terms" className="transition-colors hover:text-ink">Terms</Link>
-                <a href={`mailto:${CONTACT_EMAIL}`} className="transition-colors hover:text-ink">Contact</a>
+
+              <div className="flex flex-wrap gap-x-12 gap-y-6 text-[13px]">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-skip">Product</div>
+                  <ul className="mt-2.5 space-y-1.5 text-ink-mid">
+                    <li><Link href="/audit" className="transition-colors hover:text-ink">Audit</Link></li>
+                    <li><Link href="/install" className="transition-colors hover:text-ink">Install</Link></li>
+                    <li><Link href="/pricing" className="transition-colors hover:text-ink">Pricing</Link></li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-skip">Legal &amp; Trust</div>
+                  <ul className="mt-2.5 space-y-1.5 text-ink-mid">
+                    <li><Link href="/privacy" className="transition-colors hover:text-ink">Privacy</Link></li>
+                    <li><Link href="/terms" className="transition-colors hover:text-ink">Terms</Link></li>
+                    <li><Link href="/what-is-already-free" className="transition-colors hover:text-ink">What is free</Link></li>
+                    <li><a href={`mailto:${CONTACT_EMAIL}`} className="transition-colors hover:text-ink">Contact</a></li>
+                  </ul>
+                </div>
               </div>
             </div>
-            <p className="mt-8 max-w-3xl border-t hairline pt-5 font-mono text-[11px] leading-relaxed text-skip">
-              Every verdict is labelled by method. Deterministic checks are reproducible proofs. Judged checks are model
-              opinions whose evidence quote was verified against the source text, or discarded. We show you which is
-              which, and we say plainly what cannot be verified at all.
-            </p>
+
+            <div className="mt-9 flex flex-wrap items-center gap-x-5 gap-y-2 border-t hairline pt-5 font-mono text-[11px] text-skip">
+              <span>© {new Date().getFullYear()} Enforcee</span>
+              <span aria-hidden>·</span>
+              <span>Every verdict is labelled by method. We say plainly what cannot be verified at all.</span>
+            </div>
           </div>
         </footer>
       </body>
