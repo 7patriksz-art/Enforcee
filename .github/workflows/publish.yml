@@ -19,7 +19,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  # THE RELEASE GATE RUNS ON EVERY SUPPORTED PLATFORM, NOT JUST THE CHEAP ONE.
+  #
+  # The three-OS matrix lived in ci.yml, which runs on push and does NOT block a release. So
+  # a version with a known Windows failure could still publish, and the answer to "why do the
+  # same errors keep turning up in the latest update" was: because nothing stopped them.
+  #
+  # Five POSIX assumptions shipped this way — .pathname, `sh`, startsWith('/'), a walker
+  # returning backslashes, and npm-is-npm.cmd — each found one release after the last.
+  # Whack-a-mole is what you get when the gate tests one platform and the users have three.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Enforcee audits its own ruleset. If the product cannot pass its own rules, it does
+      # not ship — and a failure here is a finding about the product, not about the rules.
+      - run: npm run selfcheck
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
