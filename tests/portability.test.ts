@@ -38,7 +38,22 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 describe('paths are not assumed to be POSIX', () => {
-  const files = [...sourceFiles('tests'), ...sourceFiles('src'), ...sourceFiles('guard'), ...sourceFiles('cli')];
+  // `scripts` is here because it was NOT, and scripts/pack-cli.mjs is the file that broke
+  // the release on Windows. A scanner that does not look at a directory reports it clean
+  // forever — the same silent-skip shape this codebase keeps finding in itself.
+  const files = [
+    ...sourceFiles('tests'),
+    ...sourceFiles('src'),
+    ...sourceFiles('guard'),
+    ...sourceFiles('cli'),
+    ...sourceFiles('scripts'),
+  ];
+
+  it('looks at every directory that ships code, including scripts', () => {
+    for (const d of ['tests/', 'src/', 'guard/', 'cli/', 'scripts/']) {
+      expect(files.some((f) => f.split(/[\\/]/)[0] + '/' === d), `nothing scanned under ${d}`).toBe(true);
+    }
+  });
 
   it('finds files to check, so an empty scan cannot pass', () => {
     // A control. Without it, a broken walker would report "no violations" forever.
@@ -96,6 +111,27 @@ describe('paths are not assumed to be POSIX', () => {
     expect(
       offenders,
       "walk the tree, then compare with '/', and it only works on POSIX — normalise with split(sep).join('/')"
+    ).toEqual([]);
+  });
+
+  it('never spawns npm or another .cmd shim by bare name', () => {
+    // spawnSync resolves `.exe` on Windows but NOT `.cmd`, and npm/npx/yarn/pnpm are all
+    // .cmd shims there. `execFileSync('npm', ...)` therefore threw ENOENT on every Windows
+    // runner and failed the pre-publish check before it ran a single one of its eight tests.
+    // `node` is fine — node.exe is a real executable — but process.execPath is better still,
+    // because it is the interpreter actually running the check.
+    const offenders: string[] = [];
+    for (const f of files) {
+      for (const line of readFileSync(join(ROOT, f), 'utf8').split('\n')) {
+        if (/^\s*(\/\/|\*)/.test(line)) continue;
+        if (/execFileSync\(\s*['"](npm|npx|yarn|pnpm|tsc|vitest|eslint|prettier)['"]/.test(line)) {
+          offenders.push(`${f}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      "use `process.platform === 'win32' ? 'npm.cmd' : 'npm'` — spawnSync does not resolve .cmd"
     ).toEqual([]);
   });
 

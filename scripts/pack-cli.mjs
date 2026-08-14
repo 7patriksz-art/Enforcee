@@ -34,7 +34,13 @@ const bad = (m) => {
 console.log('\n  Packing the enforcee CLI\n');
 
 // 1. Build the bundle fresh. Never publish a stale one.
-execFileSync('npm', ['run', 'build:cli'], { cwd: ROOT, stdio: 'inherit' });
+// `npm` is npm.cmd on Windows, and spawnSync resolves .exe but NOT .cmd — so this threw
+// ENOENT on every Windows runner and failed the release check before it ran a single one
+// of its eight tests. Same family as the four other POSIX assumptions this release fixed.
+//
+// `node` and `process.execPath` below are fine: node.exe is a real executable.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+execFileSync(NPM, ['run', 'build:cli'], { cwd: ROOT, stdio: 'inherit' });
 
 // 2. Clean output.
 rmSync(OUT, { recursive: true, force: true });
@@ -216,7 +222,7 @@ try {
   writeFileSync(join(OUT, 'probe-rules.md'), '- Never use emojis.\n- Always cite sources with links.\n');
   writeFileSync(join(OUT, 'probe-out.md'), 'Here is an answer with no emoji and no citation.\n');
   writeFileSync(join(OUT, 'probe.mjs'), probe);
-  execFileSync('node', [join(OUT, 'probe.mjs')], { encoding: 'utf8', stdio: 'pipe' });
+  execFileSync(process.execPath, [join(OUT, 'probe.mjs')], { encoding: 'utf8', stdio: 'pipe' });
   ok('a free audit opened no sockets — verified at runtime, not just by grep');
 } catch (e) {
   const out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
@@ -228,7 +234,7 @@ for (const f of ['probe.mjs', 'probe-rules.md', 'probe-out.md']) rmSync(join(OUT
 
 // Smoke test: the licensed command must refuse without a licence, and say so usefully.
 try {
-  execFileSync('node', [bundle, 'guard', 'nonexistent.md'], { encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' } });
+  execFileSync(process.execPath, [bundle, 'guard', 'nonexistent.md'], { encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' } });
   bad('guard ran without a licence');
 } catch (e) {
   e.status === 3 && /part we charge for/i.test(e.stdout ?? '')
