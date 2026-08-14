@@ -1,6 +1,6 @@
 {
   "name": "enforcee",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,7 +12,8 @@
     "build:cli": "esbuild cli/index.ts --bundle --platform=node --target=node20 --format=esm --define:__ENFORCEE_VERSION__=\\\"$npm_package_version\\\" --outfile=cli/dist/enforcee.mjs --banner:js=\"#!/usr/bin/env node\"",
     "test:cli": "npm run build:cli && node cli/dist/enforcee.mjs --version",
     "pack:cli": "node scripts/pack-cli.mjs --check",
-    "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist"
+    "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist",
+    "selfcheck": "node cli/dist/enforcee.mjs health CLAUDE.md && node cli/dist/enforcee.mjs preflight CLAUDE.md"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",

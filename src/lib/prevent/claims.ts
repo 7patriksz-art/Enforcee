@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import pathDefault, { isAbsolute, join, resolve, type PlatformPath } from 'node:path';
 import type { ParsedSession } from '../transcript/parse';
 
@@ -49,6 +49,36 @@ export function isInside(base: string, full: string, p: Pick<PlatformPath, 'reso
   // No relative route exists — a different root or drive. Definitively outside.
   if (p.isAbsolute(rel)) return false;
   return rel.split(/[\\/]/)[0] !== '..';
+}
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'out', 'npm-dist', '.enforcee']);
+
+/**
+ * Find a file by basename inside the project. Bounded, because this runs in a hook.
+ *
+ * Returns the first match. Ambiguity is not a problem worth solving here: if two files
+ * share a name, the claim is confirmed by either, and confirming is the safe direction —
+ * the alternative is calling a true statement a lie.
+ */
+function findByBasename(root: string, name: string, depth = 0, budget = { files: 0 }): string | null {
+  if (depth > 6 || budget.files > 20_000) return null;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) continue;
+    budget.files++;
+    if (e.name === name) return join(root, e.name);
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+    const hit = findByBasename(join(root, e.name), name, depth + 1, budget);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export type ClaimVerdict = 'CONFIRMED' | 'REFUTED' | 'UNCHECKABLE';
@@ -202,11 +232,29 @@ export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
         };
       }
 
-      const there = existsSync(full) && statSync(full).isFile();
+      // A BARE FILENAME IS NOT A WRONG FILENAME.
+      //
+      // Found by running this checker over our own session transcript. The sentence was
+      // "I added `portability.test.ts` one commit ago", the file is at
+      // `tests/portability.test.ts`, and the checker looked only at `./portability.test.ts`,
+      // did not find it, and reported REFUTED — accusing a true statement of being a lie
+      // because the speaker used the name rather than the path.
+      //
+      // People refer to files by basename constantly. Searching for it is what any reader
+      // would do before calling someone a liar.
+      let there = existsSync(full) && statSync(full).isFile();
+      let resolvedAt = full;
+      if (!there && !claim.subject.includes('/') && !claim.subject.includes('\\')) {
+        const found = findByBasename(resolve(base), claim.subject);
+        if (found) {
+          there = true;
+          resolvedAt = found;
+        }
+      }
       return {
         ...claim,
         verdict: there ? 'CONFIRMED' : 'REFUTED',
-        evidence: `stat ${full} → ${there ? 'exists' : 'ENOENT'}`,
+        evidence: `stat ${resolvedAt} → ${there ? 'exists' : 'ENOENT'}`,
         reason: there
           ? 'The file it said it created is there.'
           : 'It said it created this file. The file does not exist.',

@@ -20,7 +20,7 @@
  * We always exit 0 and speak JSON, so a guard bug can never wedge a session.
  */
 
-import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { createPublicKey, verify } from 'node:crypto';
@@ -220,6 +220,32 @@ function sentenceAt(text, idx) {
  * stat'ed a path chosen by model prose. Found by CI on windows-latest, where the checkout is
  * on D: and the temp directory is on C:. Mirrors isInside() in src/lib/prevent/claims.ts.
  */
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'out', 'npm-dist', '.enforcee']);
+
+/**
+ * Find a file by basename inside the project. Mirrors findByBasename() in claims.ts.
+ *
+ * A bare filename is not a wrong filename. Found by running the checker over our own
+ * session: "I added `portability.test.ts`" was REFUTED because the file is at
+ * tests/portability.test.ts — a true statement called a lie over a missing directory.
+ */
+function findByBasename(root, name, depth = 0, budget = { files: 0 }) {
+  if (depth > 6 || budget.files > 20000) return null;
+  let entries;
+  try { entries = readdirSync(root, { withFileTypes: true }); } catch { return null; }
+  for (const e of entries) {
+    if (e.isDirectory()) continue;
+    budget.files++;
+    if (e.name === name) return join(root, e.name);
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+    const hit = findByBasename(join(root, e.name), name, depth + 1, budget);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function isInside(base, full) {
   const b = resolve(base);
   const target = resolve(full);
@@ -250,11 +276,17 @@ function checkClaimsLocally(text, commands, cwd, toolCalls) {
     // we can adjudicate, and checking it would make this a filesystem oracle the model
     // steers. Same rule as src/lib/prevent/claims.ts.
     const inside = isInside(cwd, full);
+    let there = inside && existsSync(full);
+    let at = full;
+    if (inside && !there && !target.includes('/') && !target.includes('\\')) {
+      const found = findByBasename(resolve(cwd), target);
+      if (found) { there = true; at = found; }
+    }
     out.push({
       kind: 'file-created',
       subject: target,
-      verdict: !inside ? 'UNCHECKABLE' : existsSync(full) ? 'CONFIRMED' : 'REFUTED',
-      evidence: inside ? `stat ${full}` : `path escapes the session directory (${cwd})`,
+      verdict: !inside ? 'UNCHECKABLE' : there ? 'CONFIRMED' : 'REFUTED',
+      evidence: inside ? `stat ${at}` : `path escapes the session directory (${cwd})`,
     });
   }
   for (const m of text.matchAll(CLAIM_TESTS)) {

@@ -104,7 +104,10 @@ describe('paths are not assumed to be POSIX', () => {
         .filter((l) => !/^\s*(\/\/|\*)/.test(l))
         .join('\n');
       const walks = /readdirSync\(/.test(code);
-      const filtersOnSlash = /\.(includes|startsWith|endsWith)\(\s*['"`]\//.test(code);
+      // A path FRAGMENT ('/app/admin/'), not a bare separator test ('/'). Testing for a
+      // bare '/' is the correct Windows-aware idiom — flagging it made this check fire on
+      // the very fix that made a module portable, which is a lint teaching the wrong lesson.
+      const filtersOnSlash = /\.(includes|startsWith|endsWith)\(\s*['"`]\/[\w.-]/.test(code);
       const normalises = /split\(\s*sep\s*\)\.join\(\s*['"`]\/['"`]\s*\)|replace\(\s*\/\\\\\\\\\/g/.test(code);
       if (walks && filtersOnSlash && !normalises) offenders.push(f);
     }

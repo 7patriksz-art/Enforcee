@@ -10625,7 +10625,7 @@ function preflight(preconditions, cwd = process.cwd()) {
 }
 
 // src/lib/prevent/claims.ts
-import { existsSync as existsSync3, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync3, readdirSync, statSync as statSync2 } from "node:fs";
 import pathDefault, { isAbsolute as isAbsolute2, join as join3, resolve } from "node:path";
 function isInside(base, full, p = pathDefault) {
   const b = p.resolve(base);
@@ -10635,6 +10635,27 @@ function isInside(base, full, p = pathDefault) {
   if (rel === "") return true;
   if (p.isAbsolute(rel)) return false;
   return rel.split(/[\\/]/)[0] !== "..";
+}
+var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", "out", "npm-dist", ".enforcee"]);
+function findByBasename(root, name, depth = 0, budget = { files: 0 }) {
+  if (depth > 6 || budget.files > 2e4) return null;
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) continue;
+    budget.files++;
+    if (e.name === name) return join3(root, e.name);
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith(".")) continue;
+    const hit = findByBasename(join3(root, e.name), name, depth + 1, budget);
+    if (hit) return hit;
+  }
+  return null;
 }
 var FILE_CLAIM = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
 var TESTS_PASS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
@@ -10705,11 +10726,19 @@ function checkClaim(claim, ctx) {
           reason: "This claim names a path outside the project, so it is not checked here \u2014 deliberately, not by accident."
         };
       }
-      const there = existsSync3(full) && statSync2(full).isFile();
+      let there = existsSync3(full) && statSync2(full).isFile();
+      let resolvedAt = full;
+      if (!there && !claim.subject.includes("/") && !claim.subject.includes("\\")) {
+        const found = findByBasename(resolve(base), claim.subject);
+        if (found) {
+          there = true;
+          resolvedAt = found;
+        }
+      }
       return {
         ...claim,
         verdict: there ? "CONFIRMED" : "REFUTED",
-        evidence: `stat ${full} \u2192 ${there ? "exists" : "ENOENT"}`,
+        evidence: `stat ${resolvedAt} \u2192 ${there ? "exists" : "ENOENT"}`,
         reason: there ? "The file it said it created is there." : "It said it created this file. The file does not exist."
       };
     }
@@ -11060,7 +11089,7 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
-var VERSION2 = true ? "0.8.4" : "0.0.0-dev";
+var VERSION2 = true ? "0.8.5" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

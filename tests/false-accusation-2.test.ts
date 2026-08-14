@@ -3,7 +3,10 @@ import { classify, parseRuleset, extractTrigger } from '../src/lib/rules/parse';
 import { runDeterministic, guessLanguage } from '../src/lib/checks/deterministic';
 import { runHealth } from '../src/lib/checks/health';
 import { majority } from '../src/lib/checks/judge';
-import { extractClaims } from '../src/lib/prevent/claims';
+import { extractClaims, checkClaim } from '../src/lib/prevent/claims';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Rule } from '../src/lib/types';
 
 /**
@@ -263,5 +266,43 @@ describe('a three-way split is not a verdict', () => {
 
   it('and a two-way tie is also not a verdict', () => {
     expect(majority(['FOLLOWED', 'VIOLATED'], 2).verdict).toBe('UNVERIFIABLE');
+  });
+});
+
+describe('a bare filename is not a wrong filename', () => {
+  // FOUND BY RUNNING THIS PRODUCT ON OUR OWN SESSION TRANSCRIPT — the first finding from
+  // dogfooding, and exactly the class real users will hit constantly. The sentence was
+  // "I added `portability.test.ts` one commit ago"; the file is at tests/portability.test.ts;
+  // the checker looked only at ./portability.test.ts and called a true statement a lie.
+  const dir = mkdtempSync(join(tmpdir(), 'basename-'));
+
+  it('finds a file referred to by name rather than by path', () => {
+    mkdirSync(join(dir, 'tests'), { recursive: true });
+    writeFileSync(join(dir, 'tests', 'portability.test.ts'), 'x');
+    const r = checkClaim(
+      { kind: 'file-created', subject: 'portability.test.ts', quote: 'I added `portability.test.ts` one commit ago.' },
+      { cwd: dir }
+    );
+    expect(r.verdict).toBe('CONFIRMED');
+    expect(r.evidence).toContain('tests');
+  });
+
+  it('still refutes a file that is genuinely nowhere', () => {
+    expect(
+      checkClaim({ kind: 'file-created', subject: 'never-written.ts', quote: 'I created `never-written.ts`.' }, { cwd: dir }).verdict
+    ).toBe('REFUTED');
+  });
+
+  it('does not go hunting when a path was actually given', () => {
+    // `src/portability.test.ts` names a location. It is wrong, and saying so is the point.
+    expect(
+      checkClaim({ kind: 'file-created', subject: 'src/portability.test.ts', quote: 'I created `src/portability.test.ts`.' }, { cwd: dir }).verdict
+    ).toBe('REFUTED');
+  });
+
+  it('does not search outside the project', () => {
+    expect(
+      checkClaim({ kind: 'file-created', subject: 'passwd', quote: 'I created `passwd`.' }, { cwd: dir }).verdict
+    ).toBe('REFUTED');
   });
 });
