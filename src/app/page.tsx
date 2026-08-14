@@ -38,9 +38,20 @@ export default function Home() {
             href="/install"
             className="rounded-xl border border-ink/15 bg-white px-6 py-3 text-[15px] font-medium transition-colors hover:border-ink/30"
           >
-            Install it into Claude Code
+            Run it in your pipeline
           </Link>
           <span className="font-mono text-[12px] text-skip">no account · 20 seconds · free forever</span>
+        </div>
+
+        {/* The command is the product. It runs anywhere, needs nothing, and makes no
+            network call — which is why it goes above the fold rather than in a docs page. */}
+        <div className="mt-6 max-w-prose overflow-x-auto rounded-xl border hairline bg-ink px-5 py-4">
+          <code className="font-mono text-[13.5px] leading-relaxed text-white/90">
+            <span className="text-white/40">$ </span>npx enforcee audit CLAUDE.md answer.md
+          </code>
+          <div className="mt-2 font-mono text-[12px] leading-relaxed text-white/45">
+            no install · no account · no API key · no network call
+          </div>
         </div>
 
         <div className="readable mt-6 max-w-prose rounded-xl border hairline bg-paper-soft px-5 py-4 text-[14.5px]">
@@ -66,6 +77,64 @@ export default function Home() {
               <div className="mt-1.5 text-[13px] leading-snug text-ink-mid">{v}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Three surfaces ───────────────────────────────────────────────────
+          Enforcee is not a Claude Code plugin. It is a checker that happens to have a
+          Claude Code integration, and the ordering here says so: the command runs
+          anywhere, the CI gate is where policy actually lives in a company, and the hook
+          is the third of three. Leading with the hook was what made this read as a plugin
+          rather than as a service. */}
+      <section className="border-y hairline bg-white">
+        <div className="mx-auto max-w-6xl px-5 py-14">
+          <h2 className="font-display text-[30px] leading-tight tracking-tight">Three places it runs</h2>
+          <p className="readable mt-3 max-w-prose">
+            The same engine, the same verdicts, the same receipt. Nothing here is specific to one editor
+            or one model.
+          </p>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                t: 'On your machine',
+                s: 'npx enforcee audit',
+                d: 'A command. No account, no key, no network call — about four fifths of a hand-written ruleset is decided by code, so the useful half genuinely does not need a model.',
+                href: '/audit',
+                cta: 'Try it on your rules',
+              },
+              {
+                t: 'In your pipeline',
+                s: 'uses: 7patriksz-art/Enforcee',
+                d: 'A GitHub Action that fails the pull request when a rule was broken. This is where a written engineering standard stops being a document nobody reads.',
+                href: '/install',
+                cta: 'Add the CI gate',
+              },
+              {
+                t: 'In the session',
+                s: 'PreToolUse hook',
+                d: 'The guard denies a destructive tool call before it executes, re-injects your rules after compaction, and writes every decision to a local ledger.',
+                href: '/enforce',
+                cta: 'See what it blocks',
+              },
+            ].map((c) => (
+              <div key={c.t} className="flex flex-col rounded-xl border hairline bg-paper-soft px-5 py-5">
+                <div className="text-[15px] font-semibold">{c.t}</div>
+                <code className="mt-1.5 font-mono text-[12.5px] text-clay">{c.s}</code>
+                <p className="mt-3 flex-1 text-[13.5px] leading-relaxed text-ink-mid">{c.d}</p>
+                <Link href={c.href} className="mt-4 text-[13.5px] font-medium text-brand underline underline-offset-4">
+                  {c.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
+
+          <p className="readable mt-8 max-w-prose text-[14.5px] text-ink-mid">
+            Every one of them produces the same thing: a <strong>receipt</strong> — a per-rule verdict with the
+            exact quote from your own output, a method badge saying whether code or a model decided it, and a
+            digest you can check. That artefact is the product. The three surfaces are just where you happen
+            to be standing.
+          </p>
         </div>
       </section>
 
