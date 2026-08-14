@@ -13,7 +13,18 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Three operating systems, because for nine releases the suite only ever ran on Linux
+    # and that was invisible. The first time it ran on Windows, 36 tests failed and one of
+    # them was a real product bug: `which()` could not find any binary at all, so preflight
+    # told every Windows user their environment was empty.
+    #
+    # "All tests pass" is a claim about wherever the tests ran. This is what makes the claim
+    # mean what it sounds like.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
