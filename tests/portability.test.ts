@@ -70,6 +70,33 @@ describe('paths are not assumed to be POSIX', () => {
     expect(offenders, 'use execSync, which uses the platform shell — `sh` does not exist on Windows').toEqual([]);
   });
 
+  it('a directory walker whose results are filtered on "/" normalises them', () => {
+    // The fourth instance, and the one the three checks above missed: a walker returning
+    // join()ed paths, then filtered with `.includes('/app/admin/')`. On Windows the
+    // separator is a backslash, so the filter matched nothing and the test failed by
+    // accusing the exact directory it exists to permit.
+    //
+    // Deliberately narrow — it fires only when a file does BOTH things, which is the bug
+    // and is otherwise a rare combination. A general "no / in a string" lint would flag
+    // routes and URLs and get switched off within a week.
+    const offenders: string[] = [];
+    for (const f of files) {
+      const text = readFileSync(join(ROOT, f), 'utf8');
+      const code = text
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+        .join('\n');
+      const walks = /readdirSync\(/.test(code);
+      const filtersOnSlash = /\.(includes|startsWith|endsWith)\(\s*['"`]\//.test(code);
+      const normalises = /split\(\s*sep\s*\)\.join\(\s*['"`]\/['"`]\s*\)|replace\(\s*\/\\\\\\\\\/g/.test(code);
+      if (walks && filtersOnSlash && !normalises) offenders.push(f);
+    }
+    expect(
+      offenders,
+      "walk the tree, then compare with '/', and it only works on POSIX — normalise with split(sep).join('/')"
+    ).toEqual([]);
+  });
+
   it('never tests for an absolute path with startsWith("/")', () => {
     const offenders: string[] = [];
     for (const f of files) {

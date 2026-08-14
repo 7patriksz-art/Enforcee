@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -14,10 +14,22 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('../src', import.meta.url));
 const GUARDED = ['@/lib/admin-metrics', './Metrics', '@/app/admin/Metrics'];
 
+/**
+ * Paths come back with forward slashes on every platform.
+ *
+ * The filters below ask questions like `!f.includes('/app/admin/')`. On Windows the
+ * separator is a backslash, so that exclusion matched nothing, every file under /admin was
+ * reported as an offender, and the test failed by accusing the one directory it exists to
+ * permit. Fourth instance on this project of a `/` assumed to be universal — and the first
+ * three were fixed one commit ago, in a pass that missed this file.
+ *
+ * Normalising here rather than at each call site, because the call sites are exactly where
+ * the next filter added will forget.
+ */
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
     const p = join(dir, f);
-    return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(f) ? [p] : [];
+    return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(f) ? [p.split(sep).join('/')] : [];
   });
 }
 
@@ -26,6 +38,9 @@ describe('unit cost containment (D-018)', () => {
 
   it('found files to check', () => {
     expect(files.length).toBeGreaterThan(20);
+    // The walker's own control: if it ever returns a platform separator again, the filters
+    // below silently stop filtering and this suite starts passing for the wrong reason.
+    expect(files.filter((f) => f.includes('\\')), 'walk() leaked a backslash path').toEqual([]);
   });
 
   it('nothing outside /admin imports the cost metrics', () => {
