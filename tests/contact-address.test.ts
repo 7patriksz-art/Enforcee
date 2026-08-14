@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, extname } from 'node:path';
+import { join, resolve, extname, relative, sep } from 'node:path';
 import { CONTACT_EMAIL } from '../src/lib/contact';
 
 /**
@@ -45,6 +45,19 @@ const RESERVED = /@example\.(com|org|net|co)\b/i;
 const SELF = [join('src', 'lib', 'contact.ts'), join('tests', 'contact-address.test.ts')];
 const isSelf = (f: string) => SELF.some((s) => f.endsWith(s));
 
+/**
+ * Repo-relative path segments, on any platform.
+ *
+ * Every path comparison in this file goes through here. The first version compared with
+ * a hardcoded `/` — `f.includes(`${ROOT}/tests/`)` and `f.endsWith('privacy/page.tsx')` —
+ * which is always false on Windows, where the separator is a backslash. Both passed
+ * locally and both went red on the Windows leg of CI. That is the fourth path-separator
+ * bug on this project; the rule is that a literal slash never appears in a comparison.
+ */
+const segments = (f: string) => relative(ROOT, f).split(sep);
+const inDir = (f: string, dir: string) => segments(f)[0] === dir;
+const endsWithPath = (f: string, ...parts: string[]) => f.endsWith(join(...parts));
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (['node_modules', '.next', '.git', 'npm-dist', 'theme-audit', 'coverage'].includes(name)) continue;
@@ -55,16 +68,45 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+describe('path comparison is separator-agnostic', () => {
+  /**
+   * Proven from Linux by running the same logic against `path.win32`, rather than waiting
+   * for the Windows leg of CI to say so. That leg has now caught four separator bugs on
+   * this project, each one costing a full red build; this is the cheap version of the
+   * same check and it runs everywhere.
+   */
+  it('classifies a Windows path the same way it classifies a POSIX one', async () => {
+    const { win32, posix } = await import('node:path');
+
+    for (const [name, p, root, file] of [
+      ['win32', win32, 'D:\\a\\Enforcee\\Enforcee', 'D:\\a\\Enforcee\\Enforcee\\tests\\licence.test.ts'],
+      ['posix', posix, '/home/x/Enforcee', '/home/x/Enforcee/tests/licence.test.ts'],
+    ] as const) {
+      const seg = p.relative(root, file).split(p.sep);
+      expect(seg[0], `${name}: first segment`).toBe('tests');
+    }
+
+    // …and the shape that was actually shipped broken: a literal '/' comparison is true
+    // on POSIX and false on Windows, so it silently stops excluding anything.
+    const winFile = 'D:\\a\\Enforcee\\Enforcee\\tests\\licence.test.ts';
+    expect(winFile.includes('D:\\a\\Enforcee\\Enforcee/tests/')).toBe(false);
+  });
+});
+
 describe('the contact address', () => {
   const files = walk(ROOT).filter((f) =>
     ['.ts', '.tsx', '.mjs', '.js', '.json', '.md', '.yml', '.yaml', ''].includes(extname(f))
   );
 
-  it('scans a meaningful number of files', () => {
+  it('scans a meaningful number of files, including the ones that have drifted', () => {
     // A walk that silently returns nothing passes every assertion below it.
     expect(files.length).toBeGreaterThan(50);
-    expect(files.some((f) => f.endsWith('LICENSE'))).toBe(true);
-    expect(files.some((f) => f.endsWith('privacy/page.tsx'))).toBe(true);
+    expect(files.some((f) => endsWithPath(f, 'LICENSE'))).toBe(true);
+    expect(files.some((f) => endsWithPath(f, 'src', 'app', 'privacy', 'page.tsx'))).toBe(true);
+    // And the tests/ exclusion below must actually exclude something. On Windows it
+    // silently matched nothing, which is the failure mode that turns an exclusion into a
+    // false positive — and turned this suite red on one platform out of three.
+    expect(files.filter((f) => inDir(f, 'tests')).length).toBeGreaterThan(5);
   });
 
   it('appears nowhere as a hardcoded literal outside src/lib/contact.ts', () => {
@@ -73,7 +115,7 @@ describe('the contact address', () => {
       if (isSelf(f)) continue;
       // Scoped to SHIPPED surfaces. A fixture address inside a test is not a promise to
       // anyone; the rule here is about what a reader is told to write to.
-      if (f.includes(`${ROOT}/tests/`)) continue;
+      if (inDir(f, 'tests')) continue;
       const text = readFileSync(f, 'utf8');
       for (const m of text.match(EMAIL_RE) ?? []) {
         if (ALLOWED.has(m) || RESERVED.test(m)) continue;
