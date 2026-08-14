@@ -138,6 +138,22 @@ describe('paths are not assumed to be POSIX', () => {
     ).toEqual([]);
   });
 
+  it('never execFiles a .cmd or .bat, even by explicit name', () => {
+    // The trap that kept CI red for five releases. `execFileSync('npm', ...)` fails on
+    // Windows because spawnSync resolves .exe but not .cmd — so 0.8.4 changed it to
+    // 'npm.cmd', which is WORSE: since the CVE-2024-27980 mitigation, Node refuses to spawn
+    // a .bat or .cmd through execFile at all without `shell: true`. execSync uses the
+    // platform shell and works on both.
+    const offenders: string[] = [];
+    for (const f of files) {
+      for (const line of readFileSync(join(ROOT, f), 'utf8').split('\n')) {
+        if (/^\s*(\/\/|\*)/.test(line)) continue;
+        if (/execFileSync?\([^)]*\.(cmd|bat)['"`]/.test(line)) offenders.push(`${f}: ${line.trim()}`);
+      }
+    }
+    expect(offenders, 'use execSync — Node will not execFile a .cmd without shell: true').toEqual([]);
+  });
+
   it('never tests for an absolute path with startsWith("/")', () => {
     const offenders: string[] = [];
     for (const f of files) {

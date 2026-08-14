@@ -15,10 +15,10 @@
  *   node scripts/pack-cli.mjs          build npm-dist/
  *   node scripts/pack-cli.mjs --check  build and verify, exit non-zero on problems
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'npm-dist');
@@ -34,13 +34,18 @@ const bad = (m) => {
 console.log('\n  Packing the enforcee CLI\n');
 
 // 1. Build the bundle fresh. Never publish a stale one.
-// `npm` is npm.cmd on Windows, and spawnSync resolves .exe but NOT .cmd — so this threw
-// ENOENT on every Windows runner and failed the release check before it ran a single one
-// of its eight tests. Same family as the four other POSIX assumptions this release fixed.
+// Use the SHELL to run npm, on every platform.
 //
-// `node` and `process.execPath` below are fine: node.exe is a real executable.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-execFileSync(NPM, ['run', 'build:cli'], { cwd: ROOT, stdio: 'inherit' });
+// Two wrong answers preceded this one. `execFileSync('npm', ...)` threw ENOENT on Windows,
+// because spawnSync resolves `.exe` but not `.cmd` and npm is a .cmd shim there. So 0.8.4
+// changed it to `npm.cmd` — which made it worse: since the CVE-2024-27980 mitigation, Node
+// REFUSES to spawn a .bat or .cmd file through execFile at all unless `shell: true` is set.
+// CI stayed red, and I did not notice because I had never read the CI status.
+//
+// execSync goes through the platform shell, which is the one thing that knows how to run
+// npm on both. `process.execPath` below is still direct, and correctly so: node.exe is a
+// real executable and needs no shell.
+execSync('npm run build:cli', { cwd: ROOT, stdio: 'inherit' });
 
 // 2. Clean output.
 rmSync(OUT, { recursive: true, force: true });
@@ -185,7 +190,7 @@ const BENIGN = [
   // react-native users to use expo/fetch. Never used as a request target.
   { host: 'https://docs.expo.dev', why: 'error-message string in @anthropic-ai/sdk' },
 ];
-const ALLOWED = /^https?:\/\/([a-z0-9-]+\.)*(anthropic\.com|claude\.com|enforcee\.vercel\.app|json-schema\.org|w3\.org|github\.com|opensource\.org)$/;
+const ALLOWED = /^https?:\/\/([a-z0-9-]+\.)*(anthropic\.com|claude\.com|enforcee\.com|enforcee\.vercel\.app|json-schema\.org|w3\.org|github\.com|opensource\.org)$/;
 
 const urls = [...new Set([...src.matchAll(/https?:\/\/[a-z0-9.-]+/gi)].map((m) => m[0].toLowerCase()))];
 const unexpected = urls.filter((u) => !ALLOWED.test(u) && !BENIGN.some((b) => b.host === u));
@@ -200,37 +205,66 @@ if (unexpected.length === 0) {
 // A stronger assertion than the string scan: the free commands must not open a socket.
 // Run a real audit with the network stubbed out and fail if anything tries to dial.
 try {
+  // PATCH THE SOCKET, NOT THE MODULE.
+  //
+  // The first version of this probe reassigned `mod.request` on an imported ESM namespace.
+  // Those are READ-ONLY, so it threw TypeError on the very first iteration, on every
+  // platform, every time — and the catch below reported "verified at runtime" anyway. This
+  // check has therefore never once run since it was written, while printing a green tick on
+  // every release. It is the exact failure the product exists to name, sitting in the
+  // product's own release gate.
+  //
+  // net.Socket.prototype.connect is the chokepoint every outbound connection passes through
+  // — http, https, tls and undici's fetch all end up there — and a prototype method is
+  // writable. CommonJS, because that is where mutation is possible at all.
   const probe = `
-    const bad = [];
-    for (const m of ['http', 'https', 'net', 'tls']) {
-      const mod = await import('node:' + m);
-      for (const fn of ['request', 'get', 'connect']) {
-        if (typeof mod[fn] === 'function') {
-          const orig = mod[fn];
-          mod[fn] = (...a) => { bad.push(m + '.' + fn); return orig(...a); };
-        }
-      }
-    }
+    const net = require('node:net');
+    const dialed = [];
+    const origConnect = net.Socket.prototype.connect;
+    net.Socket.prototype.connect = function (...a) {
+      dialed.push('net.Socket.connect');
+      return origConnect.apply(this, a);
+    };
     const origFetch = globalThis.fetch;
-    globalThis.fetch = (...a) => { bad.push('fetch:' + String(a[0]).slice(0, 60)); return origFetch(...a); };
+    if (typeof origFetch === 'function') {
+      globalThis.fetch = (...a) => { dialed.push('fetch:' + String(a[0]).slice(0, 60)); return origFetch(...a); };
+    }
     process.on('exit', () => {
-      if (bad.length) { console.error('DIALED:' + bad.join(',')); process.exit(9); }
+      if (dialed.length) console.error('DIALED:' + dialed.join(','));
     });
     process.argv = [process.argv[0], 'enforcee', 'audit', ${JSON.stringify(join(OUT, 'probe-rules.md'))}, ${JSON.stringify(join(OUT, 'probe-out.md'))}];
-    await import(${JSON.stringify(bundle)});
+    import(${JSON.stringify(pathToFileURL(bundle).href)});
   `;
   writeFileSync(join(OUT, 'probe-rules.md'), '- Never use emojis.\n- Always cite sources with links.\n');
   writeFileSync(join(OUT, 'probe-out.md'), 'Here is an answer with no emoji and no citation.\n');
-  writeFileSync(join(OUT, 'probe.mjs'), probe);
-  execFileSync(process.execPath, [join(OUT, 'probe.mjs')], { encoding: 'utf8', stdio: 'pipe' });
-  ok('a free audit opened no sockets — verified at runtime, not just by grep');
+  writeFileSync(join(OUT, 'probe.cjs'), probe);
+  const out = execFileSync(process.execPath, [join(OUT, 'probe.cjs')], { encoding: 'utf8', stdio: 'pipe' });
+  judgeProbe(out);
 } catch (e) {
-  const out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
-  // audit exits non-zero when a rule is violated, which is correct behaviour here.
-  if (out.includes('DIALED:')) bad(`the free path made a network call: ${out.split('DIALED:')[1]?.split('\n')[0]}`);
-  else ok('a free audit opened no sockets — verified at runtime, not just by grep');
+  // The audit exits non-zero when a rule is violated, which is correct here — so a throw is
+  // expected. What is NOT acceptable is treating any throw as a pass, which is what this
+  // did: on Windows the probe could not even load the bundle, crashed, and was reported as
+  // "verified at runtime". A control that cannot fail is not a control (charter rule 6).
+  judgeProbe(`${e.stdout ?? ''}${e.stderr ?? ''}`);
 }
-for (const f of ['probe.mjs', 'probe-rules.md', 'probe-out.md']) rmSync(join(OUT, f), { force: true });
+
+function judgeProbe(out) {
+  if (out.includes('DIALED:')) {
+    bad(`the free path made a network call: ${out.split('DIALED:')[1]?.split('\n')[0]}`);
+  } else if (!/coverage/i.test(out)) {
+    // The positive control. Only a real audit prints a coverage line, so its absence means
+    // the bundle never loaded and this check verified nothing.
+    //
+    // A sentinel printed after the import cannot work: the CLI calls process.exit() when the
+    // audit finishes, so nothing after `await import(...)` ever runs. The first version of
+    // this control used one, and was therefore permanently red — a control that cannot pass
+    // is as useless as one that cannot fail.
+    bad(`the socket probe did not run, so nothing was verified: ${out.trim().split('\n').pop()?.slice(0, 140)}`);
+  } else {
+    ok('a free audit opened no sockets — verified at runtime, not just by grep');
+  }
+}
+if (!process.env.ENFORCEE_KEEP_PROBE) for (const f of ['probe.cjs', 'probe-rules.md', 'probe-out.md']) rmSync(join(OUT, f), { force: true });
 
 // Smoke test: the licensed command must refuse without a licence, and say so usefully.
 try {
