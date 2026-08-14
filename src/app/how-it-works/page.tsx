@@ -59,7 +59,7 @@ export default function HowItWorks() {
         {STEPS.map((s) => (
           <li key={s.n} className="bg-white px-5 py-5">
             <div className="flex items-baseline gap-3">
-              <span className="font-mono text-[12px] text-neutral-300">{s.n}</span>
+              <span className="font-mono text-[12px] text-ink-light">{s.n}</span>
               <h2 className="text-[15px] font-semibold tracking-tight">{s.t}</h2>
               <span
                 className={

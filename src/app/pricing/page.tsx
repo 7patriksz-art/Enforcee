@@ -177,7 +177,7 @@ const MATRIX: Row[] = [
 
 function Cell({ v }: { v: string | boolean }) {
   if (v === true) return <span className="font-mono text-[13px] text-pass">✓</span>;
-  if (v === false) return <span className="font-mono text-[13px] text-paper-line">—</span>;
+  if (v === false) return <span className="font-mono text-[13px] text-ink-light">—</span>;
   return <span className="text-[12.5px] text-ink-mid">{v}</span>;
 }
 
@@ -264,7 +264,7 @@ function Explainer({
 function Tick({ label, v }: { label: string; v: string | boolean }) {
   const on = v !== false;
   return (
-    <span className={on ? 'text-ink' : 'text-paper-line'}>
+    <span className={on ? 'text-ink' : 'text-ink-light'}>
       {label} {v === true ? '✓' : v === false ? '—' : String(v)}
     </span>
   );

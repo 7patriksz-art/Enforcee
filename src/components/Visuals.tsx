@@ -135,8 +135,12 @@ export function Glow({ className = '' }: { className?: string }) {
       <div
         className="absolute -top-40 left-1/2 h-[520px] w-[900px] -translate-x-1/2 opacity-[0.55]"
         style={{
+          // Both stops AND the transparent end are variables. The end stop matters:
+          // fading to a hardcoded rgba(253,252,249,0) leaves a pale halo on a dark
+          // page in every browser that interpolates transparent in non-premultiplied
+          // sRGB, which is most of them.
           background:
-            'radial-gradient(50% 50% at 50% 50%, rgba(252,211,77,0.30) 0%, rgba(251,191,155,0.18) 45%, rgba(253,252,249,0) 100%)',
+            'radial-gradient(50% 50% at 50% 50%, var(--glow-a) 0%, var(--glow-b) 45%, rgb(var(--c-paper) / 0) 100%)',
         }}
       />
     </div>

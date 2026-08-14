@@ -62,7 +62,7 @@ export default function Licence({ entitled }: { entitled: boolean }) {
         </button>
       ) : (
         <div className="mt-4">
-          <div className="overflow-x-auto rounded-xl bg-ink px-4 py-3">
+          <div className="counter-theme overflow-x-auto rounded-xl bg-paper px-4 py-3">
             <code className="font-mono text-[11.5px] leading-relaxed text-paper break-all">{licence}</code>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">

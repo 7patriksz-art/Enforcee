@@ -2,6 +2,345 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Every colour is a variable, held as raw RGB CHANNELS rather than a hex string,
+   so Tailwind's alpha modifiers keep working: `bg-paper/85` compiles to
+   rgb(var(--c-paper) / 0.85). Storing "#FDFCF9" here would silently break every
+   translucent surface on the site, including the blurred nav.
+
+   Dark is WARM, not clinical. The brand is paper and ink; the dark counterpart is
+   espresso and cream, not the blue-black every other developer tool ships. Losing
+   that in dark mode would mean having two brands.
+
+   The muted token is the one to watch. Vercel's #8f8f8f on #fafafa is about 2.8:1
+   and fails WCAG outright; the primary text colour almost never does. Both `skip`
+   values below clear 4.5:1 against their own background — that is the number that
+   was checked, not the headline one.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Why two selectors on each block ────────────────────────────────────────
+   Several panels on the site are DELIBERATELY inverted against the page: the hero
+   command block, the install snippets, the licence key, the dark band on the
+   landing page. In light mode they are dark; in dark mode they must become light,
+   or they are the only part of the page that did not switch.
+
+   A rendered audit caught the real failure here — `text-clay-soft` inside the dark
+   band measured 1.5:1 once the band went cream, because the panel flipped and its
+   accent did not. Painting `bg-ink text-white` and hoping is not enough: an
+   inverted panel needs the WHOLE OPPOSING PALETTE, not an opposing background.
+
+   THE NAME IS NOT ARBITRARY. This class was called `.invert` for about ten minutes,
+   and `invert` is a TAILWIND UTILITY — `filter: invert(100%)`. So every panel got a
+   real colour-inverting filter stacked on top of the correct palette and painted
+   backwards. Every check passed while it did: `getComputedStyle` reports the value
+   before filters, and a filter inverts foreground and background together, so the
+   contrast ratio is preserved exactly. Only a sampled PIXEL disagreed with the
+   computed style, and that is what found it. Do not name a custom class anything
+   Tailwind already ships.
+
+   So `.counter-theme` is not a palette. It is a pointer at the other one:
+
+     :root, .dark .counter-theme   → the light values
+     .dark, .counter-theme         → the dark values
+
+   `.dark .counter-theme` scores 0,2,0 and beats `.counter-theme` at 0,1,0, so an inverted panel
+   inside dark mode correctly lands on the light palette. Nothing is duplicated —
+   there are still exactly two sets of numbers in this file, and adding a token to
+   one of them cannot leave the inverted panels behind. */
+
+:root,
+.dark .counter-theme {
+  --c-paper: 253 252 249;
+  --c-paper-soft: 247 244 237;
+  --c-paper-deep: 239 234 223;
+  --c-paper-line: 228 222 208;
+
+  /* The raised surface. Tailwind's `white` is remapped to this, so every card on
+     the site follows the theme without a single `dark:` variant. In light it is
+     literally white — one step brighter than paper. In dark it steps UP in
+     lightness rather than down, because elevation reads as light on a dark page
+     and as shadow on a light one. */
+  --c-card: 255 255 255;
+
+  --c-ink: 26 22 20;
+  --c-ink-soft: 46 40 35;
+  --c-ink-mid: 87 80 74;
+  --c-ink-light: 116 107 98; /* was 124/115/106 — 4.23:1 on paper-soft, a fail */
+  --c-skip: 111 103 95;
+
+  --c-clay: 194 65 12;
+  --c-clay-soft: 234 88 12;
+  --c-clay-pale: 255 241 231;
+  --c-clay-line: 251 191 155;
+
+  --c-honey: 180 83 9;
+  --c-honey-pale: 254 243 199;
+  --c-honey-line: 252 211 77;
+
+  --c-pass: 21 128 61;
+  --c-pass-pale: 236 253 243;
+  --c-pass-line: 134 239 172;
+
+  --c-fail: 185 28 28;
+  --c-fail-pale: 254 242 242;
+  --c-fail-line: 252 165 165;
+
+  --c-unknown: 180 83 9;
+  --c-unknown-pale: 255 251 235;
+  --c-unknown-line: 253 230 138;
+
+  --c-brand: 29 78 216;
+  --c-brand-deep: 30 58 138;
+  --c-brand-pale: 239 246 255;
+
+  --hi-a: #fde68a;
+  --hi-b: #fcd34d;
+  --hi-clay-a: #ffd9c0;
+  --hi-clay-b: #fbbf9b;
+  --focus-halo: #fdfcf9;
+  --glow-a: rgba(252, 211, 77, 0.3);
+  --glow-b: rgba(251, 191, 155, 0.18);
+
+  --ev-bg: #fef3c7;
+  --ev-rule: #fcd34d;
+  --ev-bad-bg: #fee2e2;
+  --ev-bad-rule: #fca5a5;
+
+  /* ── The reclaimed stock ramps ───────────────────────────────────────────
+     181 class names across nine files still say `bg-emerald-50`,
+     `text-neutral-400`, `ring-red-600/20`. Left as Tailwind ships them they are
+     frozen light-mode hexes: on a dark card, `bg-emerald-50` is a near-white
+     block. So the five ramps the codebase actually uses are re-pointed here and
+     the class names keep working, unchanged, in both themes.
+
+     Two things fall out of doing it here rather than by editing nine files:
+
+     1. The greys stop being COLD. Stock neutral is a blue-tinted grey and the
+        brand is paper and ink; every one of those 74 neutral classes was quietly
+        pulling against the palette. They are now warm.
+     2. `neutral-400` — 26 uses, almost all small print — measured 2.66:1 on
+        white. That is a fail, not a near-miss, and it was shipping. The low end
+        of this ramp is deliberately COMPRESSED so 400 clears 4.5:1. A grey ramp
+        exists to be read, not to be evenly spaced. */
+
+  --n-50: 250 249 246;
+  --n-100: 244 241 235;
+  --n-200: 234 230 221;
+  --n-300: 214 208 196;
+  --n-400: 122 114 104; /* 4.93:1 on white — was #a3a3a3 at 2.66:1 */
+  --n-500: 105 97 89;
+  --n-600: 87 80 74;
+  --n-700: 68 62 55;
+  --n-800: 44 39 34;
+  --n-900: 26 22 20;
+  --n-950: 18 15 13;
+
+  --g-50: 236 253 243;
+  --g-100: 209 250 229;
+  --g-200: 134 239 172;
+  --g-300: 110 231 183;
+  --g-400: 52 190 120;
+  --g-500: 34 160 80;
+  --g-600: 21 128 61;
+  --g-700: 21 113 55;
+  --g-800: 22 101 52;
+  --g-900: 20 83 45;
+  --g-950: 12 55 30;
+
+  --r-50: 254 242 242;
+  --r-100: 254 226 226;
+  --r-200: 252 165 165;
+  --r-300: 252 145 145;
+  --r-400: 248 113 113;
+  --r-500: 239 68 68;
+  --r-600: 220 38 38;
+  --r-700: 200 32 32;
+  --r-800: 185 28 28;
+  --r-900: 153 27 27;
+  --r-950: 90 18 18;
+
+  --a-50: 255 251 235;
+  --a-100: 254 243 199;
+  --a-200: 253 230 138;
+  --a-300: 252 211 77;
+  --a-400: 251 191 36;
+  --a-500: 217 119 6;
+  --a-600: 202 111 6;
+  --a-700: 180 83 9;
+  --a-800: 146 64 14;
+  --a-900: 120 53 15;
+  --a-950: 69 26 3;
+
+  --b-50: 239 246 255;
+  --b-100: 219 234 254;
+  --b-200: 191 219 254;
+  --b-300: 147 197 253;
+  --b-400: 96 165 250;
+  --b-500: 59 130 246;
+  --b-600: 37 99 235;
+  --b-700: 29 78 216;
+  --b-800: 30 64 175;
+  --b-900: 30 58 138;
+  --b-950: 23 37 84;
+}
+
+.dark,
+.counter-theme {
+  --c-paper: 20 17 15;
+  --c-paper-soft: 28 24 21;
+  --c-paper-deep: 36 31 27;
+  --c-paper-line: 51 44 38;
+
+  /* Raised one step above paper, and deliberately ABOVE paper-soft too, so a
+     card header (`bg-paper-soft` inside `bg-white`) still reads as recessed —
+     the same relationship the light theme has, not an accidental inversion. */
+  --c-card: 34 29 25;
+
+  --c-ink: 245 241 234;
+  --c-ink-soft: 232 226 216;
+  --c-ink-mid: 184 175 163;
+  --c-ink-light: 150 141 130; /* raised from 140/131/120, which measured 4.13:1 on the card */
+  --c-skip: 154 145 133;
+
+  --c-clay: 251 146 60;
+  --c-clay-soft: 253 186 116;
+  --c-clay-pale: 42 27 17;
+  --c-clay-line: 124 60 24;
+
+  --c-honey: 252 211 77;
+  --c-honey-pale: 41 32 10;
+  --c-honey-line: 120 82 14;
+
+  --c-pass: 74 222 128;
+  --c-pass-pale: 12 33 20;
+  --c-pass-line: 22 101 52;
+
+  --c-fail: 248 113 113;
+  --c-fail-pale: 40 18 18;
+  --c-fail-line: 127 29 29;
+
+  --c-unknown: 251 191 36;
+  --c-unknown-pale: 38 29 8;
+  --c-unknown-line: 120 53 15;
+
+  --c-brand: 124 160 255;
+  --c-brand-deep: 165 190 255;
+  --c-brand-pale: 20 28 48;
+
+  /* The marker sweep has to survive the flip. A pale yellow wash on a dark page is
+     a glowing bar; a dim amber one reads as a highlighter, which is the intent. */
+  --hi-a: rgba(252, 211, 77, 0.22);
+  --hi-b: rgba(252, 211, 77, 0.32);
+  --hi-clay-a: rgba(251, 146, 60, 0.2);
+  --hi-clay-b: rgba(251, 146, 60, 0.3);
+  --focus-halo: #14110f;
+  --glow-a: rgba(252, 211, 77, 0.14);
+  --glow-b: rgba(251, 146, 60, 0.08);
+
+  --ev-bg: rgba(252, 211, 77, 0.14);
+  --ev-rule: rgba(252, 211, 77, 0.75);
+  --ev-bad-bg: rgba(248, 113, 113, 0.16);
+  --ev-bad-rule: rgba(248, 113, 113, 0.75);
+
+  /* The ramps, inverted.
+     Not a mechanical 900-minus-N flip: the pale end (50/100) becomes a DEEP TINT
+     rather than a mid tone, because `bg-emerald-50 text-emerald-800` has to stay a
+     quiet chip either way round. Flipping it literally would give a mid-green block
+     with pale green text — the loudest thing on the page, for the row that means
+     "this was fine". Saturation also comes down across the board; fully saturated
+     hues vibrate against a dark background in a way they never do on paper. */
+
+  --n-50: 28 24 21;
+  --n-100: 34 29 25;
+  --n-200: 44 38 33;
+  --n-300: 58 50 44;
+  --n-400: 150 141 129; /* 5.35:1 on the dark card */
+  --n-500: 165 156 143;
+  --n-600: 184 175 163;
+  --n-700: 202 194 182;
+  --n-800: 224 217 206;
+  --n-900: 245 241 234;
+  --n-950: 252 249 244;
+
+  --g-50: 12 33 20;
+  --g-100: 16 45 27;
+  --g-200: 22 101 52;
+  --g-300: 34 133 68;
+  --g-400: 52 190 120;
+  --g-500: 52 211 153;
+  --g-600: 74 222 128;
+  --g-700: 110 231 183;
+  --g-800: 134 239 172;
+  --g-900: 167 243 190;
+  --g-950: 209 250 229;
+
+  --r-50: 40 18 18;
+  --r-100: 52 22 22;
+  --r-200: 127 29 29;
+  --r-300: 160 40 40;
+  --r-400: 220 80 80;
+  --r-500: 248 113 113;
+  --r-600: 248 113 113;
+  --r-700: 250 140 140;
+  --r-800: 252 165 165;
+  --r-900: 254 202 202;
+  --r-950: 254 226 226;
+
+  --a-50: 38 29 8;
+  --a-100: 48 37 11;
+  --a-200: 120 82 14;
+  --a-300: 161 110 20;
+  --a-400: 251 191 36;
+  --a-500: 252 211 77;
+  --a-600: 251 191 36;
+  --a-700: 252 211 77;
+  --a-800: 253 230 138;
+  --a-900: 254 243 199;
+  --a-950: 255 251 235;
+
+  --b-50: 20 28 48;
+  --b-100: 26 38 66;
+  --b-200: 36 54 96;
+  --b-300: 62 92 160;
+  --b-400: 96 140 240;
+  --b-500: 110 152 250;
+  --b-600: 124 160 255;
+  --b-700: 147 180 255;
+  --b-800: 165 190 255;
+  --b-900: 191 210 255;
+  --b-950: 219 232 255;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+/* Only the deliberate act of switching animates. Without this the whole page
+   cross-fades on first paint, which looks broken rather than considered.
+
+   The no-preference guard is NOT decorative. The global reduced-motion rule at the
+   bottom of this file zeroes transitions with `* { transition-duration: 0.01ms
+   !important }` — but that selector scores 0,0,0 and this one scores 0,1,0, so with
+   both marked !important SPECIFICITY decides and this rule wins. The one place on
+   the site that flashes the entire viewport would have been the one place that
+   ignored the accessibility setting. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-animating,
+  html.theme-animating * {
+    transition:
+      background-color 220ms var(--ease-default),
+      border-color 220ms var(--ease-default),
+      box-shadow 220ms var(--ease-default),
+      color 220ms var(--ease-default) !important;
+  }
+}
+
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
@@ -13,14 +352,17 @@ html {
 }
 
 body {
-  background: #fdfcf9;
-  color: #1a1614;
+  background: rgb(var(--c-paper));
+  color: rgb(var(--c-ink));
   font-size: 16px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Selection is pinned to the light values in BOTH themes on purpose. It is the one
+   surface where the browser is drawing over your text, and honey-on-espresso stays
+   legible whichever way the page is running. */
 ::selection {
   background: #fcd34d;
   color: #1a1614;
@@ -34,7 +376,7 @@ body {
    wraps would show a stray sliver instead of a stripe. box-decoration-break: clone
    repaints it per line, which is the whole point. */
 .hi {
-  background-image: linear-gradient(103deg, #fde68a 0%, #fcd34d 50%, #fde68a 100%);
+  background-image: linear-gradient(103deg, var(--hi-a) 0%, var(--hi-b) 50%, var(--hi-a) 100%);
   background-repeat: no-repeat;
   background-size: 100% 0.58em;
   background-position: 0 86%;
@@ -44,20 +386,25 @@ body {
   box-decoration-break: clone;
 }
 .hi-clay {
-  background-image: linear-gradient(103deg, #ffd9c0 0%, #fbbf9b 50%, #ffd9c0 100%);
+  background-image: linear-gradient(103deg, var(--hi-clay-a) 0%, var(--hi-clay-b) 50%, var(--hi-clay-a) 100%);
 }
 
-/* Evidence highlight inside audited output. */
+/* Evidence highlight inside audited output.
+
+   This one carries meaning — it is the exact span the verdict was based on — so it
+   cannot be allowed to become a glowing block on a dark page and drown the sentence
+   it is supposed to point at. On dark it becomes a translucent wash plus a solid
+   underline: the underline does the pointing, the wash only tints. */
 mark.ev {
-  background: #fef3c7;
-  box-shadow: inset 0 -0.35em 0 #fcd34d;
+  background: var(--ev-bg);
+  box-shadow: inset 0 -0.35em 0 var(--ev-rule);
   border-radius: 2px;
   padding: 0 1px;
   color: inherit;
 }
 mark.ev-bad {
-  background: #fee2e2;
-  box-shadow: inset 0 -0.35em 0 #fca5a5;
+  background: var(--ev-bad-bg);
+  box-shadow: inset 0 -0.35em 0 var(--ev-bad-rule);
 }
 
 textarea {
@@ -65,7 +412,7 @@ textarea {
 }
 
 .hairline {
-  border-color: #e4ded0;
+  border-color: rgb(var(--c-paper-line));
 }
 
 /* Long-form reading: generous measure and leading. */
@@ -73,10 +420,10 @@ textarea {
   font-size: 17px;
   line-height: 1.72;
   letter-spacing: 0.002em;
-  color: #57504a;
+  color: rgb(var(--c-ink-mid));
 }
 .readable strong {
-  color: #1a1614;
+  color: rgb(var(--c-ink));
   font-weight: 600;
 }
 
@@ -99,8 +446,8 @@ textarea {
 
 /* The funnel diagram breathes on hover without moving layout. */
 .stage:hover .stage-card {
-  border-color: #fbbf9b;
-  background: #fff8f3;
+  border-color: rgb(var(--c-clay-line));
+  background: rgb(var(--c-clay-pale));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -141,6 +488,31 @@ textarea {
     0 12px 20px rgba(26, 22, 20, 0.05);
 }
 
+/* Shadow on a dark page is nearly invisible — there is no light for it to subtract.
+   Carrying the light values over is the most common dark-mode mistake in this
+   category: every card goes flat and the page reads as one undifferentiated slab.
+   The fix is a much darker, much more opaque shadow plus a faint top ring, which is
+   how the surface reads as raised at all.
+
+   This block must sit AFTER the :root above. Both have specificity 0,1,0, so order
+   is the only thing deciding the winner. */
+.dark,
+.counter-theme {
+  --ring-hairline: 0 0 0 1px rgba(255, 250, 240, 0.06);
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-float: 0 0 3px rgba(0, 0, 0, 0.35), 0 8px 16px rgba(0, 0, 0, 0.45),
+    0 16px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* …and back to the light shadows for a light panel sitting inside dark mode. Last
+   block wins at equal specificity, and 0,2,0 beats the 0,1,0 above regardless. */
+.dark .counter-theme {
+  --ring-hairline: 0 0 0 1px rgba(26, 22, 20, 0.08);
+  --shadow-raised: 0 1px 2px rgba(26, 22, 20, 0.04), 0 4px 12px rgba(26, 22, 20, 0.06);
+  --shadow-float: 0 0 3px rgba(26, 22, 20, 0.05), 0 8px 12px rgba(26, 22, 20, 0.05),
+    0 12px 20px rgba(26, 22, 20, 0.05);
+}
+
 /* ── Interactive surfaces ───────────────────────────────────────────────────
    One class, used everywhere a card is clickable. Lifts 1px and deepens its
    hairline. No scale, no glow, no colour change — the movement is the feedback
@@ -156,7 +528,7 @@ textarea {
   .lift:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-raised);
-    border-color: #d6cdb8;
+    border-color: rgb(var(--c-ink-light) / 0.45);
   }
 }
 .lift:active {
@@ -183,8 +555,8 @@ textarea {
 :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 2px #fdfcf9,
-    0 0 0 4px #b45309;
+    0 0 0 2px var(--focus-halo),
+    0 0 0 4px rgb(var(--c-honey));
   border-radius: 6px;
 }
 
@@ -253,6 +625,6 @@ textarea {
 .nav-blur {
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
-  background: rgba(253, 252, 249, 0.82);
+  background: rgb(var(--c-paper) / 0.82);
   transition: background-color var(--dur-normal) var(--ease-default);
 }

@@ -34,7 +34,7 @@ export function Clause({ n, title, children }: { n: string; title: string; child
   return (
     <section>
       <h2 className="flex items-baseline gap-3 font-display text-[21px] tracking-tight">
-        <span className="font-mono text-[12px] text-paper-line">{n}</span>
+        <span className="font-mono text-[12px] text-ink-light">{n}</span>
         {title}
       </h2>
       <div className="readable mt-3 space-y-3 [&_li]:my-1 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5">{children}</div>

@@ -61,12 +61,12 @@ export default function Install() {
           {STEPS.map((s) => (
             <li key={s.n} className="bg-white px-5 py-5">
               <div className="flex items-baseline gap-3">
-                <span className="font-mono text-[12px] text-paper-line">{s.n}</span>
+                <span className="font-mono text-[12px] text-ink-light">{s.n}</span>
                 <h3 className="text-[16px] font-semibold tracking-tight">{s.t}</h3>
               </div>
               <p className="mt-1.5 pl-[36px] text-[14px] leading-relaxed text-ink-mid">{s.d}</p>
               {s.code && (
-                <pre className="ml-[36px] mt-3 overflow-x-auto rounded-lg bg-ink px-4 py-2.5 font-mono text-[13px] text-paper">
+                <pre className="counter-theme ml-[36px] mt-3 overflow-x-auto rounded-lg bg-paper px-4 py-2.5 font-mono text-[13px] text-ink">
                   {s.code}
                 </pre>
               )}
@@ -158,7 +158,7 @@ export default function Install() {
           <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[14px]">audit</code> exits non-zero when any
           rule is violated, so the same check that runs on your laptop can fail a pull request.
         </p>
-        <pre className="mt-4 overflow-x-auto rounded-lg bg-ink px-4 py-3.5 font-mono text-[12.5px] leading-relaxed text-paper">{`- name: Enforcee
+        <pre className="counter-theme mt-4 overflow-x-auto rounded-lg bg-paper px-4 py-3.5 font-mono text-[12.5px] leading-relaxed text-ink">{`- name: Enforcee
   run: npx enforcee audit CLAUDE.md build/answer.md`}</pre>
       </section>
 

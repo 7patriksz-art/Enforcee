@@ -21,3 +21,6 @@ npm-dist/
 *.p8
 *.pfx
 .enforcee/licence
+
+# Rendered UI audit output — regenerate with `npm run verify:ui`
+theme-audit/

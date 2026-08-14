@@ -277,7 +277,7 @@ function Pane({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         spellCheck={false}
-        className={clsx(height, 'w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12px] leading-[1.65] outline-none placeholder:text-neutral-300')}
+        className={clsx(height, 'w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12px] leading-[1.65] outline-none placeholder:text-ink-light')}
       />
       <p className="border-t hairline px-3 py-1.5 text-[11px] text-skip">{hint}</p>
     </div>

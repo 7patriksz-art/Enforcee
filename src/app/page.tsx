@@ -52,11 +52,11 @@ export default function Home() {
           <p className="mt-3 font-mono text-[12px] text-skip">free · no account · about 20 seconds</p>
         </div>
 
-        <div className="mt-9 max-w-[54ch] overflow-x-auto rounded-xl border hairline bg-ink px-5 py-4">
-          <code className="font-mono text-[13.5px] text-white/90">
-            <span className="text-white/40">$ </span>npx enforcee audit CLAUDE.md answer.md
+        <div className="counter-theme mt-9 max-w-[54ch] overflow-x-auto rounded-xl border hairline bg-paper px-5 py-4">
+          <code className="font-mono text-[13.5px] text-ink">
+            <span className="text-ink-light">$ </span>npx enforcee audit CLAUDE.md answer.md
           </code>
-          <p className="mt-2 font-mono text-[12px] text-white/45">
+          <p className="mt-2 font-mono text-[12px] text-ink-mid">
             or run it here in the browser, if you&rsquo;d rather not install anything
           </p>
         </div>
@@ -204,9 +204,9 @@ export default function Home() {
       </section>
 
       {/* ── Why this one ─────────────────────────────────────────────────── */}
-      <section className="border-y hairline bg-ink text-paper">
+      <section className="counter-theme border-y hairline bg-paper text-ink">
         <div className="mx-auto max-w-6xl px-5 py-16">
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay-soft">why this one</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-clay">why this one</p>
           <h2 className="mt-4 max-w-[20ch] font-display text-[32px] leading-[1.15] tracking-tight sm:text-[40px]">
             Everyone else grades the file. We grade what the model did.
           </h2>
@@ -232,31 +232,31 @@ export default function Home() {
             ].map((c) => (
               <div key={c.k}>
                 <div
-                  className="font-display text-[20px] tracking-tight text-white"
+                  className="font-display text-[20px] tracking-tight text-ink"
                   dangerouslySetInnerHTML={{ __html: c.k }}
                 />
                 <p
-                  className="mt-2 text-[14px] leading-relaxed text-paper-line/80"
+                  className="mt-2 text-[14px] leading-relaxed text-ink-mid"
                   dangerouslySetInnerHTML={{ __html: c.d }}
                 />
               </div>
             ))}
           </div>
 
-          <details className="mt-10 rounded-xl border border-white/15 px-5 py-4">
-            <summary className="cursor-pointer text-[14px] font-medium text-white">
+          <details className="mt-10 rounded-xl border border-ink/15 px-5 py-4">
+            <summary className="cursor-pointer text-[14px] font-medium text-ink">
               How it compares to tools you may already have
             </summary>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-left text-[13px]">
                 <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-paper-line/60">
+                  <tr className="text-[11px] uppercase tracking-wide text-ink-light">
                     <th className="py-2 pr-4 font-medium">Tool</th>
                     <th className="py-2 pr-4 font-medium">Answers</th>
                     <th className="py-2 font-medium">Never answers</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-ink/10">
                   {[
                     ['CLAUDE.md linters', 'Is my rules file tidy?', 'Did the model follow it?'],
                     ['LangSmith, Langfuse', 'What did this call cost?', 'Which of my rules broke?'],
@@ -264,9 +264,9 @@ export default function Home() {
                     ['Editor hooks', 'Can I block this command?', 'Which rules are decaying?'],
                   ].map((r) => (
                     <tr key={r[0]}>
-                      <td className="py-2.5 pr-4 font-medium text-white">{r[0]}</td>
-                      <td className="py-2.5 pr-4 text-paper-line/70">{r[1]}</td>
-                      <td className="py-2.5 text-clay-soft">{r[2]}</td>
+                      <td className="py-2.5 pr-4 font-medium text-ink">{r[0]}</td>
+                      <td className="py-2.5 pr-4 text-ink-mid">{r[1]}</td>
+                      <td className="py-2.5 text-clay">{r[2]}</td>
                     </tr>
                   ))}
                 </tbody>

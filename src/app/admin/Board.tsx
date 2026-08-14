@@ -106,7 +106,7 @@ export default function Board({
             <div className="mb-2 flex items-baseline gap-2">
               <span className="text-[13px] font-semibold">{lane.label}</span>
               <span className="font-mono text-[10px] text-skip">{byLane.get(lane.key)?.length ?? 0}</span>
-              <span className="ml-auto font-mono text-[10px] text-paper-line">{lane.note}</span>
+              <span className="ml-auto font-mono text-[10px] text-ink-light">{lane.note}</span>
             </div>
             <div className="space-y-2">
               {(byLane.get(lane.key) ?? []).map((it) => (
@@ -131,7 +131,7 @@ export default function Board({
                 </button>
               ))}
               {(byLane.get(lane.key) ?? []).length === 0 && (
-                <p className="rounded-xl border border-dashed hairline px-3 py-4 text-center font-mono text-[10.5px] text-paper-line">
+                <p className="rounded-xl border border-dashed hairline px-3 py-4 text-center font-mono text-[10.5px] text-ink-light">
                   empty
                 </p>
               )}

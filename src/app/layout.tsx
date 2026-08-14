@@ -3,6 +3,8 @@ import Link from 'next/link';
 import './globals.css';
 import { SITE_URL } from '@/lib/site-url';
 import { CONTACT_EMAIL } from '@/lib/contact';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const TITLE = 'Enforcee — stop fighting your own AI';
 const DESCRIPTION =
@@ -29,7 +31,18 @@ const NAV = [
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning is required and is narrow: the inline script below
+    // adds `class="dark"` to <html> before React hydrates, so the client's <html>
+    // attributes legitimately differ from the server's. The warning is suppressed on
+    // this ONE element and does not extend to any child.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Runs before a single pixel is painted. Everything about why is in
+            src/lib/theme.ts; the short version is that a theme applied after first
+            paint means every dark-mode visitor gets a white flash on every
+            navigation, and that one frame undoes a lot of "premium". */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-screen font-sans antialiased">
         <header className="sticky top-0 z-30 border-b hairline bg-paper/85 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center gap-5 px-5 py-3">
@@ -44,12 +57,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
-            <Link
-              href="/audit"
-              className="ml-auto rounded-lg bg-ink px-3.5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-ink-soft md:ml-0"
-            >
-              Run an audit
-            </Link>
+            {/* Theme switch and CTA travel together, right-aligned at every width.
+                The switch sits OUTSIDE the md:hidden nav on purpose — it is the one
+                control that has to survive on a phone, where dark mode is not a
+                preference so much as the default. It is also deliberately quiet:
+                a bordered icon next to a solid button, so it never competes with
+                the thing we actually want pressed. */}
+            <div className="ml-auto flex items-center gap-2 md:ml-0">
+              <ThemeToggle />
+              <Link
+                href="/audit"
+                className="press rounded-lg bg-ink px-3.5 py-2 text-[13.5px] font-medium text-white hover:bg-ink-soft"
+              >
+                Run an audit
+              </Link>
+            </div>
           </div>
           <nav className="flex gap-4 overflow-x-auto border-t hairline px-5 py-2 text-[13px] text-ink-mid md:hidden">
             {NAV.map(([href, label]) => (

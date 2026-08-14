@@ -113,10 +113,10 @@ export default async function History() {
                   <span className="mt-0.5 w-[86px] shrink-0 font-mono text-[10px] text-neutral-400">{r.ruleId}</span>
                   <span className="min-w-0 flex-1 text-[13px] text-neutral-900">{r.text}</span>
                   <span className="shrink-0 font-mono text-[11px]">
-                    <span className={clsx(r.violated > 0 ? 'text-fail' : 'text-neutral-300')}>{r.violated} broken</span>
-                    <span className="mx-2 text-neutral-300">·</span>
-                    <span className={clsx(r.noSignal > 0 ? 'text-unknown' : 'text-neutral-300')}>{r.noSignal} no signal</span>
-                    <span className="mx-2 text-neutral-300">·</span>
+                    <span className={clsx(r.violated > 0 ? 'text-fail' : 'text-ink-light')}>{r.violated} broken</span>
+                    <span className="mx-2 text-ink-light">·</span>
+                    <span className={clsx(r.noSignal > 0 ? 'text-unknown' : 'text-ink-light')}>{r.noSignal} no signal</span>
+                    <span className="mx-2 text-ink-light">·</span>
                     <span className="text-neutral-500">of {r.total}</span>
                   </span>
                   <span
