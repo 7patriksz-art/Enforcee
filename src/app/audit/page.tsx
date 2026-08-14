@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PageHead from '@/components/PageHead';
 import clsx from 'clsx';
 import Link from 'next/link';
 import ReceiptView from '@/components/ReceiptView';
@@ -51,12 +52,18 @@ export default function AuditPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
-      <div className="mb-6">
-        <h1 className="text-[22px] font-semibold tracking-tight">Run an audit</h1>
-        <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-neutral-600">
-          Paste the rules you gave your assistant on the left, and something it produced on the right. Enforcee returns a
-          verdict for every single rule, the evidence behind it, and an honest list of what it could not verify.
-        </p>
+      <div className="mb-8">
+        <PageHead
+          wide
+          eyebrow="free · no account"
+          title="Run an audit"
+          lede={
+            <>
+              Your rules on the left, something the assistant wrote on the right. You get back one row per rule —
+              with the line that decided it, and an honest note where nothing could.
+            </>
+          }
+        />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { PLANS, yearlySaving, type Interval } from '@/lib/plans';
+import { TrackRecord } from '@/components/Visuals';
 
 interface Row {
   label: string;
@@ -512,6 +513,22 @@ export default function Pricing() {
           </p>
         </div>
       )}
+
+      {/* ── What the paid tier actually buys you ───────────────────────── */}
+      <section className="mt-14">
+        <h2 className="font-display text-[24px] tracking-tight">What a paid plan is really for</h2>
+        <div className="mt-5 grid items-center gap-6 lg:grid-cols-[1fr_auto]">
+          <p className="readable measure text-[15px]">
+            A single audit answers <em>did this one output follow my rules</em>. That question is free here and always
+            will be. The one you cannot answer from a single audit — <strong>which rule has been quietly
+            failing for three weeks</strong> — needs the runs kept and the rules identified across rewrites. That is
+            the paid product, and this is what it looks like.
+          </p>
+          <div className="w-full max-w-md lg:w-[420px]">
+            <TrackRecord />
+          </div>
+        </div>
+      </section>
 
       {/* ── The matrix ─────────────────────────────────────────────────── */}
       <section className="mt-14">

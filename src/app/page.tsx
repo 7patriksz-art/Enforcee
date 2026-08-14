@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Funnel from '@/components/Funnel';
-import { ReceiptPreview, GuardPreview, Glow, Stat } from '@/components/Visuals';
+import { ReceiptPreview, GuardPreview, Glow, Stat, ClaimCheck } from '@/components/Visuals';
 
 /**
  * Homepage.
@@ -160,10 +160,23 @@ export default function Home() {
       <section className="border-y hairline bg-paper-soft">
         <div className="mx-auto max-w-6xl px-5 py-16">
           <h2 className="font-display text-[30px] leading-tight tracking-tight">You&rsquo;re not imagining it</h2>
+          {/* Every number in this paragraph was re-read from the paper on 2026-08-14.
+              What changed and why:
+              · "1,650 REAL coding sessions" → "controlled". They were headless CLI runs
+                against a pinned repo, not sessions anyone actually worked in. We sell
+                accuracy about AI output; overstating our own source is disqualifying.
+              · "got worse with every function" → the odds phrasing. The paper says
+                "approximately 5.6% lower odds of compliance per step (OR = 0.944)" and
+                explicitly adds "the relationship is non-monotonic rather than a constant
+                per-step effect". "Got worse with every function" asserts the monotonicity
+                the authors ruled out.
+              · "two thirds" SURVIVED the check — reference condition ICR is 60.0/65.2/67.7/
+                64.0% across the four file sizes. It was the one figure that held. */}
           <p className="readable measure mt-3">
-            Researchers followed 1,650 real coding sessions. Agents obeyed a{' '}
+            In a controlled study of 1,650 Claude Code sessions, agents obeyed a{' '}
             <code className="rounded bg-white px-1 py-0.5 font-mono text-[13px]">CLAUDE.md</code> about{' '}
-            <strong>two thirds of the time</strong>, and got worse with every function they wrote.
+            <strong>two thirds of the time</strong> — and the odds slipped roughly 5% with each further
+            function written.
           </p>
           <p className="readable measure mt-3">
             File size didn&rsquo;t matter. Instruction order didn&rsquo;t matter. Neither did structure.
@@ -243,6 +256,14 @@ export default function Home() {
             ))}
           </div>
 
+          {/* "It checks the claim, not the story" is the hardest of the four to take on
+              trust, because the reader has to accept that a false claim looks completely
+              normal inside the transcript that contains it. Side by side with what the
+              disk says, that lands without the paragraph. */}
+          <div className="mt-10 max-w-2xl">
+            <ClaimCheck />
+          </div>
+
           <details className="mt-10 rounded-xl border border-ink/15 px-5 py-4">
             <summary className="cursor-pointer text-[14px] font-medium text-ink">
               How it compares to tools you may already have
@@ -319,9 +340,17 @@ export default function Home() {
 
           <div className="mt-6 max-w-[62ch] rounded-2xl border border-clay-line bg-clay-pale px-5 py-4">
             <p className="text-[14.5px] leading-relaxed text-ink">
-              That last one is a benchmark, not a bad day: 65 tasks, 824 graded criteria.{' '}
+              {/* "thirty frontier setups passed 36.2%" was wrong twice over. The paper says
+                  "the best of thirty EVALUATED model configurations passes 36.2% of TRIALS" —
+                  not thirty frontier ones, and not 36.2% of the 824 criteria, which is what
+                  the nearest noun implied. The second error made the benchmark sound EASIER
+                  than it is: grading is all-or-nothing, "a trial passes only if every
+                  criterion is satisfied". Understating a number in our own favour is still
+                  getting it wrong. */}
+              That last one is a benchmark, not a bad day: 65 tasks, 824 graded criteria, and a run
+              counts only if it satisfies every one.{' '}
               <span className="hi hi-clay font-semibold">
-                The best of thirty frontier setups passed 36.2%.
+                The best of thirty setups passed 36.2% of trials.
               </span>{' '}
               The failure it names by title is a model reporting compliance it never achieved.
             </p>

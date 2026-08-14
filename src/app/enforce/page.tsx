@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import PageHead from '@/components/PageHead';
+import { GuardPreview } from '@/components/Visuals';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { SAMPLES } from '@/lib/samples';
@@ -79,14 +81,26 @@ export default function EnforcePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
-      <h1 className="text-[22px] font-semibold tracking-tight">Enforce</h1>
-      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-        Auditing tells you what already went wrong. This stops it. Enforcee compiles your rules into a guard that runs
-        inside Claude Code and denies a tool call <em>before</em> it executes — and restores the nested and
-        path-scoped rules that Claude Code, by its own documentation, does not put back after a compaction.
-      </p>
+      <PageHead
+        wide
+        eyebrow="before, not after"
+        title="Stop it happening, not just find out"
+        lede={
+          <>
+            An audit tells you what already went wrong. The guard refuses the command while it is still a proposal —
+            and puts back the nested and path-scoped rules that Claude Code, by its own docs, drops after a compaction.
+          </>
+        }
+      />
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      {/* The refusal, as it appears in the session. This page sells a thing that happens
+          inside a terminal the reader cannot see from here, so showing it is worth more
+          than another paragraph describing it. */}
+      <div className="mt-7 max-w-lg">
+        <GuardPreview />
+      </div>
+
+      <div className="mt-8 grid gap-3 sm:grid-cols-3">
         {[
           ['Block', 'A forbidden command never runs. The model is told why, in your own words, and told not to retry.'],
           ['Repair', 'Root CLAUDE.md already survives compaction natively. Nested and path-scoped rules do not — the guard puts those back.'],

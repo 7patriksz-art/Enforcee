@@ -9,5 +9,13 @@
  * It sat as hello@enforcee.app in seven places while that domain was unregistered, so every
  * one of those commitments was unreachable. Pointed at the real inbox until the domain
  * exists; then set NEXT_PUBLIC_CONTACT_EMAIL and every surface follows.
+ *
+ * Moved to 8patriksz@gmail.com on 2026-08-14 at Patrik's instruction.
+ *
+ * NOTE — this is the PUBLIC CONTACT address only. It is deliberately NOT the git commit
+ * author: Vercel rejects deployments whose git author is not on the project, and every one
+ * of the 63 commits on this repo is authored 7patriksz@gmail.com. Changing the author
+ * address without first adding it to the Vercel project would break deploys, which is a
+ * worse failure than a mismatched address. See 69-EMAIL-MOVE-2026-08-14.md.
  */
-export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '7patriksz@gmail.com';
+export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '8patriksz@gmail.com';

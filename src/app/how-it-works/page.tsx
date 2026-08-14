@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import PageHead from '@/components/PageHead';
+import { MethodSplit, CoverageMeter } from '@/components/Visuals';
 
 const STEPS = [
   {
@@ -40,20 +42,49 @@ const STEPS = [
   {
     n: '06',
     t: 'Check what it said it did',
-    d: 'The last step is the one nothing else does. Every agent-observability tool evaluates the transcript, and the transcript is the model\'s own account of itself — a false claim lives inside it and is perfectly consistent with everything around it. So we read somewhere else. It said it created a file: does the file exist? It said the tests pass: was a test command run at all? Each answer is a stat() or a scan of the commands that actually executed. No model call, no judgement. Across 20,574 measured coding sessions, inaccurate self-reporting accounted for 22.58% of failures.',
+    // The closing statistic was our most load-bearing external number and it carried no
+    // source at all. Re-read from the paper on 2026-08-14 and corrected twice over:
+    //
+    //   · WRONG DENOMINATOR. "22.58% of failures across 20,574 sessions" implied the
+    //     sessions were the base. Table 2's percentages are over the 16,118 episodes that
+    //     survived validation — "validation retained 16,118 of 29,896 episodes (53.9%)".
+    //   · UNDERSTATED FOR OUR OWN AUDIENCE. Table 2 splits by surface: 20.36% IDE,
+    //     26.66% CLI. Enforcee's users are CLI users. The honest number for them is the
+    //     higher one, and quoting the blended figure was quietly selling ourselves short.
+    //
+    // Now cited inline, because an uncited number on a page arguing for evidence is the
+    // exact thing this product exists to catch.
+    d: 'The last step is the one nothing else does. Every agent-observability tool evaluates the transcript, and the transcript is the model\'s own account of itself — a false claim lives inside it and is perfectly consistent with everything around it. So we read somewhere else. It said it created a file: does the file exist? It said the tests pass: was a test command run at all? Each answer is a stat() or a scan of the commands that actually executed. No model call, no judgement.',
     tag: 'free',
+    cite: {
+      text: 'In an observational study of 20,574 real coding sessions across 1,639 repositories, inaccurate self-reporting appears in 22.58% of validated misalignment episodes — and 26.66% of them on the command line, where Enforcee runs.',
+      label: 'arXiv 2605.29442, Table 2',
+      url: 'https://arxiv.org/abs/2605.29442',
+    },
   },
 ];
 
 export default function HowItWorks() {
   return (
     <main className="mx-auto max-w-4xl px-5 py-14">
-      <h1 className="text-[28px] font-semibold tracking-tight">How the checking works</h1>
-      <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-neutral-600">
-        The obvious way to build this is to ask a model whether another model followed the rules. That is not
-        verification, it is a second opinion with the same failure mode. So Enforcee does as much as possible without a
-        model, and puts a hard evidence gate in front of everything else.
-      </p>
+      <PageHead
+        eyebrow="the mechanism"
+        title="How the checking works"
+        lede={
+          <>
+            The obvious way to build this is to ask a model whether another model followed the rules. That is not
+            verification — it is a second opinion with the same failure mode. So Enforcee decides as much as it can
+            without a model, and puts a hard evidence gate in front of the rest.
+          </>
+        }
+      />
+
+      {/* The whole page in one picture, above the six steps that explain it. A reader
+          who leaves after eight seconds should still take away the one thing that
+          distinguishes this from "ask a model to check the model". */}
+      <div className="mt-8 max-w-xl">
+        <MethodSplit />
+      </div>
 
       <ol className="mt-10 space-y-px overflow-hidden rounded-lg border hairline bg-paper-line">
         {STEPS.map((s) => (
@@ -72,18 +103,44 @@ export default function HowItWorks() {
               </span>
             </div>
             <p className="mt-2 pl-[34px] text-[13px] leading-relaxed text-neutral-600">{s.d}</p>
+            {/* A sourced number is set apart from the prose and carries its link inline.
+                Buried in a paragraph, a statistic reads as rhetoric; given its own block with
+                the citation attached, it reads as evidence — which is the entire argument of
+                this page, applied to the page. */}
+            {s.cite ? (
+              <figure className="ml-[34px] mt-3 rounded-lg border border-clay-line bg-clay-pale px-4 py-3">
+                <p className="text-[13px] leading-relaxed text-ink">{s.cite.text}</p>
+                <figcaption className="mt-1.5">
+                  <a
+                    href={s.cite.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="num text-[11px] text-clay underline underline-offset-4"
+                  >
+                    {s.cite.label}
+                  </a>
+                </figcaption>
+              </figure>
+            ) : null}
           </li>
         ))}
       </ol>
 
       <section className="mt-12">
-        <h2 className="text-[18px] font-semibold tracking-tight">What Coverage actually means</h2>
-        <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-600">
+        <h2 className="font-display text-[22px] tracking-tight">What Coverage actually means</h2>
+
+        {/* The metric, drawn, before it is defined. The amber slice is the argument —
+            it is the part a pass-rate would have counted as success. */}
+        <div className="mt-5 max-w-md rounded-2xl border hairline bg-white px-5 py-5">
+          <CoverageMeter />
+        </div>
+
+        <p className="readable mt-5 text-[14px]">
           A pass rate is easy to game. If your ruleset says <em>never use emojis</em> and the answer has no emojis, that
           is a pass — but it is also what you would get from a model that never read the rule at all. So Enforcee tracks a
           second thing: whether the output carries any observable trace of the rule being applied.
         </p>
-        <p className="mt-3 text-[13.5px] leading-relaxed text-neutral-600">
+        <p className="readable mt-3 text-[14px]">
           Satisfying a positive requirement counts as a trace. Failing to do a forbidden thing usually does not, unless
           that thing has a high natural base rate — an em-dash-free answer really is evidence, because models produce em
           dashes constantly. Rules with no trace are marked <span className="font-mono text-[12px]">no signal</span>.

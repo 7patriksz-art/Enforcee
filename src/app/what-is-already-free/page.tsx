@@ -9,7 +9,11 @@ export const metadata: Metadata = {
 
 interface Item {
   what: string;
-  verdict: 'native' | 'partial' | 'open';
+  // `different` is not a hedge between native and open — it is the honest answer to a
+  // NAME COLLISION, where a vendor ships something that sounds like ours and answers an
+  // unrelated question. Filing that under "already free" would be a lie, and filing it
+  // under "nobody does this" would look like we had not noticed. It gets its own word.
+  verdict: 'native' | 'partial' | 'open' | 'different';
   detail: string;
   quote?: string;
   link: { label: string; url: string };
@@ -69,6 +73,22 @@ const ITEMS: Item[] = [
     link: { label: 'Claude Code — memory docs', url: 'https://code.claude.com/docs/en/memory' },
   },
   {
+    // Added 2026-08-14 from the weekly market recon. A prospect who hears "Anthropic
+    // shipped a Compliance API" will assume it does what we do, and answering that in a
+    // sales thread is far more expensive than answering it here first. Verified against
+    // Anthropic's own help centre, not the recon's summary.
+    what: 'Anthropic’s Compliance API — and why it is not this',
+    verdict: 'different',
+    detail:
+      'It shipped in August and the name does most of the damage. It pulls activity events, chat data and file content out of your organisation for eDiscovery and retention — a record of what was said. It says nothing about rules, nothing about CLAUDE.md, and nothing about whether an instruction was followed. It is also Enterprise-only, and in beta for Claude Code and Cowork. If your legal team needs the transcripts, use it. It will not tell you which of your rules held.',
+    quote:
+      'Programmatically pull activity feed events, chat data, and file content across all your Claude deployments.',
+    link: {
+      label: 'Anthropic — Compliance API',
+      url: 'https://support.claude.com/en/articles/13015708-access-the-compliance-api',
+    },
+  },
+  {
     what: 'A per-rule track record across weeks',
     verdict: 'open',
     detail:
@@ -81,6 +101,7 @@ const BADGE = {
   native: { label: 'already free', cls: 'bg-pass-pale text-pass border-pass-line' },
   partial: { label: 'partly free', cls: 'bg-honey-pale text-honey border-honey-line' },
   open: { label: 'nobody does this', cls: 'bg-clay-pale text-clay border-clay-line' },
+  different: { label: 'sounds like us, isn’t', cls: 'bg-brand-pale text-brand-deep border-brand/25' },
 };
 
 export default function WhatIsAlreadyFree() {

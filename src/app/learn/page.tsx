@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PageHead from '@/components/PageHead';
 import clsx from 'clsx';
 
 interface Candidate {
@@ -73,12 +74,18 @@ export default function LearnPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
-      <h1 className="text-[22px] font-semibold tracking-tight">Learn</h1>
-      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-        Most of your rules were never written down. You said them once — <em>stop doing that</em>,{' '}
-        <em>I&apos;d rather you</em>, <em>always use</em> — and they decayed out of the conversation. Paste what you
-        actually said and Enforcee proposes the rules hiding in it, each one carrying the sentence that produced it.
-      </p>
+      <PageHead
+        wide
+        eyebrow="turn a near-miss into a rule"
+        title="Most of your rules were never written down"
+        lede={
+          <>
+            You said them once — <em>stop doing that</em>, <em>I&rsquo;d rather you</em>, <em>always use</em> — and they
+            decayed out of the conversation. Paste what you actually said; Enforcee proposes the rules hiding in it,
+            each carrying the sentence that produced it.
+          </>
+        }
+      />
 
       <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-amber-600/25 bg-amber-50/70 px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wide text-amber-800">inferred</span>

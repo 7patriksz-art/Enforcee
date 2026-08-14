@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import PageHead from '@/components/PageHead';
 import clsx from 'clsx';
 import { parseTranscript, type ParsedSession } from '@/lib/transcript/parse';
 import { analyseCapabilities, describePredicate, runPredicates, type Predicate, type SessionFinding } from '@/lib/transcript/findings';
@@ -54,12 +55,17 @@ export default function SessionPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-8">
-      <h1 className="text-[22px] font-semibold tracking-tight">Session evidence</h1>
-      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-neutral-600">
-        Drop a Claude Code session file and Enforcee reads what the model could actually see: which skills were offered,
-        which MCP servers never finished connecting, which tools disappeared mid-session, and whether your own hard rules
-        about shell commands and file reads held.
-      </p>
+      <PageHead
+        wide
+        eyebrow="from your own transcript"
+        title="What the model could actually see"
+        lede={
+          <>
+            Drop a Claude Code session file. Enforcee reads which skills were offered, which MCP servers never
+            finished connecting, which tools vanished mid-session — and whether your hard rules held.
+          </>
+        }
+      />
 
       <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-600/25 bg-emerald-50/60 px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wide text-emerald-800">local only</span>
