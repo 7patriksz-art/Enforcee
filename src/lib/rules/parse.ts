@@ -22,9 +22,58 @@ export function ruleId(normalized: string): string {
   return createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 12);
 }
 
-/** Words that mark a line as a directive rather than prose. */
+/** Words that mark a line as a directive rather than prose, wherever they appear. */
 const IMPERATIVE =
   /\b(must|must not|mustn't|never|always|don't|do not|shall|should|should not|shouldn't|avoid|ensure|require[ds]?|required|prefer|use|only|no |not allowed|forbidden|refrain|limit|keep|write|respond|reply|answer|output|format|include|omit|exclude|cite|start|end|begin|finish)\b/i;
+
+/**
+ * A bare imperative in FIRST POSITION — the other half of how obligations are written.
+ *
+ * The list above is a vocabulary check and it misses the most ordinary form of an
+ * instruction there is. A real AGENTS.md saying
+ *
+ *     Run `pnpm build` before you claim it compiles.
+ *
+ * was dropped on the floor, because "run" is not in the vocabulary. So was every rule
+ * beginning Check, Verify, Add, Delete, Commit, Escape, Validate. Those are not exotic —
+ * they are what handbooks are made of, and dropping them lowers the deterministic share
+ * in a way that measures the parser rather than the engine. Same class of bug as the
+ * Title Case one below.
+ *
+ * ANCHORING IS THE WHOLE SAFETY MECHANISM. Matched anywhere in a sentence, this list
+ * would swallow ordinary description — "the CI job will run the tests", "we check the
+ * digest", "the parser reads the file" are all statements of fact, not obligations. An
+ * English imperative has no subject before its verb, so requiring the verb to be the
+ * FIRST token is a cheap structural approximation of exactly that, with no tagger.
+ *
+ * Deliberately still conservative: a verb that is also a common noun (`file`, `list`,
+ * `order`, `report`, `record`, `test`, `state`) is left out, because "File naming is
+ * important" and "Test coverage is low" are not instructions and both begin with one.
+ */
+const IMPERATIVE_START = new RegExp(
+  '^(?:please\\s+)?(' +
+    [
+      'run', 'check', 'verify', 'validate', 'confirm', 'assert',
+      'add', 'remove', 'delete', 'rename', 'move', 'copy', 'replace',
+      'update', 'commit', 'push', 'merge', 'rebase', 'revert',
+      'build', 'compile', 'install', 'upgrade', 'pin', 'bump',
+      'call', 'invoke', 'return', 'throw', 'raise', 'catch', 'handle',
+      'wrap', 'escape', 'quote', 'sanitise', 'sanitize', 'normalise', 'normalize',
+      'document', 'annotate', 'comment', 'explain', 'describe',
+      'create', 'define', 'declare', 'implement', 'extract', 'inline', 'refactor',
+      'import', 'export', 'expose', 'store', 'save', 'load', 'fetch', 'send',
+      'reject', 'accept', 'treat', 'mark', 'tag', 'split', 'sort', 'apply',
+      'follow', 'match', 'stop', 'skip', 'print', 'emit', 'close', 'open',
+      'set', 'clear', 'reset', 'leave', 'put', 'place', 'read',
+    ].join('|') +
+    ')\\b',
+  'i'
+);
+
+/** Does this sentence read as an obligation? */
+function directive(text: string): boolean {
+  return IMPERATIVE.test(text) || IMPERATIVE_START.test(text.trim());
+}
 
 /** Phrases so vague that no checker — human or machine — could adjudicate them. */
 const UNENFORCEABLE =
@@ -167,7 +216,7 @@ export function splitRules(text: string, artifact = 'ruleset', skipped: { text: 
     for (const s of sentences) {
       const t = s.trim();
       if (t.length < 8) continue;
-      if (!IMPERATIVE.test(t)) continue;
+      if (!directive(t)) continue;
       out.push({ text: t, startLine: i + 1, endLine: i + 1, section: [...section] });
     }
   }

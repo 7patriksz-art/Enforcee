@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Your sign-in link — Enforcee</title>
+</head>
+<body style="margin:0;padding:0;background:#F7F4ED;">
+<!-- Preheader: the grey line the inbox shows next to the subject. Left empty it fills
+     with whatever text comes first, which on most transactional mail is the word
+     "Enforcee" repeated. Hidden in the body, visible in the list. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Signs you in on this device. Expires shortly.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7F4ED;">
+<tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#FFFFFF;border:1px solid #E4DED0;border-radius:14px;">
+
+<tr><td style="padding:26px 30px 0 30px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td style="padding-right:10px;"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxQTE5MTciLz4KICA8cGF0aCBkPSJNMjAgMTloMjRNMjAgMzJoMTdNMjAgNDVoMjQiIHN0cm9rZT0iI0ZBRjhGNCIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8Y2lyY2xlIGN4PSI0NiIgY3k9IjQ1IiByPSIxMCIgZmlsbD0iI0I0NTMwOSIvPgogIDxwYXRoIGQ9Ik00MS41IDQ1LjJsMy4yIDMuMiA2LTYuNCIgc3Ryb2tlPSIjRkZGIiBzdHJva2Utd2lkdGg9IjMuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+Cjwvc3ZnPgo=" width="28" height="28" alt="" style="display:block;border:0;border-radius:7px;"></td>
+    <td style="font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#1A1614;letter-spacing:-0.2px;">Enforcee</td>
+  </tr></table>
+</td></tr>
+
+<tr><td style="padding:22px 30px 0 30px;">
+  <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-weight:normal;font-size:25px;line-height:1.2;color:#1A1614;letter-spacing:-0.4px;">Your sign-in link</h1>
+</td></tr>
+
+<tr><td style="padding:14px 30px 0 30px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.62;color:#57504A;">
+<p style="margin:0;">Click below to sign in. The link works once, on the device that opens it.</p>
+</td></tr>
+
+<tr><td style="padding:24px 30px 4px 30px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td style="background:#1A1614;border-radius:10px;">
+      <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;">Sign in to Enforcee</a>
+    </td>
+  </tr></table>
+</td></tr>
+
+<!-- The link in plain text as well. Corporate scanners rewrite href targets and some
+     clients refuse to render the button at all; without this the mail is a dead end. -->
+<tr><td style="padding:18px 30px 0 30px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.55;color:#6F675F;">
+  Button not working? Paste this into your browser:<br>
+  <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#57504A;word-break:break-all;">{{ .ConfirmationURL }}</span>
+</td></tr>
+
+<tr><td style="padding:22px 30px 26px 30px;">
+  <div style="border-top:1px solid #E4DED0;padding-top:16px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#6F675F;">
+    If you did not ask to sign in, ignore this. Nobody can use the link without your inbox.<br>
+    Questions, or want everything we hold deleted? Reply to this email — it reaches a person.
+  </div>
+</td></tr>
+
+</table>
+<div style="max-width:520px;margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#8C8378;">
+  Enforcee · every verdict is labelled by method
+</div>
+</td></tr>
+</table>
+</body>
+</html>

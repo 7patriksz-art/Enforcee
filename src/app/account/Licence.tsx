@@ -82,9 +82,20 @@ export default function Licence({ entitled }: { entitled: boolean }) {
               </span>
             )}
           </div>
-          <p className="mt-4 text-[13px] leading-relaxed text-ink-mid">Then, once per machine:</p>
+          {/* This block used to read:
+                mkdir -p ~/.enforcee
+                pbpaste > ~/.enforcee/licence
+              `pbpaste` is macOS only and `mkdir -p` is not a PowerShell command, so the
+              first instruction a paying customer received worked on exactly one of the
+              three platforms we test on. Replaced by a command the CLI implements, which
+              also verifies the licence BEFORE writing it — so a mistyped paste says so
+              instead of silently creating a file that later looks like an expired
+              subscription. */}
+          <p className="mt-4 text-[13px] leading-relaxed text-ink-mid">
+            Then, once per machine — the same command on macOS, Linux and Windows:
+          </p>
           <pre className="mt-2 overflow-x-auto rounded-lg bg-paper-soft px-4 py-2.5 font-mono text-[12.5px] leading-relaxed">
-            {'mkdir -p ~/.enforcee\npbpaste > ~/.enforcee/licence   # or paste it with any editor\nnpx enforcee licence           # confirms it verified'}
+            {'npx enforcee licence set <paste it here>\nnpx enforcee licence                 # confirms it verified'}
           </pre>
         </div>
       )}

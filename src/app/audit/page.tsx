@@ -88,7 +88,7 @@ export default function AuditPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Pane
           label="Your rules"
-          hint="CLAUDE.md, AGENTS.md, .cursor/rules or AGENTS.md, a system prompt, custom instructions — paste it raw."
+          hint="CLAUDE.md, AGENTS.md, .cursor/rules, a system prompt, custom instructions — paste it raw."
           value={ruleset}
           onChange={setRuleset}
           placeholder={'# House rules\n- Never use emojis.\n- Keep answers under 120 words.\n- Always cite sources with links.'}

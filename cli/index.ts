@@ -14,7 +14,7 @@ import { proposeDenyRules, compilePolicy, toDenyRule } from '../src/lib/enforce/
 import { extractPreferences, toRulesetMarkdown } from '../src/lib/preferences';
 import { parseTranscript } from '../src/lib/transcript/parse';
 import { analyseCapabilities } from '../src/lib/transcript/findings';
-import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
+import { checkLocalLicence, setLicence, LICENCE_PATHS } from '../src/lib/licence-local';
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
 import { checkClaims } from '../src/lib/prevent/claims';
@@ -62,6 +62,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
+  ${C.bold('enforcee licence set')} <key>                    install a licence on this machine
   ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
@@ -399,6 +400,30 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'licence' || cmd === 'license') {
+    // `enforcee licence set <key>` — the cross-platform replacement for the bash one-liner
+    // the install page used to print. See setLicence() for why that line was a real bug
+    // rather than a cosmetic one.
+    if (args[1] === 'set') {
+      const token = args.slice(2).join(' ');
+      const res = setLicence(token);
+      console.log('');
+      if (!res.ok) {
+        console.log(`  ${C.red('✕')} ${res.reason}`);
+        console.log(C.grey('  Paste the whole line from your receipt, including the enf1. prefix.'));
+        console.log('');
+        process.exit(3);
+      }
+      console.log(`  ${C.green('✓')} Licence installed — ${C.bold(res.path)}`);
+      if (res.check.ok) {
+        console.log(
+          C.grey(`  ${licenceMessage(res.check)} · expires ${new Date(res.check.payload.exp * 1000).toISOString().slice(0, 10)}`)
+        );
+      }
+      console.log(C.grey('  Now run: enforcee guard CLAUDE.md'));
+      console.log('');
+      return;
+    }
+
     const check = checkLocalLicence();
     console.log('');
     if (check.ok) {
@@ -431,7 +456,7 @@ async function main(): Promise<void> {
       console.log(C.grey(`    enforcee health ${rulesPath}                what is wrong with the ruleset itself`));
       console.log('');
       console.log(C.grey('  Already subscribed? Paste your licence:'));
-      console.log(C.grey(`    mkdir -p ~/.enforcee && echo "<licence>" > ${LICENCE_PATHS.home}`));
+      console.log(C.grey('    enforcee licence set <your licence>'));
       console.log('');
       process.exit(3);
     }

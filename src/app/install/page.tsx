@@ -16,8 +16,8 @@ const STEPS = [
   {
     n: '03',
     t: 'Drop in your licence',
-    d: 'Once per machine. It is a signed line of text checked on your own disk — no activation server, no phone-home, and it keeps working on a plane.',
-    code: 'mkdir -p ~/.enforcee && echo "<your licence>" > ~/.enforcee/licence',
+    d: 'Once per machine. A signed line of text checked on your own disk — no activation server, no phone-home, and it keeps working on a plane. Same command on macOS, Linux and Windows.',
+    code: 'npx enforcee licence set <your licence>',
   },
   {
     n: '04',

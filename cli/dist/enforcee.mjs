@@ -6,8 +6,8 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, existsSync as existsSync5, copyFileSync, chmodSync } from "node:fs";
-import { join as join5, dirname } from "node:path";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, existsSync as existsSync5, copyFileSync, chmodSync as chmodSync2 } from "node:fs";
+import { join as join5, dirname as dirname2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
@@ -10334,9 +10334,9 @@ function analyseCapabilities(session) {
 }
 
 // src/lib/licence-local.ts
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 // src/lib/licence-key.ts
 var LICENCE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -10409,6 +10409,26 @@ function findLicence(cwd = process.cwd()) {
 function checkLocalLicence(cwd) {
   const { token, from } = findLicence(cwd);
   return { ...verifyLicence(token, LICENCE_PUBLIC_KEY), from };
+}
+function setLicence(token, opts = {}) {
+  const trimmed = token.replace(/^﻿/, "").trim().replace(/^["']|["']$/g, "").trim();
+  if (!trimmed) return { ok: false, reason: "No licence given." };
+  const check = (opts.verify ?? ((t) => verifyLicence(t, LICENCE_PUBLIC_KEY)))(trimmed);
+  if (!check.ok) {
+    return {
+      ok: false,
+      reason: `${check.reason ?? "That licence did not verify"} \u2014 nothing was written.`
+    };
+  }
+  const path2 = opts.path ?? LICENCE_PATHS.home;
+  mkdirSync(dirname(path2), { recursive: true });
+  writeFileSync(path2, `${trimmed}
+`, "utf8");
+  try {
+    chmodSync(path2, 384);
+  } catch {
+  }
+  return { ok: true, path: path2, check };
 }
 
 // src/lib/prevent/infer.ts
@@ -10984,7 +11004,7 @@ function needsReview(proposals) {
 }
 
 // src/lib/prevent/memory.ts
-import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "node:fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join4 } from "node:path";
 var MEMORY_VERSION = "memory@1.0.0";
 var FILE = "learned.json";
@@ -11046,8 +11066,8 @@ function loadMemory(cwd = process.cwd()) {
 }
 function saveMemory(memory, cwd = process.cwd()) {
   const dir = join4(cwd, ".enforcee");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(memoryPath(cwd), JSON.stringify({ ...memory, version: MEMORY_VERSION }, null, 2) + "\n");
+  mkdirSync2(dir, { recursive: true });
+  writeFileSync2(memoryPath(cwd), JSON.stringify({ ...memory, version: MEMORY_VERSION }, null, 2) + "\n");
 }
 function noteMention(memory, id, rule, quote, today, occurrence) {
   const found = memory.entries.find((e) => e.id === id || samePreference(e.rule, rule));
@@ -11117,6 +11137,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
+  ${C.bold("enforcee licence set")} <key>                    install a licence on this machine
   ${C.bold("enforcee licence")}                             show the licence this machine is using
 
   ${C.dim("--judge")}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
@@ -11388,6 +11409,26 @@ async function main() {
     return;
   }
   if (cmd === "licence" || cmd === "license") {
+    if (args[1] === "set") {
+      const token = args.slice(2).join(" ");
+      const res2 = setLicence(token);
+      console.log("");
+      if (!res2.ok) {
+        console.log(`  ${C.red("\u2715")} ${res2.reason}`);
+        console.log(C.grey("  Paste the whole line from your receipt, including the enf1. prefix."));
+        console.log("");
+        process.exit(3);
+      }
+      console.log(`  ${C.green("\u2713")} Licence installed \u2014 ${C.bold(res2.path)}`);
+      if (res2.check.ok) {
+        console.log(
+          C.grey(`  ${licenceMessage(res2.check)} \xB7 expires ${new Date(res2.check.payload.exp * 1e3).toISOString().slice(0, 10)}`)
+        );
+      }
+      console.log(C.grey("  Now run: enforcee guard CLAUDE.md"));
+      console.log("");
+      return;
+    }
     const check = checkLocalLicence();
     console.log("");
     if (check.ok) {
@@ -11416,7 +11457,7 @@ async function main() {
       console.log(C.grey(`    enforcee health ${rulesPath}                what is wrong with the ruleset itself`));
       console.log("");
       console.log(C.grey("  Already subscribed? Paste your licence:"));
-      console.log(C.grey(`    mkdir -p ~/.enforcee && echo "<licence>" > ${LICENCE_PATHS.home}`));
+      console.log(C.grey("    enforcee licence set <your licence>"));
       console.log("");
       process.exit(3);
     }
@@ -11430,15 +11471,15 @@ async function main() {
       on.filter((p) => p.severity === "deny").map(toDenyRule),
       on.filter((p) => p.severity === "warn").map(toDenyRule)
     );
-    mkdirSync2(".enforcee", { recursive: true });
-    writeFileSync2(join5(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    mkdirSync3(".enforcee", { recursive: true });
+    writeFileSync3(join5(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
     let runner = false;
     try {
-      const here = dirname(fileURLToPath(import.meta.url));
+      const here = dirname2(fileURLToPath(import.meta.url));
       for (const candidate of [join5(here, "..", "guard", "guard.mjs"), join5(here, "..", "..", "guard", "guard.mjs")]) {
         if (existsSync5(candidate)) {
           copyFileSync(candidate, join5(".enforcee", "guard.mjs"));
-          chmodSync(join5(".enforcee", "guard.mjs"), 493);
+          chmodSync2(join5(".enforcee", "guard.mjs"), 493);
           runner = true;
           break;
         }

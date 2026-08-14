@@ -37,12 +37,20 @@ const ALLOWED = new Set([
 const RESERVED = /@example\.(com|org|net|co)\b/i;
 
 /**
- * The two files that legitimately WRITE the address down: the token itself, and this test.
- * Both quote the dead `hello@enforcee.app` in prose explaining why it was dead — excluding
- * them is the difference between a check that documents history and one that forbids
- * documenting it.
+ * The three files that legitimately WRITE a dead address down: the token itself, this test,
+ * and the invariants ledger. All three quote `hello@enforcee.app` in prose explaining why it
+ * was dead — excluding them is the difference between a check that documents history and one
+ * that forbids documenting it.
+ *
+ * The list is deliberately explicit rather than a pattern like "any .md". A new page that
+ * mentions an old address by accident must still be caught, and the only way to keep that
+ * true is to name every exception one at a time.
  */
-const SELF = [join('src', 'lib', 'contact.ts'), join('tests', 'contact-address.test.ts')];
+const SELF = [
+  join('src', 'lib', 'contact.ts'),
+  join('tests', 'contact-address.test.ts'),
+  'INVARIANTS.md',
+];
 const isSelf = (f: string) => SELF.some((s) => f.endsWith(s));
 
 /**
@@ -89,7 +97,7 @@ describe('path comparison is separator-agnostic', () => {
     // …and the shape that was actually shipped broken: a literal '/' comparison is true
     // on POSIX and false on Windows, so it silently stops excluding anything.
     const winFile = 'D:\\a\\Enforcee\\Enforcee\\tests\\licence.test.ts';
-    expect(winFile.includes('D:\\a\\Enforcee\\Enforcee/tests/')).toBe(false);
+    expect(winFile.includes('D:\\a\\Enforcee\\Enforcee/tests/')).toBe(false); // invariant-ok: this line IS the proof that the shape fails on Windows
   });
 });
 
