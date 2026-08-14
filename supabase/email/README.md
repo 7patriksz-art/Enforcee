@@ -16,7 +16,7 @@ worth recording rather than quietly fixing.
 |---|---|---|
 | **Custom SMTP configured** | Supabase's built-in sender is capped at **2 messages per hour** and Supabase says it is for *"toy projects, demos or any non-mission-critical application"* — they *"urge all customers to set up custom SMTP server for all other use cases"*. Without it, the third person to sign up in an hour silently gets nothing. | ☐ |
 | **A sending domain you control** | The built-in service sends from a Supabase address. You cannot set the sender without SMTP, so the branding in these templates sits under someone else's From line. | ☐ |
-| **A Reply-To that reaches a person** | Every template says *"reply to this email — it reaches a person."* That is a promise, and it is false until Reply-To is set. | ☐ |
+| ~~A Reply-To that reaches a person~~ | **Removed — this row was wrong.** Supabase's SMTP settings expose only sender name and address, and Resend's Reply-To is a per-message API field, not a dashboard setting. There is no screen to do this on. The templates now print the contact address as a link in the body instead, so nothing needs configuring. | n/a |
 
 Source for the quotes and the 2/hour figure: [Supabase — Send emails with custom
 SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
@@ -72,13 +72,23 @@ quoted from there; `465` is implicit TLS.)
 Then **Authentication → Rate Limits** and raise the email limit — it is still pinned to the
 built-in service's default until you change it.
 
-### 4. Set Reply-To
+### 4. ~~Set Reply-To~~ — there is no such step
 
-Resend → **Settings → Reply-To**, or set it per-template. Point it at the address in
-`src/lib/contact.ts`. Without this, the "reply to this email" line in every template is a
-promise the product does not keep.
+**This step was wrong and has been removed.** It said "Resend → Settings → Reply-To". No
+such screen exists: Resend sets Reply-To per message via an API field, and Supabase's SMTP
+settings expose only sender name and sender email. Following it was impossible, which is how
+Patrik found it.
 
-### 5. Only now, paste the templates
+Second fabricated precondition in this one file. The rule it breaks is already written down —
+*verify that a recommended fix is executable before recommending it* — and it was broken by
+describing a dashboard from memory rather than opening the docs.
+
+**No configuration replaces it.** The templates now print the contact address as a `mailto:`
+link in the footer and say plainly that the sending address does not accept replies. The
+promise is kept by the message itself rather than by a header, which means there is nothing
+left to get wrong.
+
+### 5. Paste the templates
 
 **Supabase → Authentication → Emails**, then match file to template:
 

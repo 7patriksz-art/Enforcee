@@ -70,6 +70,17 @@ describe('email templates', () => {
         expect(html).not.toMatch(/<style[\s>]/i);
       });
 
+      it('prints the contact address as a reachable link', () => {
+        // The footer used to say "reply to this email — it reaches a person". The sender
+        // is noreply@, which by convention accepts nothing, and there is no dashboard
+        // setting to redirect it — so that sentence was a promise the product could not
+        // keep. The address is now in the body, where it needs no configuration at all.
+        expect(html, 'no mailto link to the contact address').toContain(`mailto:${CONTACT_EMAIL}`);
+        expect(html, 'still promises a reply the sender cannot receive').not.toMatch(
+          /reply to this email/i
+        );
+      });
+
       it('names no address other than the current contact one', () => {
         for (const m of html.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []) {
           expect(m).toBe(CONTACT_EMAIL);
@@ -112,8 +123,17 @@ describe('email templates', () => {
     // The three that actually block, each named rather than gestured at.
     expect(readme, 'must name the SMTP requirement').toMatch(/custom SMTP/i);
     expect(readme, 'must state the built-in rate limit').toMatch(/2 messages per hour/i);
-    expect(readme, 'must cover Reply-To — the templates promise a reply reaches a person')
-      .toMatch(/reply-to/i);
+    // NOT a Reply-To row. That precondition was fabricated: Supabase's SMTP settings
+    // expose only sender name and address, and Resend's Reply-To is a per-message API
+    // field. What must be true instead is that the templates carry the address themselves.
+
+    // No step may describe a screen that does not exist. Two were invented in this file
+    // — an SMTP precondition that was missing entirely, then a "Resend → Settings →
+    // Reply-To" that has never existed. Both were written from memory of a dashboard
+    // rather than from its documentation, and both were found by Patrik trying to follow
+    // them. Every surviving step now cites the page it came from.
+    const steps = readme.slice(readme.search(/### 1\./));
+    expect(steps, 'the setup steps must cite their source docs').toMatch(/resend\.com\/docs|supabase\.com\/docs/);
 
     // And a verification step, because a dashboard reporting "sent" is not a control.
     expect(readme, 'must tell the reader to check a real inbox').toMatch(/Prove it works|check the inbox/i);
