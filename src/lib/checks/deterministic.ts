@@ -536,10 +536,27 @@ function runCheck(rule: Rule, output: string): RuleResult | null {
       // A citation is not only a URL. "Cite the file and line for every claim" is answered
       // by `src/lib/http.ts:42`, and "cite the relevant SOP section" by "Section 4.2" —
       // both were VIOLATED against outputs that cited exactly what was asked for.
+      // PROSE FORMS TOO. `src/lib/http.ts:42` was already handled; "src/app.ts line 12"
+      // was not, and that is how a person writes it in a sentence. An output citing two
+      // files that way was marked VIOLATED with "No citations found" — the eleventh false
+      // accusation on this project, and the second in this exact checker.
+      //
+      // The pattern is anchored on the FILENAME in every variant. "line 12" on its own
+      // stays a non-match: prose says "line 12 was wrong" constantly, and accepting it
+      // would trade a false VIOLATED for a false FOLLOWED, which is the worse of the two —
+      // a wrong accusation is at least visible to the person it is made against.
+      const FILE = '`?[\\w./-]+\\.[a-z]{1,5}`?';
+      const LINE = 'lines?\\s+\\d+(?:\\s*[-–—]\\s*\\d+)?';
       const CITATION =
         '\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)' +
         '|https?://[^\\s)\\]]+' +
-        '|`?[\\w./-]+\\.[a-z]{1,5}:\\d+(?::\\d+)?`?' +
+        `|${FILE}:\\d+(?::\\d+)?` +
+        // src/app.ts line 12 · src/app.ts, line 12 · src/app.ts at lines 12-18
+        `|${FILE}[,]?\\s+(?:at\\s+|on\\s+)?${LINE}` +
+        // line 12 of src/app.ts · lines 12-18 in src/app.ts
+        `|\\b${LINE}\\s+(?:of|in)\\s+${FILE}` +
+        // GitHub permalink fragment: src/app.ts#L42
+        `|${FILE}#L\\d+(?:-L?\\d+)?` +
         '|\\b(?:section|clause|para(?:graph)?|art(?:icle)?|rule|policy|appendix|table|figure|page)\\s+\\d+(?:\\.\\d+)*\\b' +
         '|\\[\\d{1,3}\\]' +
         '|\\b(?:doi|arXiv):\\s?\\S{4,}';

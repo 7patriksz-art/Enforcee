@@ -5,6 +5,7 @@ import PageHead from '@/components/PageHead';
 import clsx from 'clsx';
 import Link from 'next/link';
 import ReceiptView from '@/components/ReceiptView';
+import NextStep from '@/components/NextStep';
 import { SAMPLES } from '@/lib/samples';
 import type { Receipt } from '@/lib/types';
 
@@ -15,6 +16,7 @@ interface AuditResponse {
   quotaNote?: string;
   gateNote?: string;
   plan: 'free' | 'builder' | 'founder';
+  signedIn: boolean;
   stored?: { saved: boolean; reason?: string };
 }
 
@@ -135,29 +137,26 @@ export default function AuditPage() {
         </p>
       )}
 
-      {data?.gateNote && (
-        <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-honey-line bg-honey-pale px-3 py-2 text-[12.5px] text-ink">
-          <span>{data.gateNote}</span>
-          <Link href="/pricing" className="font-medium text-brand hover:underline">
-            See what Builder adds →
-          </Link>
-        </p>
-      )}
+      {/* The gate note stays, and stays here, because it is FUNCTIONAL: it explains why a
+          verdict is missing. Its promotional tail was removed — a sentence explaining a
+          limitation should not also be trying to sell you the fix in the same breath.
 
-      {data && data.plan === 'free' && (
-        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border hairline bg-paper-soft px-3 py-2 text-[12.5px] text-ink-mid">
-          <span>
-            This receipt is not being saved. Close the tab and it is gone — download the JSON if you want to keep it.
-          </span>
-          <Link href="/pricing" className="font-medium text-brand hover:underline">
-            Keep every audit →
-          </Link>
+          The two notes that used to sit beside it were pure promotion, and they stacked
+          three pitches above the receipt a visitor had just waited for. They now live in
+          <NextStep> BELOW the result, as one step instead of three. */}
+      {data?.gateNote && (
+        <p className="mt-4 rounded-md border border-honey-line bg-honey-pale px-3 py-2 text-[12.5px] text-ink">
+          {data.gateNote}
         </p>
       )}
 
       {data && (
         <div className="mt-8">
           <ReceiptView receipt={data.receipt} output={audited} />
+
+          {/* Exactly one next step, chosen from what this audit actually found — and
+              routing to a FREE tool when that is the honest answer. */}
+          <NextStep receipt={data.receipt} plan={data.plan} signedIn={data.signedIn} />
         </div>
       )}
     </main>

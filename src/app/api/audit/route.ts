@@ -82,6 +82,11 @@ export async function POST(req: Request) {
         quotaNote,
         gateNote,
         plan: access.plan,
+        // Reported explicitly rather than inferred client-side. The post-result step used
+        // to derive it from `stored !== undefined`, which is true for an anonymous visitor
+        // too — so a signed-OUT reader was told "this receipt is not being kept", a
+        // sentence that only makes sense to someone who has an account it could be kept in.
+        signedIn: access.signedIn,
       },
       { headers: { 'Cache-Control': 'no-store' } }
     );

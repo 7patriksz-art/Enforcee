@@ -21,11 +21,17 @@ const ROOT = resolve(__dirname, '..');
 /** Any address that is not the current contact address, ignoring the ones that should be. */
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
-// Addresses that legitimately are not ours.
+// Addresses that legitimately are not the contact address.
 const ALLOWED = new Set([
   CONTACT_EMAIL,
   'noreply@anthropic.com', // git trailer
   'support@anthropic.com',
+  // The SENDING address, on a domain we own. Deliberately not the contact address and
+  // deliberately not a mailbox: it exists so branded mail has a From line, and every
+  // template sets Reply-To to CONTACT_EMAIL so a human still receives the answer. If this
+  // ever becomes the address a reader is told to write to, that is the bug — which is why
+  // it is allow-listed by exact string rather than by pattern.
+  'noreply@enforcee.com',
 ]);
 
 /**
