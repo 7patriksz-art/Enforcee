@@ -161,8 +161,16 @@ describe('JSON in an explanation still counts as JSON', () => {
     expect(v.result!.evidence[0].quote).toContain('"a"');
   });
 
-  it('accepts a bare object embedded in prose', () => {
-    expect(verdict('Return the config as JSON.', 'The answer is {"a": 1} as requested.').verdict).toBe('FOLLOWED');
+  it('accepts an unfenced object that starts a line', () => {
+    expect(verdict('Return the config as JSON.', 'Here it is:\n\n{"a": 1}\n').verdict).toBe('FOLLOWED');
+  });
+
+  it('but a number list inside a sentence is not a JSON answer', () => {
+    // "the retry counts I saw were [1, 2, 3]" made a pure-prose answer pass a JSON rule —
+    // a false pass on the strongest badge the product issues.
+    const prose = 'I could not reach the API, so I have nothing structured. The retry counts were [1, 2, 3] before it gave up.';
+    expect(verdict('Respond in valid JSON.', prose).verdict).toBe('VIOLATED');
+    expect(verdict('Always return the results as JSON.', 'No results found. Check the filters: {"status": "open"} is what I used.').verdict).toBe('VIOLATED');
   });
 
   it('holds the line when the rule says JSON and nothing else', () => {
@@ -189,7 +197,7 @@ describe('JSON in an explanation still counts as JSON', () => {
   });
 
   it('finds the JSON even when an earlier brace run is not JSON', () => {
-    const found = findJsonBlock('use ${HOME} then apply {"ok": true}');
+    const found = findJsonBlock('use ${HOME}, then apply:\n{"ok": true}\n');
     expect(found).not.toBeNull();
     expect(found!.quote).toBe('{"ok": true}');
   });

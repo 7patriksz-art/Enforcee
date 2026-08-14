@@ -22,6 +22,14 @@ function findAll(haystack: string, needle: string, caseSensitive: boolean, limit
   return spans;
 }
 
+function tryCompile(pattern: string, flags: string): { re: RegExp } | null {
+  try {
+    return { re: new RegExp(pattern, flags) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Run a user-authored pattern, or decline.
  *
@@ -29,10 +37,17 @@ function findAll(haystack: string, needle: string, caseSensitive: boolean, limit
  * caller can report UNVERIFIABLE with a reason instead of silently reporting "no match",
  * which would be a false clean bill of health.
  */
-function regexSpans(output: string, pattern: string, flags: string, limit = 5): EvidenceSpan[] | null {
+function regexSpans(output: string, pattern: string, flags: string, limit = 5, trusted = false): EvidenceSpan[] | null {
   const f = flags.includes('g') ? flags : flags + 'g';
-  const compiled = safeCompile(pattern, f);
-  if ('error' in compiled) return null;
+  // ORIGIN, not shape — the same line the guard draws, for the same reason.
+  //
+  // safeCompile refuses any pattern over 200 characters, which is right for something a
+  // stranger wrote and wrong for the engine's own constants. Applying it to ours silently
+  // disarmed the checks whose patterns had grown past the limit: the emoji class stopped
+  // matching emoji, and the citation check reported "no citations found" against an output
+  // full of them. A checker that refuses its own pattern reports a clean pass it never ran.
+  const compiled = trusted ? tryCompile(pattern, f) : safeCompile(pattern, f);
+  if (!compiled || 'error' in compiled) return null;
   const re = compiled.re;
   // Bound the haystack as well as the pattern. Belt and braces, because the cost of
   // being wrong here is the whole deployment rather than one bad verdict.
@@ -51,15 +66,22 @@ function regexSpans(output: string, pattern: string, flags: string, limit = 5): 
   return spans;
 }
 
+/**
+ * Emoji, not typographic marks.
+ *
+ * U+2600-U+27BF was included wholesale, which swept in the check marks and stars models use
+ * as list bullets. "No emojis in any response" then reported VIOLATED against a tick-mark
+ * checklist containing no emoji at all.
+ */
 const EMOJI_RE =
-  /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{FE0F}\u{1F900}-\u{1F9FF}]/gu;
+  /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{26FF}\u{1F900}-\u{1F9FF}]\u{FE0F}?|[\u{2702}\u{2705}\u{2708}-\u{270D}\u{2728}\u{274C}\u{274E}\u{2753}-\u{2755}\u{2757}\u{2795}-\u{2797}\u{27B0}\u{27BF}]/gu;
 
 /**
  * Fences alternate open/close, so only every other one carries a language tag.
  * Counting all of them would report a phantom untagged block for every real one.
  */
 export function openingFences(output: string): EvidenceSpan[] {
-  const all = regexSpans(output, '^[ \\t]*```[a-zA-Z0-9+#_-]*', 'gm', 200) ?? [];
+  const all = regexSpans(output, '^[ \\t]*```[a-zA-Z0-9+#_-]*', 'gm', 200, true) ?? [];
   return all
     .filter((_, i) => i % 2 === 0)
     .map((s) => {
@@ -89,7 +111,7 @@ export interface Segment {
  * turns "keep each bullet under 12 words" into a complaint about your code.
  */
 export function segments(output: string, scope: LengthScope): Segment[] {
-  if (scope === 'output') return [{ start: 0, end: output.length, text: output }];
+  if (scope === 'output' || scope === 'elsewhere') return [{ start: 0, end: output.length, text: output }];
 
   // Blank out fenced blocks so they neither form segments nor pad neighbouring ones,
   // while keeping every offset identical to the original string.
@@ -153,14 +175,17 @@ export function guessLanguage(s: string): string | null {
   if (/[Ѐ-ӿ]/.test(s)) return 'ru';
   const hits = (re: RegExp) => (t.match(re) ?? []).length;
   const scores: Record<string, number> = {
-    en: hits(/\b(the|and|of|to|is|that|with|for|this|are|you|it)\b/g),
+    // The English list was the shortest of the lot while the Romance lists contained bare
+    // single letters that are ordinary English words, so an a-dense but entirely English
+    // answer lost the vote to Portuguese and was VIOLATED against "Always answer in English".
+    en: hits(/\b(the|and|of|to|is|that|with|for|this|are|you|it|a|an|as|in|on|be|have|has|not|but|from|by|at|we|they|will|can|if|so|or|which|what|when|would|there|about|after|all|any)\b/g),
     hu: hits(/\b(és|hogy|nem|egy|meg|van|azt|ez|de|már|csak|még|kell)\b/g),
     de: hits(/\b(und|der|die|das|nicht|ein|ist|zu|mit|für|auch|sich)\b/g),
-    fr: hits(/\b(le|la|les|des|une|est|pour|dans|que|qui|avec|pas)\b/g),
-    es: hits(/\b(el|la|los|las|una|es|para|con|que|por|como|más)\b/g),
-    it: hits(/\b(il|lo|la|che|non|per|con|una|sono|come|più)\b/g),
-    pt: hits(/\b(o|a|os|as|que|não|para|com|uma|mais|como)\b/g),
-    nl: hits(/\b(de|het|een|niet|van|met|voor|dat|zijn|ook)\b/g),
+    fr: hits(/\b(le|les|des|une|est|pour|dans|que|qui|avec|pas|mais|cette|vous|sont|plus)\b/g),
+    es: hits(/\b(el|la|los|las|una|para|con|que|por|como|más|pero|todo|este|esta|cuando|también|desde|hasta)\b/g),
+    it: hits(/\b(il|lo|la|che|non|per|con|una|sono|come|più|questo|quando|anche|dopo|senza)\b/g),
+    pt: hits(/\b(os|que|não|para|com|uma|mais|como|mas|isso|quando|também|então|você|pelo)\b/g),
+    nl: hits(/\b(het|een|niet|van|met|voor|dat|zijn|ook|maar|deze|wordt|kunnen)\b/g),
     pl: hits(/\b(nie|się|jest|tego|dla|jak|który|oraz|może)\b/g),
     tr: hits(/\b(ve|bir|bu|için|ile|olarak|daha|gibi|çok)\b/g),
   };
@@ -210,7 +235,13 @@ export function findJsonBlock(output: string): EvidenceSpan | null {
   }
 
   // Balanced scan, so we never hand JSON.parse a truncated slice.
+  //
+  // Anchored to the start of a line, deliberately. An unanchored scan accepted ANY
+  // parseable bracket run anywhere in prose — "the retry counts I saw were [1, 2, 3]" made
+  // a pure-prose answer pass "Respond in valid JSON", a false pass on the strongest badge
+  // we issue. A JSON answer begins a line; a number list inside a sentence does not.
   for (let i = 0; i < output.length; i++) {
+    if (i > 0 && !/[\n\r]/.test(output[i - 1]) && !/^[ \t]*$/.test(output.slice(output.lastIndexOf('\n', i - 1) + 1, i))) continue;
     const open = output[i];
     if (open !== '{' && open !== '[') continue;
     const close = open === '{' ? '}' : ']';
@@ -256,6 +287,16 @@ function lengthCheck(
   measure: (s: string) => number,
   unit: string
 ): RuleResult {
+  if (scope === 'elsewhere') {
+    return res(
+      rule,
+      'UNVERIFIABLE',
+      'This rule limits the length of something that is not the text being audited — a commit message, a title, a filename. Measuring the answer against it would be a number about the wrong thing.',
+      [],
+      false
+    );
+  }
+
   const segs = segments(output, scope);
 
   if (scope !== 'output' && segs.length === 0) {
@@ -321,6 +362,30 @@ function res(
  *    rather than pretending.
  */
 export function runDeterministic(rule: Rule, output: string): RuleResult | null {
+  const result = runCheck(rule, output);
+
+  // A CONDITIONAL rule cannot be violated by absence, because absence is also what "the
+  // condition never came up" looks like. "Use a markdown table when comparing options"
+  // reported VIOLATED against an answer that compared nothing. Both had their scope written
+  // down in the rule and both were checked as if it were not there.
+  //
+  // Only absence-based verdicts are converted — a rule whose forbidden thing actually
+  // appeared is still violated, trigger or no trigger.
+  if (result && result.verdict === 'VIOLATED' && rule.trigger && result.evidence.length === 0) {
+    return {
+      ...result,
+      verdict: 'NOT_APPLICABLE',
+      engaged: false,
+      rationale:
+        `This rule applies ${rule.trigger.toLowerCase()}. Nothing required by it appears in the output, and nothing ` +
+        `shows the condition arose — so it is recorded as not applicable rather than broken. Original check: ${result.rationale}`,
+    };
+  }
+
+  return result;
+}
+
+function runCheck(rule: Rule, output: string): RuleResult | null {
   const c = rule.check;
 
   switch (c.kind) {
@@ -362,7 +427,7 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
     }
 
     case 'no_emoji': {
-      const hits = regexSpans(output, EMOJI_RE.source, 'gu') ?? [];
+      const hits = regexSpans(output, EMOJI_RE.source, 'gu', 5, true) ?? [];
       if (hits.length) return res(rule, 'VIOLATED', `${hits.length} emoji found.`, hits, true);
       return res(rule, 'FOLLOWED', 'No emoji in the output.', [], false);
     }
@@ -398,6 +463,12 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
         if (!c.strict) {
           return res(rule, 'FOLLOWED', 'A valid JSON block is present in the output.', [block], true);
         }
+        // A fence is how you emit JSON-only in a chat surface. Treating the ``` markers as
+        // "other text" failed the most correct possible answer to a JSON-only rule.
+        const bare = output.trim();
+        if (/^```(?:json|jsonc|json5)?\s*[\s\S]*```$/.test(bare) && bare.indexOf('```', 3) === bare.length - 3) {
+          return res(rule, 'FOLLOWED', 'The output is a single fenced JSON block and nothing else.', [block], true);
+        }
         return res(
           rule,
           'VIOLATED',
@@ -410,17 +481,32 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
     }
 
     case 'format_markdown_table': {
-      const hits = regexSpans(output, '^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$', 'gm', 2) ?? [];
+      const hits = regexSpans(output, '^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$', 'gm', 2, true) ?? [];
       return hits.length
         ? res(rule, 'FOLLOWED', 'A markdown table is present.', hits, true)
         : res(rule, 'VIOLATED', 'No markdown table found.', [], true);
     }
 
     case 'format_code_fence': {
-      const hits = regexSpans(output, '```[\\s\\S]*?```', 'g', 3) ?? [];
-      return hits.length
-        ? res(rule, 'FOLLOWED', `${hits.length} fenced code block(s) present.`, hits, true)
-        : res(rule, 'VIOLATED', 'No fenced code block found.', [], true);
+      const hits = regexSpans(output, '```[\\s\\S]*?```', 'g', 3, true) ?? [];
+      if (hits.length) return res(rule, 'FOLLOWED', `${hits.length} fenced code block(s) present.`, hits, true);
+      // Absence is only a violation when the rule DEMANDS a code block outright. "Use code
+      // blocks for shell commands" does not; it governs the commands you write.
+      const demands = /\b(include|provide|give|show|answer with|reply with|respond with|must contain|always use|use a)\b/i.test(rule.text);
+      return demands
+        ? res(rule, 'VIOLATED', 'No fenced code block found, and this rule asks for one outright.', [], true)
+        : res(rule, 'NOT_APPLICABLE', 'This rule governs code blocks, and the output contains none — so there was nothing for it to govern.', [], false);
+    }
+
+    case 'code_fence_tagged': {
+      const opens = openingFences(output);
+      if (!opens.length) {
+        return res(rule, 'NOT_APPLICABLE', 'No code blocks in this output, so the rule never applied.', [], false);
+      }
+      const untagged = opens.filter((s2) => s2.quote.slice(3).trim() === '');
+      return untagged.length
+        ? res(rule, 'VIOLATED', `${untagged.length} of ${opens.length} code block(s) carry no language tag.`, untagged.slice(0, 3), true)
+        : res(rule, 'FOLLOWED', `All ${opens.length} code block(s) carry a language tag.`, opens.slice(0, 3), true);
     }
 
     case 'code_fence_language': {
@@ -447,10 +533,20 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
     }
 
     case 'citation_required': {
-      const links = regexSpans(output, '\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+', 'g', 5) ?? [];
+      // A citation is not only a URL. "Cite the file and line for every claim" is answered
+      // by `src/lib/http.ts:42`, and "cite the relevant SOP section" by "Section 4.2" —
+      // both were VIOLATED against outputs that cited exactly what was asked for.
+      const CITATION =
+        '\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)' +
+        '|https?://[^\\s)\\]]+' +
+        '|`?[\\w./-]+\\.[a-z]{1,5}:\\d+(?::\\d+)?`?' +
+        '|\\b(?:section|clause|para(?:graph)?|art(?:icle)?|rule|policy|appendix|table|figure|page)\\s+\\d+(?:\\.\\d+)*\\b' +
+        '|\\[\\d{1,3}\\]' +
+        '|\\b(?:doi|arXiv):\\s?\\S{4,}';
+      const links = regexSpans(output, CITATION, 'gi', 5, true) ?? [];
       return links.length
-        ? res(rule, 'FOLLOWED', `${links.length} citation/link found.`, links, true)
-        : res(rule, 'VIOLATED', 'No citations or links found in the output.', [], true);
+        ? res(rule, 'FOLLOWED', `${links.length} citation(s) found.`, links, true)
+        : res(rule, 'VIOLATED', 'No citations found in the output — no link, file:line reference, section number or footnote marker.', [], true);
     }
 
     case 'language': {

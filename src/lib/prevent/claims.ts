@@ -90,8 +90,13 @@ export function extractClaims(text: string): Claim[] {
     return text.slice(start, end).replace(/\s+/g, ' ').trim();
   };
 
+  // The filter applies to ALL FOUR kinds. It used to guard only tests-pass and committed,
+  // so "I have not created `tests/e2e.spec.ts` yet" was REFUTED — the module accusing the
+  // agent of lying at the exact moment it told the truth about not doing something.
   for (const m of text.matchAll(FILE_CLAIM)) {
-    out.push({ kind: 'file-created', subject: m[1], quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: 'file-created', subject: m[1], quote });
   }
   for (const m of text.matchAll(TESTS_PASS)) {
     const quote = sentenceOf(m.index ?? 0);
@@ -104,7 +109,9 @@ export function extractClaims(text: string): Claim[] {
     out.push({ kind: 'committed', subject: 'git', quote });
   }
   for (const m of text.matchAll(INSTALLED)) {
-    out.push({ kind: 'installed', subject: m[1], quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: 'installed', subject: m[1], quote });
   }
   return out;
 }

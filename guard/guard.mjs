@@ -20,7 +20,7 @@
  * We always exit 0 and speak JSON, so a guard bug can never wedge a session.
  */
 
-import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { createPublicKey, verify } from 'node:crypto';
@@ -254,7 +254,10 @@ function checkClaimsLocally(text, commands, cwd, toolCalls) {
 
 function findPolicy(startDir) {
   let dir = resolve(startDir || process.cwd());
-  for (let i = 0; i < 12; i++) {
+  // 12 hops was a silent cliff: a session running in a directory 12 levels below the
+  // project root found no policy, wrote no ledger row, printed nothing, and allowed
+  // `rm -rf /` — indistinguishable from a safe command.
+  for (let i = 0; i < 64; i++) {
     const p = join(dir, '.enforcee', 'policy.json');
     if (existsSync(p)) return p;
     const parent = dirname(dir);
@@ -337,7 +340,30 @@ function recentDenials(policyPath, sessionId, ruleId, limit = 60) {
   try {
     const p = join(dirname(policyPath), 'ledger.jsonl');
     if (!existsSync(p)) return 0;
-    const lines = readFileSync(p, 'utf8').trim().split('\n');
+    // Read the TAIL, not the file.
+    //
+    // This used to load the whole ledger into a string to look at the last 60 lines. At
+    // 644 MB — reachable in a long-lived project, or deliberately — a cold read took 13.3
+    // seconds against a 10-second hook timeout, and a timed-out hook is non-blocking. The
+    // escalation counter was therefore a way to turn the guard off by writing to its own
+    // ledger. 256 KB is far more than 60 rows and is constant work regardless of history.
+    const TAIL = 256 * 1024;
+    const size = statSync(p).size;
+    let text;
+    if (size <= TAIL) {
+      text = readFileSync(p, 'utf8');
+    } else {
+      const fd = openSync(p, 'r');
+      try {
+        const buf = Buffer.allocUnsafe(TAIL);
+        readSync(fd, buf, 0, TAIL, size - TAIL);
+        text = buf.toString('utf8');
+        text = text.slice(text.indexOf('\n') + 1);
+      } finally {
+        closeSync(fd);
+      }
+    }
+    const lines = text.trim().split('\n');
     let n = 0;
     for (const line of lines.slice(-limit)) {
       try {
@@ -390,7 +416,68 @@ function unsafePattern(source) {
     const parts = body.split('|');
     if (parts.length > 1 && new Set(parts.map((x) => x.trim())).size < parts.length) return true;
   }
+
+  // POLYNOMIAL blowup, which the nesting rule above does not see at all.
+  //
+  // Nesting is only the exponential case. A flat SEQUENCE of unbounded quantifiers over
+  // overlapping classes backtracks at degree k, and degree 5 is already fatal against an
+  // 8 KB subject: `\w+\s*\w+\s*\w+\s*\w+\s*=\s*sk-` — a plausible thing to write to catch
+  // an API key assignment — took 117 ms at 60 characters, 3.5 s at 120, and past 180 s at
+  // 200. The hook times out at 10 s and a timed-out hook is NON-BLOCKING, so one rule the
+  // user wrote in good faith disarmed every remaining deny rule for the session.
+  //
+  // Three is the line. Every pattern in the standing library sits under it, and a user rule
+  // above it is refused loudly as UNCHECKED rather than run — see the caller.
+  const unbounded = (source.match(/(?<!\\)[*+](?![?])|\{\d+,\}/g) ?? []).length;
+  if (unbounded > 3) return true;
+
   return false;
+}
+
+/**
+ * Split a shell command into the pieces that run separately, and drop comments.
+ *
+ * Matching a whole command line as one string is what let `git push --force origin main
+ * # --force-with-lease` through: the force-push rule's `(?!.*--force-with-lease)` lookahead
+ * scans to the end of the line, so naming the safe flag ANYWHERE after `push` — in a
+ * comment, in a later `echo`, in an unrelated command — disarmed it. The same trick works
+ * on any rule using a negative lookahead.
+ *
+ * Each segment is tested independently, and the whole string is tested too, so a rule that
+ * genuinely spans a pipeline still matches.
+ */
+function segmentsOf(command) {
+  if (typeof command !== 'string' || !command) return [];
+  const out = [command];
+  let stripped = '';
+  let quote = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote) {
+      if (ch === quote && command[i - 1] !== '\\') quote = null;
+      stripped += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      stripped += ch;
+      continue;
+    }
+    if (ch === '#' && (i === 0 || /\s/.test(command[i - 1]))) {
+      const nl = command.indexOf('\n', i);
+      if (nl === -1) break;
+      i = nl;
+      stripped += '\n';
+      continue;
+    }
+    stripped += ch;
+  }
+  if (stripped !== command) out.push(stripped);
+  for (const part of stripped.split(/(?:&&|\|\||[;\n]|\|)/)) {
+    const t = part.trim();
+    if (t && t !== command) out.push(t);
+  }
+  return out;
 }
 
 /**
@@ -419,7 +506,15 @@ function subjectFor(toolName, input) {
   const i = input || {};
   if (toolName === 'Bash') return typeof i.command === 'string' ? i.command : '';
   if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
-    return [i.file_path, i.notebook_path, i.path].filter((x) => typeof x === 'string').join(' ');
+    // The CONTENT, not only the path.
+    //
+    // Every user-authored `forbidden_regex` rule compiles to tool:'*', so a rule like
+    // "never write an AWS key" was enforced on Bash and ignored on Write — the same rule,
+    // blocked one way and allowed the other, which is worse than not having it, because the
+    // install report says it is on. The path stays first so path rules still match early.
+    return [i.file_path, i.notebook_path, i.path, i.content, i.new_string, i.old_string, i.new_source]
+      .filter((x) => typeof x === 'string')
+      .join('\n');
   }
   if (toolName === 'WebFetch') return typeof i.url === 'string' ? i.url : '';
   if (toolName === 'Skill') return String(i.skill ?? i.name ?? '');
@@ -463,6 +558,37 @@ function main() {
     // A malformed policy must never block work. Say so loudly instead.
     emit({
       systemMessage: 'Enforcee: policy.json could not be read, so no rules are being enforced this session.',
+    });
+  }
+
+  // VALID JSON OF THE WRONG SHAPE is not the same thing as invalid JSON, and only the
+  // second was handled. `null`, `{"deny": 7}`, `{"deny": [null]}` all parsed cleanly and
+  // then threw a TypeError deep in the rule loop — uncaught, exit 1, EMPTY STDOUT. Claude
+  // Code reads that as a non-blocking error, so the call proceeds, and unlike every other
+  // failure path in this file it prints nothing at all: no permissionDecision, no
+  // systemMessage, no ledger row. Chained with a policy write, it is a permanent silent
+  // fail-open. The shape is now normalised once, here, before anything reads it.
+  const isRule = (r) => r && typeof r === 'object' && typeof r.pattern === 'string';
+  const denyRules = Array.isArray(policy?.deny) ? policy.deny.filter(isRule) : [];
+  const warnRules = Array.isArray(policy?.warn) ? policy.warn.filter(isRule) : [];
+  const badShape =
+    !policy ||
+    typeof policy !== 'object' ||
+    (policy.deny !== undefined && !Array.isArray(policy.deny)) ||
+    (policy.warn !== undefined && !Array.isArray(policy.warn));
+  // Entries inside a well-shaped list that are not rules are dropped rather than crashed on,
+  // but a dropped rule is a rule that is not enforcing, so it is never dropped quietly.
+  const dropped = badShape
+    ? 0
+    : (Array.isArray(policy.deny) ? policy.deny.length - denyRules.length : 0) +
+      (Array.isArray(policy.warn) ? policy.warn.length - warnRules.length : 0);
+  if (badShape || dropped > 0) {
+    emit({
+      systemMessage: badShape
+        ? 'Enforcee: policy.json is valid JSON but not a policy, so no rules are being enforced this session. ' +
+          'Recompile it with: npx enforcee guard <rules-file>'
+        : `Enforcee: ${dropped} entr${dropped === 1 ? 'y' : 'ies'} in policy.json ${dropped === 1 ? 'is' : 'are'} not a usable rule ` +
+          `and ${dropped === 1 ? 'was' : 'were'} NOT enforced on this call. Recompile with: npx enforcee guard <rules-file>`,
     });
   }
 
@@ -614,14 +740,25 @@ function main() {
     // situation the opposite way: "we would rather tell you than report a pass we did not earn".
     const unchecked = [];
 
-    for (const rule of policy.deny ?? []) {
+    // Every command runs against its own segments as well as the whole line, so a negative
+    // lookahead cannot be satisfied by text belonging to a different command.
+    const parts = toolName === 'Bash' ? segmentsOf(subject) : [subject];
+    const hits = (re) => {
+      for (const p of parts) {
+        re.lastIndex = 0;
+        if (re.test(p)) return true;
+      }
+      return false;
+    };
+
+    for (const rule of denyRules) {
       if (!toolMatches(rule.tool, toolName)) continue;
       const re = safeRe(rule.pattern, rule.flags, rule.trusted === true);
       if (!re) {
         unchecked.push(rule);
         continue;
       }
-      if (!re.test(subject)) continue;
+      if (!hits(re)) continue;
 
       const priorDenials = recentDenials(policyPath, payload.session_id, rule.id);
 
@@ -667,10 +804,10 @@ function main() {
       });
     }
 
-    for (const rule of policy.warn ?? []) {
+    for (const rule of warnRules) {
       if (!toolMatches(rule.tool, toolName)) continue;
       const re = safeRe(rule.pattern, rule.flags, rule.trusted === true);
-      if (!re || !re.test(subject)) continue;
+      if (!re || !hits(re)) continue;
       log(policyPath, { ...base, decision: 'WARN', ruleId: rule.id, rule: rule.rule, tool: toolName });
       return emit({
         hookSpecificOutput: {
@@ -696,12 +833,16 @@ function main() {
       });
     }
 
-    log(policyPath, { ...base, decision: 'ALLOW', tool: toolName });
+    // ALLOW rows used to carry no subject at all, so a bypass left no trace anywhere: the
+    // ledger showed a wall of identical empty ALLOWs and the one that mattered looked like
+    // all the others. A truncated preview is enough to reconstruct what happened without
+    // turning the ledger into a copy of the session.
+    log(policyPath, { ...base, decision: 'ALLOW', tool: toolName, subject: subject.slice(0, 200) });
     allow();
   }
 
   if (event === 'PostCompact' || event === 'SessionStart') {
-    const text = (policy.reinject && policy.reinject.text) || '';
+    const text = (policy?.reinject && policy.reinject.text) || '';
     if (!text) allow();
     const capped = text.slice(0, 9500);
     log(policyPath, { ...base, decision: 'REINJECT', chars: capped.length });
@@ -721,4 +862,26 @@ function main() {
   allow();
 }
 
-main();
+// A crash here is a bypass, not an error.
+//
+// Claude Code treats a hook that exits non-zero as a NON-BLOCKING error: the tool call
+// proceeds. Every deliberate failure path in this file therefore emits a systemMessage
+// saying enforcement is off — but an UNCAUGHT exception emits nothing, so the one case
+// where the guard is genuinely broken is the one case the user is never told about. That
+// is exactly backwards.
+try {
+  main();
+} catch (err) {
+  try {
+    process.stdout.write(
+      JSON.stringify({
+        systemMessage:
+          `Enforcee hit an internal error and did NOT check this call: ${(err && err.message) || String(err)}. ` +
+          `Nothing was blocked. Recompile with \`npx enforcee guard <rules-file>\`, and please report this.`,
+      }) + '\n'
+    );
+  } catch {
+    /* stdout is gone; there is nothing further to try */
+  }
+  process.exit(0);
+}

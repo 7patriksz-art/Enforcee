@@ -103,7 +103,21 @@ interface RawRule {
  * Split a freeform ruleset (markdown, bullets, numbered lists, prose) into atomic rules.
  * Deterministic and dependency-free — same input always yields the same rule ids.
  */
-export function splitRules(text: string, artifact = 'ruleset'): RawRule[] {
+/**
+ * Bullets the splitter declined, with their line numbers.
+ *
+ * `couldBeRule` is a heuristic, and a heuristic that drops real obligations while saying
+ * nothing is the worst kind. A support handbook whose bullets are Title Case — "Verify
+ * Customer Identity Before Refund" — lost three of its four rules here and the receipt
+ * reported a clean pass on the one that survived.
+ */
+export function skippedLines(text: string): { text: string; line: number }[] {
+  const skipped: { text: string; line: number }[] = [];
+  splitRules(text, 'ruleset', skipped);
+  return skipped;
+}
+
+export function splitRules(text: string, artifact = 'ruleset', skipped: { text: string; line: number }[] = []): RawRule[] {
   const lines = text.split(/\r?\n/);
   const out: RawRule[] = [];
   const section: string[] = [];
@@ -143,6 +157,7 @@ export function splitRules(text: string, artifact = 'ruleset'): RawRule[] {
         body += ' ' + lines[end].trim();
       }
       if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
+      else skipped.push({ text: body, line: i + 1 });
       i = end;
       continue;
     }
@@ -202,11 +217,18 @@ const LANGUAGES: Record<string, string> = {
  * unambiguous enough to read mechanically.
  */
 export function lengthScope(lower: string): LengthScope {
-  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
+  // A limit on something that is not the answer cannot be measured against the answer.
+  if (/\b(commit message|commit messages|pr title|pull request title|branch name|file ?name|subject line|title|headline|slug|alt text|filename)\b/i.test(lower)) {
+    return 'elsewhere';
+  }
+
+  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|section|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
     lower
   );
   if (!unit) return 'output';
   switch (unit[1].toLowerCase()) {
+    case 'section':
+      return 'paragraph';
     case 'bullet':
     case 'item':
     case 'point':
@@ -252,6 +274,16 @@ const CITATION_CONSTRUCTION: RegExp[] = [
   // "sources for every claim", "a reference for each figure"
   /\b(?:sources?|references?|links?|urls?)\b[^.]{0,25}?\bfor\s+(?:every|each|all|any)\b/i,
 ];
+
+/** Words that are never a code-fence language, however the sentence is shaped. */
+const FENCE_STOP = new Set([
+  'the', 'a', 'an', 'its', 'their', 'correct', 'right', 'proper', 'appropriate', 'relevant',
+  'each', 'every', 'all', 'any', 'with', 'and', 'or', 'of', 'in', 'for', 'to', 'as', 'block',
+  'blocks', 'fence', 'fences', 'code', 'language', 'name',
+]);
+
+/** A clause-opening word swept up by a needle capture is not a forbidden word. */
+const CLAUSE_STARTER = new Set(['when', 'if', 'while', 'unless', 'in', 'for', 'to', 'at', 'on', 'with', 'the', 'a', 'an']);
 
 export function isCitationRule(text: string): boolean {
   if (NOT_A_CITATION.test(text)) return false;
@@ -309,13 +341,35 @@ export function classify(text: string): CheckSpec {
     return { kind: 'language', code: LANGUAGES[lang[1]], name: lang[1] };
   }
 
-  const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  // "more than N words" is a CEILING when it is negated and a FLOOR when it is not, and the
+  // first version only knew the single phrase "no more than". So "Don't use more than 200
+  // words", "Never write more than 150 words", "Avoid using more than 100 words" all
+  // compiled to min_words — the exact opposite of the rule — and a short, obedient answer
+  // was reported VIOLATED for being under the limit it was asked to stay under. Obedience
+  // was the only way to fail.
+  const moreThan = /\b(?:more than|over|exceed(?:ing)?|beyond|longer than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  if (moreThan) {
+    const n = Number(moreThan[1]);
+    const scope = lengthScope(lower);
+    return negative || /\bno more than\b/i.test(lower)
+      ? { kind: 'max_words', n, scope }
+      : { kind: 'min_words', n, scope };
+  }
+
+  const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within|up to)\s+(\d{1,5})\s+words?\b/i.exec(lower);
   if (maxWords) return { kind: 'max_words', n: Number(maxWords[1]), scope: lengthScope(lower) };
 
-  const minWords = /\b(?:at least|no fewer than|minimum of|more than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  const minWords = /\b(?:at least|no fewer than|minimum of)\s+(\d{1,5})\s+words?\b/i.exec(lower);
   if (minWords) return { kind: 'min_words', n: Number(minWords[1]), scope: lengthScope(lower) };
 
-  const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
+  const moreChars = /\b(?:more than|over|exceed(?:ing)?|longer than)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
+  if (moreChars) {
+    const n = Number(moreChars[1]);
+    const scope = lengthScope(lower);
+    return negative || /\bno more than\b/i.test(lower) ? { kind: 'max_chars', n, scope } : { kind: 'min_words', n, scope };
+  }
+
+  const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within|up to)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
   if (maxChars) return { kind: 'max_chars', n: Number(maxChars[1]), scope: lengthScope(lower) };
 
   if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative) {
@@ -332,13 +386,33 @@ export function classify(text: string): CheckSpec {
     return { kind: 'format_markdown_table' };
   }
 
-  const fenceLang = /\bcode\s+(?:block|fence)s?\b[^.]{0,30}\b(?:tagged|labell?ed|marked|with)\b[^.]{0,20}?\b([a-z+#]{1,12})\b/i.exec(lower);
-  if (fenceLang) return { kind: 'code_fence_language', language: fenceLang[1] };
+  // "Always tag code blocks with the language" asked for a fence tagged ```the — the lazy
+  // gap matched "with", then took the very next word as the language name, so a correctly
+  // tagged ```bash block was VIOLATED and the only passing output was one tagged ```the.
+  const fenceLang = /\bcode\s+(?:block|fence)s?\b[^.]{0,30}\b(?:tagged|labell?ed|marked|with|as)\b[^.]{0,20}?\b([a-z+#]{1,12})\b/i.exec(lower);
+  if (fenceLang && !FENCE_STOP.has(fenceLang[1])) return { kind: 'code_fence_language', language: fenceLang[1] };
+
+  // "Always tag code blocks with the language" names no language, and it is not a demand
+  // for a code block either — it is a rule about the blocks you do write. Reading it as
+  // `format_code_fence` reported VIOLATED against an answer that contained no code at all.
+  if (/\b(?:tag|tags|tagged|tagging|label|labell?ed|labelling|mark|marked|annotate)\b/i.test(lower) && /\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative) {
+    return { kind: 'code_fence_tagged' };
+  }
 
   if (/\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative) return { kind: 'format_code_fence' };
 
-  const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*["'`“]?([^"'`”.]{2,50})/i.exec(t);
-  if (headingReq) return { kind: 'heading_required', heading: headingReq[1].trim() };
+  // The heading NAME, not the name plus every qualifier after it. "Add a section called Next
+  // Steps at the end of every response" demanded a heading literally titled "Next Steps at
+  // the end of every response", which no output can ever contain — an unsatisfiable rule,
+  // reported as a violation rather than as the parse failure it was.
+  const headingReq =
+    /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*(?:["'`“]([^"'`”.]{2,50})["'`”]|((?:[A-Z][\w'-]*)(?:\s+(?:[A-Z][\w'-]*|of|and|the|for|to)){0,4}))/.exec(t);
+  if (headingReq) {
+    const heading = (headingReq[1] ?? headingReq[2] ?? '')
+      .replace(/\s+(?:at|in|on|before|after|for|when|at the|in the)\b.*$/i, '')
+      .trim();
+    if (heading.length >= 2) return { kind: 'heading_required', heading };
+  }
 
   if (!negative && isCitationRule(t)) return { kind: 'citation_required' };
 
@@ -377,18 +451,34 @@ export function classify(text: string): CheckSpec {
   // Quoted literals are the highest-signal deterministic case.
   const lits = literals(t);
   if (lits.length > 0) {
+    // A CONTRAST rule names both the right answer and the wrong one, and reading every
+    // literal as an OR-ed requirement got it wrong in both directions at once. `Use British
+    // spelling: "colour", not "color"` was satisfied by an output containing "color", and
+    // VIOLATED by an output that never mentioned either. Only the forbidden half is
+    // checkable without knowing whether the topic came up, so only that half is checked.
+    const contrast = /\b(?:not|never|instead of|rather than|over|and not|but not)\b/i.exec(t);
+    if (contrast && lits.length >= 2) {
+      const after = lits.filter((l) => t.indexOf(l, contrast.index) > -1 && t.indexOf(l) > contrast.index);
+      if (after.length) return { kind: 'forbidden_literal', needles: after, caseSensitive: false };
+    }
     return negative
       ? { kind: 'forbidden_literal', needles: lits, caseSensitive: false }
       : { kind: 'required_literal', needles: lits, caseSensitive: false };
   }
 
-  // "never use the word X" / "avoid the phrase X" without quotes
-  const wordAfter = /\b(?:the\s+)?(?:word|phrase|term)s?\s+([a-z][a-z' -]{1,40})/i.exec(t);
+  // "never use the word X" / "avoid the phrase X" without quotes.
+  //
+  // Bounded to the word itself. `([a-z][a-z' -]{1,40})` ran straight past it into the rest
+  // of the sentence, so "Never use the word just when explaining code" forbade the string
+  // "just when explaining code" — which no output will ever contain. A needle that cannot
+  // match is a guaranteed FOLLOWED, badged deterministic: a rule that reports itself obeyed
+  // forever.
+  const wordAfter = /\b(?:the\s+)?(?:word|phrase|term)s?\s+([a-z][a-z'-]{1,24}(?:\s*(?:,|\bor\b|\band\b)\s*[a-z][a-z'-]{1,24}){0,4})/i.exec(t);
   if (wordAfter && negative) {
     const needles = wordAfter[1]
       .split(/\s*(?:,|\bor\b|\band\b)\s*/i)
       .map((w) => w.trim())
-      .filter((w) => w.length > 1);
+      .filter((w) => w.length > 1 && !CLAUSE_STARTER.has(w.toLowerCase()));
     if (needles.length) return { kind: 'forbidden_literal', needles, caseSensitive: false };
   }
 
@@ -399,9 +489,31 @@ export function classify(text: string): CheckSpec {
   return { kind: 'judged', reason: 'No deterministic checker matches this rule; adjudicated by model with verified evidence.' };
 }
 
+/**
+ * A condition at the END of the rule is still a condition.
+ *
+ * Only a LEADING clause was recognised, so "Use code blocks for shell commands" and "Use a
+ * markdown table when comparing options" both parsed as unconditional demands and reported
+ * VIOLATED against every answer that contained no shell command and compared nothing. The
+ * scope was written down; it was simply not read.
+ */
+const TRAILING_CONDITIONAL =
+  /\b(when|whenever|if|unless|while|during|for|in)\s+((?:[a-z][\w'-]*\s+){0,5}?[a-z][\w'-]*)\s*$/i;
+
 export function extractTrigger(text: string): string | null {
-  const m = CONDITIONAL.exec(text.trim());
-  return m ? m[0].replace(/[,.;]$/, '').trim() : null;
+  const t = text.trim().replace(/[.!?]$/, '');
+  const lead = CONDITIONAL.exec(t);
+  if (lead) return lead[0].replace(/[,.;]$/, '').trim();
+  const trail = TRAILING_CONDITIONAL.exec(t);
+  if (trail) {
+    // "for" and "in" are prepositions far more often than conditions. Require the object to
+    // read like a case rather than a place.
+    if (/^(for|in)$/i.test(trail[1]) && !/\b(command|commands|case|cases|example|examples|snippet|snippets|code|error|errors|option|options|comparison|comparisons|list|lists|table|tables)\b/i.test(trail[2])) {
+      return null;
+    }
+    return trail[0].trim();
+  }
+  return null;
 }
 
 export function isUnenforceable(text: string): boolean {

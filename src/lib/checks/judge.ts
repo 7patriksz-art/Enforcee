@@ -141,7 +141,7 @@ export function locateQuote(output: string, quote: string): EvidenceSpan | null 
   return { start, end, quote: output.slice(start, end) };
 }
 
-function majority(verdicts: Verdict[], requested = verdicts.length): { verdict: Verdict; agreement: number } {
+export function majority(verdicts: Verdict[], requested = verdicts.length): { verdict: Verdict; agreement: number } {
   const counts = new Map<Verdict, number>();
   for (const v of verdicts) counts.set(v, (counts.get(v) ?? 0) + 1);
   let best: Verdict = 'UNVERIFIABLE';
@@ -156,7 +156,17 @@ function majority(verdicts: Verdict[], requested = verdicts.length): { verdict: 
   // failing and reporting 100% agreement is precisely the kind of flattering arithmetic
   // this product exists to catch other people doing.
   const denom = Math.max(requested, verdicts.length);
-  return { verdict: best, agreement: denom ? bestN / denom : 0 };
+  const agreement = denom ? bestN / denom : 0;
+
+  // NO MAJORITY IS NOT A VERDICT.
+  //
+  // With three samples returning FOLLOWED, VIOLATED and UNVERIFIABLE, the winner was
+  // whichever count reached the Map first — so the same rule, the same output and the same
+  // evidence produced VIOLATED or FOLLOWED depending on which network response landed
+  // first. A coin flip presented as an adjudication.
+  const tied = [...counts.values()].filter((n) => n === bestN).length > 1;
+  if (tied) return { verdict: 'UNVERIFIABLE', agreement };
+  return { verdict: best, agreement };
 }
 
 export interface JudgeOptions {

@@ -1,6 +1,6 @@
 {
   "name": "enforcee",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Blocks forbidden tool calls before they run, puts your rules back into context after compaction, and audits whether the model actually followed them.",
   "author": {
     "name": "Enforcee",

@@ -49,7 +49,12 @@ function couldBeRule(text) {
   }
   return true;
 }
-function splitRules(text, artifact = "ruleset") {
+function skippedLines(text) {
+  const skipped = [];
+  splitRules(text, "ruleset", skipped);
+  return skipped;
+}
+function splitRules(text, artifact = "ruleset", skipped = []) {
   const lines = text.split(/\r?\n/);
   const out = [];
   const section = [];
@@ -78,6 +83,7 @@ function splitRules(text, artifact = "ruleset") {
         body += " " + lines[end].trim();
       }
       if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
+      else skipped.push({ text: body, line: i + 1 });
       i = end;
       continue;
     }
@@ -122,11 +128,16 @@ var LANGUAGES = {
   slovak: "sk"
 };
 function lengthScope(lower) {
-  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
+  if (/\b(commit message|commit messages|pr title|pull request title|branch name|file ?name|subject line|title|headline|slug|alt text|filename)\b/i.test(lower)) {
+    return "elsewhere";
+  }
+  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|section|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
     lower
   );
   if (!unit) return "output";
   switch (unit[1].toLowerCase()) {
+    case "section":
+      return "paragraph";
     case "bullet":
     case "item":
     case "point":
@@ -155,6 +166,38 @@ var CITATION_CONSTRUCTION = [
   // "sources for every claim", "a reference for each figure"
   /\b(?:sources?|references?|links?|urls?)\b[^.]{0,25}?\bfor\s+(?:every|each|all|any)\b/i
 ];
+var FENCE_STOP = /* @__PURE__ */ new Set([
+  "the",
+  "a",
+  "an",
+  "its",
+  "their",
+  "correct",
+  "right",
+  "proper",
+  "appropriate",
+  "relevant",
+  "each",
+  "every",
+  "all",
+  "any",
+  "with",
+  "and",
+  "or",
+  "of",
+  "in",
+  "for",
+  "to",
+  "as",
+  "block",
+  "blocks",
+  "fence",
+  "fences",
+  "code",
+  "language",
+  "name"
+]);
+var CLAUSE_STARTER = /* @__PURE__ */ new Set(["when", "if", "while", "unless", "in", "for", "to", "at", "on", "with", "the", "a", "an"]);
 function isCitationRule(text) {
   if (NOT_A_CITATION.test(text)) return false;
   return CITATION_CONSTRUCTION.some((re) => re.test(text));
@@ -183,11 +226,23 @@ function classify(text) {
   if (lang && LANGUAGES[lang[1]]) {
     return { kind: "language", code: LANGUAGES[lang[1]], name: lang[1] };
   }
-  const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  const moreThan = /\b(?:more than|over|exceed(?:ing)?|beyond|longer than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  if (moreThan) {
+    const n = Number(moreThan[1]);
+    const scope = lengthScope(lower);
+    return negative2 || /\bno more than\b/i.test(lower) ? { kind: "max_words", n, scope } : { kind: "min_words", n, scope };
+  }
+  const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within|up to)\s+(\d{1,5})\s+words?\b/i.exec(lower);
   if (maxWords) return { kind: "max_words", n: Number(maxWords[1]), scope: lengthScope(lower) };
-  const minWords = /\b(?:at least|no fewer than|minimum of|more than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
+  const minWords = /\b(?:at least|no fewer than|minimum of)\s+(\d{1,5})\s+words?\b/i.exec(lower);
   if (minWords) return { kind: "min_words", n: Number(minWords[1]), scope: lengthScope(lower) };
-  const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
+  const moreChars = /\b(?:more than|over|exceed(?:ing)?|longer than)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
+  if (moreChars) {
+    const n = Number(moreChars[1]);
+    const scope = lengthScope(lower);
+    return negative2 || /\bno more than\b/i.test(lower) ? { kind: "max_chars", n, scope } : { kind: "min_words", n, scope };
+  }
+  const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within|up to)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
   if (maxChars) return { kind: "max_chars", n: Number(maxChars[1]), scope: lengthScope(lower) };
   if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative2) {
     const strict = /\b(only|nothing but|just|solely|exclusively|entire|whole)\b/i.test(lower) || /\bno (prose|commentary|explanation|preamble|other text|extra text)\b/i.test(lower);
@@ -196,11 +251,17 @@ function classify(text) {
   if (/\b(markdown\s+)?table\b/i.test(lower) && /\b(use|include|present|format|as|show)\b/i.test(lower) && !negative2) {
     return { kind: "format_markdown_table" };
   }
-  const fenceLang = /\bcode\s+(?:block|fence)s?\b[^.]{0,30}\b(?:tagged|labell?ed|marked|with)\b[^.]{0,20}?\b([a-z+#]{1,12})\b/i.exec(lower);
-  if (fenceLang) return { kind: "code_fence_language", language: fenceLang[1] };
+  const fenceLang = /\bcode\s+(?:block|fence)s?\b[^.]{0,30}\b(?:tagged|labell?ed|marked|with|as)\b[^.]{0,20}?\b([a-z+#]{1,12})\b/i.exec(lower);
+  if (fenceLang && !FENCE_STOP.has(fenceLang[1])) return { kind: "code_fence_language", language: fenceLang[1] };
+  if (/\b(?:tag|tags|tagged|tagging|label|labell?ed|labelling|mark|marked|annotate)\b/i.test(lower) && /\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative2) {
+    return { kind: "code_fence_tagged" };
+  }
   if (/\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative2) return { kind: "format_code_fence" };
-  const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*["'`“]?([^"'`”.]{2,50})/i.exec(t);
-  if (headingReq) return { kind: "heading_required", heading: headingReq[1].trim() };
+  const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*(?:["'`“]([^"'`”.]{2,50})["'`”]|((?:[A-Z][\w'-]*)(?:\s+(?:[A-Z][\w'-]*|of|and|the|for|to)){0,4}))/.exec(t);
+  if (headingReq) {
+    const heading = (headingReq[1] ?? headingReq[2] ?? "").replace(/\s+(?:at|in|on|before|after|for|when|at the|in the)\b.*$/i, "").trim();
+    if (heading.length >= 2) return { kind: "heading_required", heading };
+  }
   if (!negative2 && isCitationRule(t)) return { kind: "citation_required" };
   const ACTION_VERB = /\b(run|execute|invoke|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
   const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|word|phrase|spell|spelled|capitali[sz]e|output|respond|reply|format)\b|\b(?:call|calls|called|calling|refer to|describe|describes|label|labels|name)\s+(?:it|them|that|this|a|an|the|any|every|each)\b/i;
@@ -209,11 +270,16 @@ function classify(text) {
   }
   const lits = literals(t);
   if (lits.length > 0) {
+    const contrast = /\b(?:not|never|instead of|rather than|over|and not|but not)\b/i.exec(t);
+    if (contrast && lits.length >= 2) {
+      const after = lits.filter((l) => t.indexOf(l, contrast.index) > -1 && t.indexOf(l) > contrast.index);
+      if (after.length) return { kind: "forbidden_literal", needles: after, caseSensitive: false };
+    }
     return negative2 ? { kind: "forbidden_literal", needles: lits, caseSensitive: false } : { kind: "required_literal", needles: lits, caseSensitive: false };
   }
-  const wordAfter = /\b(?:the\s+)?(?:word|phrase|term)s?\s+([a-z][a-z' -]{1,40})/i.exec(t);
+  const wordAfter = /\b(?:the\s+)?(?:word|phrase|term)s?\s+([a-z][a-z'-]{1,24}(?:\s*(?:,|\bor\b|\band\b)\s*[a-z][a-z'-]{1,24}){0,4})/i.exec(t);
   if (wordAfter && negative2) {
-    const needles = wordAfter[1].split(/\s*(?:,|\bor\b|\band\b)\s*/i).map((w) => w.trim()).filter((w) => w.length > 1);
+    const needles = wordAfter[1].split(/\s*(?:,|\bor\b|\band\b)\s*/i).map((w) => w.trim()).filter((w) => w.length > 1 && !CLAUSE_STARTER.has(w.toLowerCase()));
     if (needles.length) return { kind: "forbidden_literal", needles, caseSensitive: false };
   }
   if (UNENFORCEABLE.test(lower)) {
@@ -221,9 +287,19 @@ function classify(text) {
   }
   return { kind: "judged", reason: "No deterministic checker matches this rule; adjudicated by model with verified evidence." };
 }
+var TRAILING_CONDITIONAL = /\b(when|whenever|if|unless|while|during|for|in)\s+((?:[a-z][\w'-]*\s+){0,5}?[a-z][\w'-]*)\s*$/i;
 function extractTrigger(text) {
-  const m = CONDITIONAL.exec(text.trim());
-  return m ? m[0].replace(/[,.;]$/, "").trim() : null;
+  const t = text.trim().replace(/[.!?]$/, "");
+  const lead = CONDITIONAL.exec(t);
+  if (lead) return lead[0].replace(/[,.;]$/, "").trim();
+  const trail = TRAILING_CONDITIONAL.exec(t);
+  if (trail) {
+    if (/^(for|in)$/i.test(trail[1]) && !/\b(command|commands|case|cases|example|examples|snippet|snippets|code|error|errors|option|options|comparison|comparisons|list|lists|table|tables)\b/i.test(trail[2])) {
+      return null;
+    }
+    return trail[0].trim();
+  }
+  return null;
 }
 function isUnenforceable(text) {
   return UNENFORCEABLE.test(text.trim().toLowerCase());
@@ -419,10 +495,17 @@ function findAll(haystack, needle, caseSensitive, limit = 5) {
   }
   return spans;
 }
-function regexSpans(output, pattern, flags, limit = 5) {
+function tryCompile(pattern, flags) {
+  try {
+    return { re: new RegExp(pattern, flags) };
+  } catch {
+    return null;
+  }
+}
+function regexSpans(output, pattern, flags, limit = 5, trusted = false) {
   const f = flags.includes("g") ? flags : flags + "g";
-  const compiled = safeCompile(pattern, f);
-  if ("error" in compiled) return null;
+  const compiled = trusted ? tryCompile(pattern, f) : safeCompile(pattern, f);
+  if (!compiled || "error" in compiled) return null;
   const re = compiled.re;
   const { text: output_ } = boundInput(output);
   output = output_;
@@ -438,9 +521,9 @@ function regexSpans(output, pattern, flags, limit = 5) {
   }
   return spans;
 }
-var EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{FE0F}\u{1F900}-\u{1F9FF}]/gu;
+var EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{26FF}\u{1F900}-\u{1F9FF}]\u{FE0F}?|[\u{2702}\u{2705}\u{2708}-\u{270D}\u{2728}\u{274C}\u{274E}\u{2753}-\u{2755}\u{2757}\u{2795}-\u{2797}\u{27B0}\u{27BF}]/gu;
 function openingFences(output) {
-  const all = regexSpans(output, "^[ \\t]*```[a-zA-Z0-9+#_-]*", "gm", 200) ?? [];
+  const all = regexSpans(output, "^[ \\t]*```[a-zA-Z0-9+#_-]*", "gm", 200, true) ?? [];
   return all.filter((_, i) => i % 2 === 0).map((s) => {
     const lead = s.quote.length - s.quote.trimStart().length;
     return { start: s.start + lead, end: s.end, quote: s.quote.slice(lead) };
@@ -451,7 +534,7 @@ function wordCount(s) {
   return m ? m.length : 0;
 }
 function segments(output, scope) {
-  if (scope === "output") return [{ start: 0, end: output.length, text: output }];
+  if (scope === "output" || scope === "elsewhere") return [{ start: 0, end: output.length, text: output }];
   let masked = output;
   const fence = /```[\s\S]*?(?:```|$)/g;
   masked = masked.replace(fence, (m2) => " ".repeat(m2.length));
@@ -498,14 +581,17 @@ function guessLanguage(s) {
   if (/[Ѐ-ӿ]/.test(s)) return "ru";
   const hits = (re) => (t.match(re) ?? []).length;
   const scores = {
-    en: hits(/\b(the|and|of|to|is|that|with|for|this|are|you|it)\b/g),
+    // The English list was the shortest of the lot while the Romance lists contained bare
+    // single letters that are ordinary English words, so an a-dense but entirely English
+    // answer lost the vote to Portuguese and was VIOLATED against "Always answer in English".
+    en: hits(/\b(the|and|of|to|is|that|with|for|this|are|you|it|a|an|as|in|on|be|have|has|not|but|from|by|at|we|they|will|can|if|so|or|which|what|when|would|there|about|after|all|any)\b/g),
     hu: hits(/\b(és|hogy|nem|egy|meg|van|azt|ez|de|már|csak|még|kell)\b/g),
     de: hits(/\b(und|der|die|das|nicht|ein|ist|zu|mit|für|auch|sich)\b/g),
-    fr: hits(/\b(le|la|les|des|une|est|pour|dans|que|qui|avec|pas)\b/g),
-    es: hits(/\b(el|la|los|las|una|es|para|con|que|por|como|más)\b/g),
-    it: hits(/\b(il|lo|la|che|non|per|con|una|sono|come|più)\b/g),
-    pt: hits(/\b(o|a|os|as|que|não|para|com|uma|mais|como)\b/g),
-    nl: hits(/\b(de|het|een|niet|van|met|voor|dat|zijn|ook)\b/g),
+    fr: hits(/\b(le|les|des|une|est|pour|dans|que|qui|avec|pas|mais|cette|vous|sont|plus)\b/g),
+    es: hits(/\b(el|la|los|las|una|para|con|que|por|como|más|pero|todo|este|esta|cuando|también|desde|hasta)\b/g),
+    it: hits(/\b(il|lo|la|che|non|per|con|una|sono|come|più|questo|quando|anche|dopo|senza)\b/g),
+    pt: hits(/\b(os|que|não|para|com|uma|mais|como|mas|isso|quando|também|então|você|pelo)\b/g),
+    nl: hits(/\b(het|een|niet|van|met|voor|dat|zijn|ook|maar|deze|wordt|kunnen)\b/g),
     pl: hits(/\b(nie|się|jest|tego|dla|jak|który|oraz|może)\b/g),
     tr: hits(/\b(ve|bir|bu|için|ile|olarak|daha|gibi|çok)\b/g)
   };
@@ -546,6 +632,7 @@ function findJsonBlock(output) {
     }
   }
   for (let i = 0; i < output.length; i++) {
+    if (i > 0 && !/[\n\r]/.test(output[i - 1]) && !/^[ \t]*$/.test(output.slice(output.lastIndexOf("\n", i - 1) + 1, i))) continue;
     const open = output[i];
     if (open !== "{" && open !== "[") continue;
     const close = open === "{" ? "}" : "]";
@@ -575,6 +662,15 @@ function findJsonBlock(output) {
   return null;
 }
 function lengthCheck(rule, output, scope, dir, n, measure, unit) {
+  if (scope === "elsewhere") {
+    return res(
+      rule,
+      "UNVERIFIABLE",
+      "This rule limits the length of something that is not the text being audited \u2014 a commit message, a title, a filename. Measuring the answer against it would be a number about the wrong thing.",
+      [],
+      false
+    );
+  }
   const segs = segments(output, scope);
   if (scope !== "output" && segs.length === 0) {
     return res(
@@ -608,6 +704,18 @@ function res(rule, verdict, rationale, evidence, engaged) {
   return { ruleId: rule.id, verdict, method: "deterministic", evidence, rationale, engaged };
 }
 function runDeterministic(rule, output) {
+  const result = runCheck(rule, output);
+  if (result && result.verdict === "VIOLATED" && rule.trigger && result.evidence.length === 0) {
+    return {
+      ...result,
+      verdict: "NOT_APPLICABLE",
+      engaged: false,
+      rationale: `This rule applies ${rule.trigger.toLowerCase()}. Nothing required by it appears in the output, and nothing shows the condition arose \u2014 so it is recorded as not applicable rather than broken. Original check: ${result.rationale}`
+    };
+  }
+  return result;
+}
+function runCheck(rule, output) {
   const c = rule.check;
   switch (c.kind) {
     case "forbidden_literal": {
@@ -641,7 +749,7 @@ function runDeterministic(rule, output) {
       return res(rule, "VIOLATED", `Required pattern /${c.pattern}/ never matches.`, [], true);
     }
     case "no_emoji": {
-      const hits = regexSpans(output, EMOJI_RE.source, "gu") ?? [];
+      const hits = regexSpans(output, EMOJI_RE.source, "gu", 5, true) ?? [];
       if (hits.length) return res(rule, "VIOLATED", `${hits.length} emoji found.`, hits, true);
       return res(rule, "FOLLOWED", "No emoji in the output.", [], false);
     }
@@ -666,6 +774,10 @@ function runDeterministic(rule, output) {
         if (!c.strict) {
           return res(rule, "FOLLOWED", "A valid JSON block is present in the output.", [block], true);
         }
+        const bare = output.trim();
+        if (/^```(?:json|jsonc|json5)?\s*[\s\S]*```$/.test(bare) && bare.indexOf("```", 3) === bare.length - 3) {
+          return res(rule, "FOLLOWED", "The output is a single fenced JSON block and nothing else.", [block], true);
+        }
         return res(
           rule,
           "VIOLATED",
@@ -677,12 +789,22 @@ function runDeterministic(rule, output) {
       return res(rule, "VIOLATED", `No valid JSON found in the output: ${whole.error}`, [], true);
     }
     case "format_markdown_table": {
-      const hits = regexSpans(output, "^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$", "gm", 2) ?? [];
+      const hits = regexSpans(output, "^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$", "gm", 2, true) ?? [];
       return hits.length ? res(rule, "FOLLOWED", "A markdown table is present.", hits, true) : res(rule, "VIOLATED", "No markdown table found.", [], true);
     }
     case "format_code_fence": {
-      const hits = regexSpans(output, "```[\\s\\S]*?```", "g", 3) ?? [];
-      return hits.length ? res(rule, "FOLLOWED", `${hits.length} fenced code block(s) present.`, hits, true) : res(rule, "VIOLATED", "No fenced code block found.", [], true);
+      const hits = regexSpans(output, "```[\\s\\S]*?```", "g", 3, true) ?? [];
+      if (hits.length) return res(rule, "FOLLOWED", `${hits.length} fenced code block(s) present.`, hits, true);
+      const demands = /\b(include|provide|give|show|answer with|reply with|respond with|must contain|always use|use a)\b/i.test(rule.text);
+      return demands ? res(rule, "VIOLATED", "No fenced code block found, and this rule asks for one outright.", [], true) : res(rule, "NOT_APPLICABLE", "This rule governs code blocks, and the output contains none \u2014 so there was nothing for it to govern.", [], false);
+    }
+    case "code_fence_tagged": {
+      const opens = openingFences(output);
+      if (!opens.length) {
+        return res(rule, "NOT_APPLICABLE", "No code blocks in this output, so the rule never applied.", [], false);
+      }
+      const untagged = opens.filter((s2) => s2.quote.slice(3).trim() === "");
+      return untagged.length ? res(rule, "VIOLATED", `${untagged.length} of ${opens.length} code block(s) carry no language tag.`, untagged.slice(0, 3), true) : res(rule, "FOLLOWED", `All ${opens.length} code block(s) carry a language tag.`, opens.slice(0, 3), true);
     }
     case "code_fence_language": {
       const opens = openingFences(output);
@@ -704,8 +826,9 @@ function runDeterministic(rule, output) {
       return res(rule, "VIOLATED", `Required heading "${c.heading}" is missing.`, [], true);
     }
     case "citation_required": {
-      const links = regexSpans(output, "\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+", "g", 5) ?? [];
-      return links.length ? res(rule, "FOLLOWED", `${links.length} citation/link found.`, links, true) : res(rule, "VIOLATED", "No citations or links found in the output.", [], true);
+      const CITATION = "\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+|`?[\\w./-]+\\.[a-z]{1,5}:\\d+(?::\\d+)?`?|\\b(?:section|clause|para(?:graph)?|art(?:icle)?|rule|policy|appendix|table|figure|page)\\s+\\d+(?:\\.\\d+)*\\b|\\[\\d{1,3}\\]|\\b(?:doi|arXiv):\\s?\\S{4,}";
+      const links = regexSpans(output, CITATION, "gi", 5, true) ?? [];
+      return links.length ? res(rule, "FOLLOWED", `${links.length} citation(s) found.`, links, true) : res(rule, "VIOLATED", "No citations found in the output \u2014 no link, file:line reference, section number or footnote marker.", [], true);
     }
     case "language": {
       const got = guessLanguage(output);
@@ -9124,7 +9247,10 @@ function majority(verdicts, requested = verdicts.length) {
     }
   }
   const denom = Math.max(requested, verdicts.length);
-  return { verdict: best, agreement: denom ? bestN / denom : 0 };
+  const agreement = denom ? bestN / denom : 0;
+  const tied = [...counts.values()].filter((n) => n === bestN).length > 1;
+  if (tied) return { verdict: "UNVERIFIABLE", agreement };
+  return { verdict: best, agreement };
 }
 async function runJudge(rules, output, opts = {}) {
   if (rules.length === 0) return { results: [], cost: [] };
@@ -9332,6 +9458,15 @@ function runHealth(rules, rulesetText, totalTokens, opts = {}) {
       severity: "error",
       ruleIds: [],
       message: hasText ? `No rules could be extracted from this file, so nothing was checked. The green result below is the absence of a question, not an answer. Rules are read from bullets, numbered items and directive sentences \u2014 if yours are written another way, they were not seen.` : `The ruleset is empty, so nothing was checked. This is not a pass.`
+    });
+  }
+  const skipped = skippedLines(rulesetText);
+  if (skipped.length) {
+    findings.push({
+      code: "lines_skipped",
+      severity: skipped.length >= rules.length ? "warn" : "info",
+      ruleIds: [],
+      message: `${skipped.length} bullet${skipped.length === 1 ? "" : "s"} did not look like a rule and ${skipped.length === 1 ? "was" : "were"} not checked (line${skipped.length === 1 ? "" : "s"} ${skipped.slice(0, 6).map((x) => x.line).join(", ")}${skipped.length > 6 ? "\u2026" : ""}). Headings, table-of-contents entries and Title Case fragments are skipped on purpose \u2014 but if any of these are real rules, rewrite them as instructions ("Verify customer identity before issuing a refund") so they get checked. First: "${skipped[0].text.slice(0, 60)}"`
     });
   }
   const dupes = findDuplicates(rulesetText);
@@ -9575,14 +9710,14 @@ var DANGEROUS = [
     // backtracks catastrophically: 120,000 characters of flags took 15.7s, exceeding the
     // 10s hook timeout — and a timed-out hook is treated as a NON-BLOCKING error, so every
     // deny rule after it was skipped. A slow guard is an absent guard.
-    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["'\u2018\u2019]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["'\u2018\u2019]?\\s|["'\u2018\u2019]?$|/)`,
+    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,20}["'\u2018\u2019]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["'\u2018\u2019]?\\s|["'\u2018\u2019]?$|/)`,
     tool: "Bash",
     label: "recursive delete of a filesystem root, home directory or parent directory",
     on: true,
     severity: "deny"
   },
   {
-    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["'\u2018\u2019]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b`,
+    re: `rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,20}["'\u2018\u2019]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b`,
     tool: "Bash",
     label: "recursive delete of a system directory",
     on: true,
@@ -9713,7 +9848,7 @@ function proposeDenyRules(rules) {
     id: pid("secret-paths-bash"),
     rule: "Never read secrets and key material through the shell either.",
     tool: "Bash",
-    pattern: "\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|\\.)\\b[^\\n]{0,120}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)",
+    pattern: "\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|dd|tee|python3?|node|perl|ruby|php|openssl|gpg|curl|wget|zip|tar|read|export|env|printenv|\\.)\\b[^\\n]{0,400}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)|<\\s*[^\\n]{0,200}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)",
     flags: "i",
     reason: "Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.",
     basis: "Enforcee standing library of sensitive paths",
@@ -9729,6 +9864,7 @@ function proposeDenyRules(rules) {
     flags: "i",
     reason: "This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.",
     basis: "Enforcee standing library \u2014 guard integrity",
+    trusted: true,
     defaultOn: true,
     severity: "deny"
   });
@@ -9736,10 +9872,24 @@ function proposeDenyRules(rules) {
     id: pid("guard-self-protection-bash"),
     rule: "Never modify or delete the guard through the shell.",
     tool: "Bash",
-    pattern: "\\b(rm|mv|truncate|shred|unlink|tee|dd)\\b[^\\n]{0,120}?\\.(enforcee|claude)/|>\\s*[^\\n]{0,80}?\\.(enforcee|claude)/",
+    pattern: (
+      // Two independent halves, because the first version demanded the path come AFTER the
+      // verb and within 120 characters, and knew seven verbs. Every one of these disarmed the
+      // guard in a single allowed call: `cd .enforcee && rm licence`, `cd .enforcee; echo {} >
+      // policy.json`, `sed -i s/deny/x/ .enforcee/policy.json`, `cp /dev/null
+      // .enforcee/policy.json`, `python3 -c "os.remove('.enforcee/policy.json')"`.
+      //
+      // So: naming .enforcee or .claude ANYWHERE in a command that also contains ANY writing
+      // verb is denied, in either order — and the guard's own filenames are protected on
+      // their own, since `cd` into the directory leaves no path in the command at all.
+      // Reading is deliberately still allowed: `cat .enforcee/ledger.jsonl` is how a person
+      // checks up on us.
+      "(?:\\.(?:enforcee|claude)\\b[^\\n]{0,200}?\\b(?:rm|mv|cp|truncate|shred|unlink|tee|dd|sed|perl|python3?|node|ruby|chmod|chown|install|ln|mktemp)\\b|\\b(?:rm|mv|cp|truncate|shred|unlink|tee|dd|sed|perl|python3?|node|ruby|chmod|chown|install|ln)\\b[^\\n]{0,200}?\\.(?:enforcee|claude)\\b|>>?\\s*[^\\n]{0,120}?\\.(?:enforcee|claude)\\b|\\.(?:enforcee|claude)\\b[^\\n]{0,200}?>>?|\\b(?:rm|mv|truncate|shred|unlink)\\b[^\\n]{0,80}?\\b(?:policy\\.json|ledger\\.jsonl|licence|license)\\b)"
+    ),
     flags: "i",
     reason: "This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.",
     basis: "Enforcee standing library \u2014 guard integrity",
+    trusted: true,
     defaultOn: true,
     severity: "deny"
   });
@@ -10485,7 +10635,9 @@ function extractClaims(text) {
     return text.slice(start, end).replace(/\s+/g, " ").trim();
   };
   for (const m of text.matchAll(FILE_CLAIM)) {
-    out.push({ kind: "file-created", subject: m[1], quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: "file-created", subject: m[1], quote });
   }
   for (const m of text.matchAll(TESTS_PASS)) {
     const quote = sentenceOf(m.index ?? 0);
@@ -10498,7 +10650,9 @@ function extractClaims(text) {
     out.push({ kind: "committed", subject: "git", quote });
   }
   for (const m of text.matchAll(INSTALLED)) {
-    out.push({ kind: "installed", subject: m[1], quote: sentenceOf(m.index ?? 0) });
+    const quote = sentenceOf(m.index ?? 0);
+    if (NOT_AN_ASSERTION.test(quote)) continue;
+    out.push({ kind: "installed", subject: m[1], quote });
   }
   return out;
 }
@@ -10882,7 +11036,7 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
-var VERSION2 = true ? "0.7.0" : "0.0.0-dev";
+var VERSION2 = true ? "0.8.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

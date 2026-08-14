@@ -1,5 +1,5 @@
 import type { HealthFinding, Rule } from '../types';
-import { findDuplicates, isUnenforceable } from '../rules/parse';
+import { findDuplicates, skippedLines, isUnenforceable } from '../rules/parse';
 
 export const HEALTH_VERSION = 'health@1.0.0';
 
@@ -89,6 +89,26 @@ export function runHealth(
       message: hasText
         ? `No rules could be extracted from this file, so nothing was checked. The green result below is the absence of a question, not an answer. Rules are read from bullets, numbered items and directive sentences — if yours are written another way, they were not seen.`
         : `The ruleset is empty, so nothing was checked. This is not a pass.`,
+    });
+  }
+
+  // 0b. Bullets the splitter declined.
+  //
+  // Dropping a line is a decision about someone's ruleset, and every other decision in this
+  // module reports itself. This one did not, so a handbook could lose most of its
+  // obligations to a formatting heuristic and still print a clean receipt.
+  const skipped = skippedLines(rulesetText);
+  if (skipped.length) {
+    findings.push({
+      code: 'lines_skipped',
+      severity: skipped.length >= rules.length ? 'warn' : 'info',
+      ruleIds: [],
+      message:
+        `${skipped.length} bullet${skipped.length === 1 ? '' : 's'} did not look like a rule and ${skipped.length === 1 ? 'was' : 'were'} not checked ` +
+        `(line${skipped.length === 1 ? '' : 's'} ${skipped.slice(0, 6).map((x) => x.line).join(', ')}${skipped.length > 6 ? '…' : ''}). ` +
+        `Headings, table-of-contents entries and Title Case fragments are skipped on purpose — but if any of these are real rules, ` +
+        `rewrite them as instructions ("Verify customer identity before issuing a refund") so they get checked. ` +
+        `First: "${skipped[0].text.slice(0, 60)}"`,
     });
   }
 

@@ -32,6 +32,7 @@ export type CheckKind =
   | 'format_markdown_table'
   | 'format_code_fence'
   | 'code_fence_language'
+  | 'code_fence_tagged'
   | 'heading_required'
   | 'citation_required'
   | 'language'
@@ -76,7 +77,19 @@ export interface Rule {
  * "proven by code" against an answer that obeyed it perfectly. The scope is parsed from
  * the rule and carried here so the checker measures the thing the rule named.
  */
-export type LengthScope = 'output' | 'bullet' | 'line' | 'sentence' | 'paragraph';
+export type LengthScope =
+  | 'output'
+  | 'bullet'
+  | 'line'
+  | 'sentence'
+  | 'paragraph'
+  /**
+   * The rule limits something that is not the audited text at all — a commit message, a PR
+   * title, a filename. Measuring the answer instead reported a 154-character reply as
+   * breaking a 72-character commit-message limit. `elsewhere` resolves to UNVERIFIABLE with
+   * the reason said out loud, which is the only honest verdict available.
+   */
+  | 'elsewhere';
 
 export type CheckSpec =
   | { kind: 'forbidden_literal'; needles: string[]; caseSensitive: boolean }
@@ -92,6 +105,8 @@ export type CheckSpec =
   | { kind: 'format_markdown_table' }
   | { kind: 'format_code_fence' }
   | { kind: 'code_fence_language'; language: string }
+  /** Every opening fence must carry SOME language tag — the rule names no specific one. */
+  | { kind: 'code_fence_tagged' }
   | { kind: 'heading_required'; heading: string }
   | { kind: 'citation_required' }
   | { kind: 'language'; code: string; name: string }
@@ -146,7 +161,9 @@ export interface HealthFinding {
     /** Pair analysis stopped early. Never let a cap read as a clean bill of health. */
     | 'pair_findings_truncated'
     /** Nothing was extracted at all — an empty audit is not a passing one. */
-    | 'no_rules';
+    | 'no_rules'
+    /** Bullets the splitter declined. A dropped rule is never dropped quietly. */
+    | 'lines_skipped';
   severity: 'info' | 'warn' | 'error';
   ruleIds: string[];
   message: string;

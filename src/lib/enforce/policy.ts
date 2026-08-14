@@ -83,14 +83,14 @@ const DANGEROUS: { re: string; tool: string; label: string; on: boolean; severit
     // backtracks catastrophically: 120,000 characters of flags took 15.7s, exceeding the
     // 10s hook timeout — and a timed-out hook is treated as a NON-BLOCKING error, so every
     // deny rule after it was skipped. A slow guard is an absent guard.
-    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["\'‘’]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["\'‘’]?\\s|["\'‘’]?$|/)',
+    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,20}["\'‘’]?(?:/|~|\\$HOME|\\.\\.)(?:\\*|["\'‘’]?\\s|["\'‘’]?$|/)',
     tool: 'Bash',
     label: 'recursive delete of a filesystem root, home directory or parent directory',
     on: true,
     severity: 'deny',
   },
   {
-    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,6}["\'‘’]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b',
+    re: 'rm\\s+(?:-{1,2}[a-zA-Z-]{1,20}\\s+){0,20}["\'‘’]?/(?:etc|usr|bin|sbin|lib|var|boot|dev|proc|sys|System|Library|Applications|Users|home)\\b',
     tool: 'Bash',
     label: 'recursive delete of a system directory',
     on: true,
@@ -264,7 +264,8 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     rule: 'Never read secrets and key material through the shell either.',
     tool: 'Bash',
     pattern:
-      '\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|\\.)\\b[^\\n]{0,120}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)',
+      '\\b(cat|less|more|head|tail|bat|nl|od|xxd|strings|cp|mv|scp|rsync|base64|grep|rg|awk|sed|source|dd|tee|python3?|node|perl|ruby|php|openssl|gpg|curl|wget|zip|tar|read|export|env|printenv|\\.)\\b[^\\n]{0,400}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)'
+      + '|<\\s*[^\\n]{0,200}?(\\.env(\\.|\\b)|id_rsa|id_ed25519|\\.pem\\b|\\.ssh/|\\.aws/|credentials\\.json)',
     flags: 'i',
     reason: 'Denied on Read, so the shell is denied too. Print the value yourself if you truly need it.',
     basis: 'Enforcee standing library of sensitive paths',
@@ -286,6 +287,7 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     reason:
       'This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.',
     basis: 'Enforcee standing library — guard integrity',
+    trusted: true,
     defaultOn: true,
     severity: 'deny',
   });
@@ -295,11 +297,27 @@ export function proposeDenyRules(rules: Rule[]): Proposal[] {
     rule: 'Never modify or delete the guard through the shell.',
     tool: 'Bash',
     pattern:
-      '\\b(rm|mv|truncate|shred|unlink|tee|dd)\\b[^\\n]{0,120}?\\.(enforcee|claude)/|>\\s*[^\\n]{0,80}?\\.(enforcee|claude)/',
+      // Two independent halves, because the first version demanded the path come AFTER the
+      // verb and within 120 characters, and knew seven verbs. Every one of these disarmed the
+      // guard in a single allowed call: `cd .enforcee && rm licence`, `cd .enforcee; echo {} >
+      // policy.json`, `sed -i s/deny/x/ .enforcee/policy.json`, `cp /dev/null
+      // .enforcee/policy.json`, `python3 -c "os.remove('.enforcee/policy.json')"`.
+      //
+      // So: naming .enforcee or .claude ANYWHERE in a command that also contains ANY writing
+      // verb is denied, in either order — and the guard's own filenames are protected on
+      // their own, since `cd` into the directory leaves no path in the command at all.
+      // Reading is deliberately still allowed: `cat .enforcee/ledger.jsonl` is how a person
+      // checks up on us.
+      '(?:\\.(?:enforcee|claude)\\b[^\\n]{0,200}?\\b(?:rm|mv|cp|truncate|shred|unlink|tee|dd|sed|perl|python3?|node|ruby|chmod|chown|install|ln|mktemp)\\b' +
+      '|\\b(?:rm|mv|cp|truncate|shred|unlink|tee|dd|sed|perl|python3?|node|ruby|chmod|chown|install|ln)\\b[^\\n]{0,200}?\\.(?:enforcee|claude)\\b' +
+      '|>>?\\s*[^\\n]{0,120}?\\.(?:enforcee|claude)\\b' +
+      '|\\.(?:enforcee|claude)\\b[^\\n]{0,200}?>>?' +
+      '|\\b(?:rm|mv|truncate|shred|unlink)\\b[^\\n]{0,80}?\\b(?:policy\\.json|ledger\\.jsonl|licence|license)\\b)',
     flags: 'i',
     reason:
       'This is the policy you asked to be enforced. Changing it is a decision for the human, not a step in a task. Ask them.',
     basis: 'Enforcee standing library — guard integrity',
+    trusted: true,
     defaultOn: true,
     severity: 'deny',
   });
