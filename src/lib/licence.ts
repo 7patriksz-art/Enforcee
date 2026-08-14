@@ -100,9 +100,9 @@ export function licenceMessage(check: LicenceCheck): string {
   if (check.ok) return `Licensed to ${check.payload.sub} · ${check.payload.plan}`;
   switch (check.reason) {
     case 'missing':
-      return 'No licence found. The guard is part of Builder — enforcee.vercel.app/pricing. Auditing stays free.';
+      return 'No licence found. The guard is part of Builder — enforcee.com/pricing. Auditing stays free.';
     case 'expired':
-      return `Licence expired${check.detail ? ` on ${check.detail}` : ''}. Renew at enforcee.vercel.app/pricing.`;
+      return `Licence expired${check.detail ? ` on ${check.detail}` : ''}. Renew at enforcee.com/pricing.`;
     case 'bad-signature':
       return 'That licence did not verify. Copy it again from your account page.';
     case 'malformed':

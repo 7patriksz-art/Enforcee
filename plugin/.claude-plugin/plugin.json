@@ -4,9 +4,9 @@
   "description": "Blocks forbidden tool calls before they run, puts your rules back into context after compaction, and audits whether the model actually followed them.",
   "author": {
     "name": "Enforcee",
-    "url": "https://enforcee.vercel.app"
+    "url": "https://enforcee.com"
   },
-  "homepage": "https://enforcee.vercel.app",
+  "homepage": "https://enforcee.com",
   "repository": "https://github.com/7patriksz-art/Enforcee",
   "license": "SEE LICENSE IN LICENSE",
   "keywords": [

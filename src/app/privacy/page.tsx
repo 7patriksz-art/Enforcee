@@ -31,7 +31,7 @@ export default function Privacy() {
       <Clause n="01" title="Who we are">
         <p>
           Enforcee is operated by the individual publishing it at{' '}
-          <span className="font-mono text-[15px]">enforcee.vercel.app</span>, based in Hungary, in the European Union.
+          <span className="font-mono text-[15px]">enforcee.com</span>, based in Hungary, in the European Union.
           For the purposes of the UK and EU General Data Protection Regulation we are the <em>controller</em> of the
           personal data described here.
         </p>

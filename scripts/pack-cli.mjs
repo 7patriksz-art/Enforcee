@@ -111,7 +111,7 @@ Not a single licence — see [LICENSE](./LICENSE). The guard runner and this CLI
 are MIT, because they run on your machine and you should be able to read them. The audit
 engine is source-available but all rights reserved.
 
-https://enforcee.vercel.app
+https://enforcee.com
 `
 );
 
@@ -125,7 +125,7 @@ const pkg = {
     'claude', 'claude-code', 'agents-md', 'claude-md', 'cursorrules', 'ai-agents',
     'compliance', 'verification', 'audit', 'guardrails', 'llm', 'code-review', 'ci',
   ],
-  homepage: 'https://enforcee.vercel.app',
+  homepage: 'https://enforcee.com',
   bugs: { url: 'https://github.com/7patriksz-art/Enforcee/issues' },
   repository: { type: 'git', url: 'git+https://github.com/7patriksz-art/Enforcee.git' },
   license: 'SEE LICENSE IN LICENSE',

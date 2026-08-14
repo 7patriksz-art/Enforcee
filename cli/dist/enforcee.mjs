@@ -10379,9 +10379,9 @@ function licenceMessage(check) {
   if (check.ok) return `Licensed to ${check.payload.sub} \xB7 ${check.payload.plan}`;
   switch (check.reason) {
     case "missing":
-      return "No licence found. The guard is part of Builder \u2014 enforcee.vercel.app/pricing. Auditing stays free.";
+      return "No licence found. The guard is part of Builder \u2014 enforcee.com/pricing. Auditing stays free.";
     case "expired":
-      return `Licence expired${check.detail ? ` on ${check.detail}` : ""}. Renew at enforcee.vercel.app/pricing.`;
+      return `Licence expired${check.detail ? ` on ${check.detail}` : ""}. Renew at enforcee.com/pricing.`;
     case "bad-signature":
       return "That licence did not verify. Copy it again from your account page.";
     case "malformed":
@@ -11455,7 +11455,7 @@ async function main() {
       console.log(C.grey("  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself."));
     }
     console.log(C.grey(`  ${licenceMessage(lic)}`));
-    console.log(C.grey("  Add the hook wiring with the installer from enforcee.vercel.app/install,"));
+    console.log(C.grey("  Add the hook wiring with the installer from enforcee.com/install,"));
     console.log(C.grey("  or point .claude/settings.json at .enforcee/guard.mjs yourself."));
     console.log("");
     return;

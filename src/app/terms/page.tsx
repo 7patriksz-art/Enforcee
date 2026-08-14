@@ -33,7 +33,7 @@ export default function Terms() {
       <Clause n="01" title="Who this agreement is with, and when it starts">
         <p>
           &ldquo;Enforcee&rdquo;, &ldquo;we&rdquo; and &ldquo;us&rdquo; mean the individual operating the service at{' '}
-          <span className="font-mono text-[15px]">enforcee.vercel.app</span>, based in Hungary, in the European Union.
+          <span className="font-mono text-[15px]">enforcee.com</span>, based in Hungary, in the European Union.
           &ldquo;You&rdquo; means the person or organisation using it.
         </p>
         <p>

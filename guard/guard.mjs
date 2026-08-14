@@ -749,7 +749,7 @@ function main() {
     emit({
       systemMessage:
         `Enforcee: ${lic.message} Nothing is being enforced this session — your tools all still work. ` +
-        `Run \`npx enforcee licence\` to check, or see enforcee.vercel.app/pricing. Auditing stays free.`,
+        `Run \`npx enforcee licence\` to check, or see enforcee.com/pricing. Auditing stays free.`,
     });
   }
 

@@ -13,7 +13,7 @@
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ??
   (process.env.VERCEL_ENV === 'production'
-    ? 'https://enforcee.vercel.app'
+    ? 'https://enforcee.com'
     : process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : 'http://localhost:3000')

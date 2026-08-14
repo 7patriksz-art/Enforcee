@@ -1,6 +1,6 @@
 {
   "name": "enforcee",
-  "owner": { "name": "Enforcee", "url": "https://enforcee.vercel.app" },
+  "owner": { "name": "Enforcee", "url": "https://enforcee.com" },
   "plugins": [
     {
       "name": "enforcee",

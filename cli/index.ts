@@ -480,7 +480,7 @@ async function main(): Promise<void> {
       console.log(C.grey('  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself.'));
     }
     console.log(C.grey(`  ${licenceMessage(lic)}`));
-    console.log(C.grey('  Add the hook wiring with the installer from enforcee.vercel.app/install,'));
+    console.log(C.grey('  Add the hook wiring with the installer from enforcee.com/install,'));
     console.log(C.grey('  or point .claude/settings.json at .enforcee/guard.mjs yourself.'));
     console.log('');
     return;
