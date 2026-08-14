@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { compilePolicy, proposeDenyRules, toDenyRule } from '../src/lib/enforce/policy';
 import { parseRuleset } from '../src/lib/rules/parse';
 import { issueLicence } from '../src/lib/licence';
+import { fileURLToPath } from 'node:url';
 
 /**
  * FAIL-OPEN is the worst outcome this file can produce.
@@ -19,7 +20,7 @@ import { issueLicence } from '../src/lib/licence';
  * Every case here was executed against the real runner and observed to allow.
  */
 
-const REAL_GUARD = new URL('../guard/guard.mjs', import.meta.url).pathname;
+const REAL_GUARD = fileURLToPath(new URL('../guard/guard.mjs', import.meta.url));
 let GUARD = REAL_GUARD;
 let LICENCE = '';
 

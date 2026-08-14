@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * D-018: our unit cost is never stated on a public surface.
@@ -10,7 +11,7 @@ import { join } from 'node:path';
  * convenient later. The rule was a sentence in a decisions doc; a sentence is not a
  * control, and five duplicated-source bugs on this project have made that point already.
  */
-const ROOT = new URL('../src', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../src', import.meta.url));
 const GUARDED = ['@/lib/admin-metrics', './Metrics', '@/app/admin/Metrics'];
 
 function walk(dir: string): string[] {

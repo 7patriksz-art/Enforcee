@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkClaims } from '../src/lib/prevent/claims';
 import { parseTranscript } from '../src/lib/transcript/parse';
+import { fileURLToPath } from 'node:url';
 
 /**
  * guard.mjs carries a SECOND implementation of the claim checks, and it has to: the guard is
@@ -40,7 +41,7 @@ function fixture(files: string[], commands: string[], prose: string) {
 }
 
 function guardVerdicts(f: ReturnType<typeof fixture>): Record<string, string> {
-  execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+  execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
     input: JSON.stringify({ hook_event_name: 'Stop', session_id: 's', cwd: f.dir, transcript_path: f.transcript }),
     cwd: f.dir, encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' },
   });
@@ -106,7 +107,7 @@ describe('the guard reads the right records', () => {
     writeFileSync(join(dir, '.enforcee/policy.json'), JSON.stringify({ deny: [], warn: [], reinject: { text: '' } }));
     const transcript = join(dir, 't.jsonl');
     writeFileSync(transcript, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
-    execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+    execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
       input: JSON.stringify({ hook_event_name: 'Stop', session_id: 's', cwd: dir, transcript_path: transcript }),
       cwd: dir, encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' },
     });
@@ -140,7 +141,7 @@ describe('the guard reads the right records', () => {
     const dir = mkdtempSync(join(tmpdir(), 'guard-noread-'));
     mkdirSync(join(dir, '.enforcee'), { recursive: true });
     writeFileSync(join(dir, '.enforcee/policy.json'), JSON.stringify({ deny: [], warn: [], reinject: { text: '' } }));
-    execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+    execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
       input: JSON.stringify({ hook_event_name: 'Stop', session_id: 's', cwd: dir, transcript_path: join(dir, 'nope.jsonl') }),
       cwd: dir, encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' },
     });

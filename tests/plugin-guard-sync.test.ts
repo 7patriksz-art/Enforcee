@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The plugin ships its own copy of the guard runner, and it has to.
@@ -49,7 +50,7 @@ describe('plugin guard runner', () => {
     });
     // No licence in the test environment, so the guard should step aside and say so —
     // proving the file is present, parses, and produces well-formed JSON on stdout.
-    const out = execFileSync(process.execPath, [new URL('../plugin/guard.mjs', import.meta.url).pathname], {
+    const out = execFileSync(process.execPath, [fileURLToPath(new URL('../plugin/guard.mjs', import.meta.url))], {
       input: payload, encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' },
     });
     expect(() => JSON.parse(out || '{}')).not.toThrow();

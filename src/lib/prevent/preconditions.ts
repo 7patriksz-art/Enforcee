@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { runControlled, type ControlledResult } from './control';
@@ -51,27 +51,65 @@ export interface PreconditionResult {
  */
 const SAFE_BIN = /^[A-Za-z0-9._+-]{1,64}$/;
 
+const IS_WINDOWS = process.platform === 'win32';
+
+/**
+ * On Windows a command is a FILE WITH AN EXTENSION, and the execute bit does not exist.
+ *
+ * The shell-free rewrite that removed the injection hole was written and tested on Linux
+ * only, so `node` was looked up as a file literally named `node` with the X_OK bit set.
+ * On Windows it is `node.exe` and X_OK is meaningless — so `which()` returned null for
+ * every binary that has ever existed, and preflight told every Windows user that node, git
+ * and npm were not installed. A precondition layer that reports the environment as empty is
+ * worse than not having one, because it is confidently wrong.
+ *
+ * Caught by Patrik running the suite on his own machine. The suite had never run on Windows,
+ * so "all tests green" was a claim about Linux that read like a claim about the product.
+ */
+const PATHEXT = (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
+  .split(';')
+  .map((e) => e.trim())
+  .filter(Boolean);
+
+function isExecutable(p: string): boolean {
+  try {
+    if (!statSync(p).isFile()) return false;
+    if (IS_WINDOWS) return true;
+    accessSync(p, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The filenames a bare command name could correspond to on this platform. */
+function candidateNames(bin: string): string[] {
+  if (!IS_WINDOWS) return [bin];
+  const already = PATHEXT.some((e) => bin.toLowerCase().endsWith(e.toLowerCase()));
+  return already ? [bin] : [bin, ...PATHEXT.map((e) => bin + e.toLowerCase())];
+}
+
 function which(bin: string): string | null {
   if (!SAFE_BIN.test(bin)) return null;
-  const isExecutable = (p: string) => {
-    try {
-      accessSync(p, constants.X_OK);
-      return statSync(p).isFile();
-    } catch {
-      return false;
-    }
-  };
-  if (bin.includes('/')) return isExecutable(bin) ? bin : null;
+  if (bin.includes('/') || bin.includes('\\')) {
+    for (const name of candidateNames(bin)) if (isExecutable(name)) return name;
+    return null;
+  }
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     if (!dir) continue;
-    const full = isAbsolute(dir) ? join(dir, bin) : join(process.cwd(), dir, bin);
-    if (isExecutable(full)) return full;
+    const base = isAbsolute(dir) ? dir : join(process.cwd(), dir);
+    for (const name of candidateNames(bin)) {
+      const full = join(base, name);
+      if (isExecutable(full)) return full;
+    }
   }
   return null;
 }
 
 export function checkPrecondition(p: Precondition, cwd = process.cwd()): PreconditionResult {
-  const at = (t: string) => (t.startsWith('/') ? t : `${cwd}/${t}`);
+  // isAbsolute, not startsWith('/'). A Windows absolute path is `C:\...`, which does not
+  // start with a slash, so it was joined onto cwd and produced a path that cannot exist.
+  const at = (t: string) => (isAbsolute(t) ? t : join(cwd, t));
 
   switch (p.kind) {
     case 'binary': {
@@ -108,7 +146,11 @@ export function checkPrecondition(p: Precondition, cwd = process.cwd()): Precond
     }
     case 'command': {
       try {
-        const out = execFileSync('sh', ['-c', p.target], {
+        // The PLATFORM shell, not a hardcoded POSIX one. `sh` does not exist on Windows,
+        // so every 'command' precondition failed there with ENOENT and was reported as the
+        // command failing rather than as the shell being absent — a wrong answer dressed up
+        // as a real one.
+        const out = execSync(p.target, {
           encoding: 'utf8', cwd, stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
         });
         const ok = p.expect ? out.includes(p.expect) : true;
@@ -171,7 +213,7 @@ export async function verifyTool(
     instrument: bin,
     control: () => which(bin) !== null,
     probe: () =>
-      execFileSync('sh', ['-c', controlCommand], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 }),
+      execSync(controlCommand, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 }),
     interpret: (out) =>
       out.includes(expectInOutput)
         ? { verdict: 'CONFIRMED', reason: `${bin} answered its control correctly` }

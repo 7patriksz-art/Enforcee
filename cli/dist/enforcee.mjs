@@ -10513,30 +10513,45 @@ function actionShaped(rules) {
 }
 
 // src/lib/prevent/preconditions.ts
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { accessSync, constants, existsSync as existsSync2, statSync } from "node:fs";
 import { delimiter, isAbsolute, join as join2 } from "node:path";
 var SAFE_BIN = /^[A-Za-z0-9._+-]{1,64}$/;
+var IS_WINDOWS = process.platform === "win32";
+var PATHEXT = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map((e) => e.trim()).filter(Boolean);
+function isExecutable(p) {
+  try {
+    if (!statSync(p).isFile()) return false;
+    if (IS_WINDOWS) return true;
+    accessSync(p, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function candidateNames(bin) {
+  if (!IS_WINDOWS) return [bin];
+  const already = PATHEXT.some((e) => bin.toLowerCase().endsWith(e.toLowerCase()));
+  return already ? [bin] : [bin, ...PATHEXT.map((e) => bin + e.toLowerCase())];
+}
 function which(bin) {
   if (!SAFE_BIN.test(bin)) return null;
-  const isExecutable = (p) => {
-    try {
-      accessSync(p, constants.X_OK);
-      return statSync(p).isFile();
-    } catch {
-      return false;
-    }
-  };
-  if (bin.includes("/")) return isExecutable(bin) ? bin : null;
+  if (bin.includes("/") || bin.includes("\\")) {
+    for (const name of candidateNames(bin)) if (isExecutable(name)) return name;
+    return null;
+  }
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
     if (!dir) continue;
-    const full = isAbsolute(dir) ? join2(dir, bin) : join2(process.cwd(), dir, bin);
-    if (isExecutable(full)) return full;
+    const base = isAbsolute(dir) ? dir : join2(process.cwd(), dir);
+    for (const name of candidateNames(bin)) {
+      const full = join2(base, name);
+      if (isExecutable(full)) return full;
+    }
   }
   return null;
 }
 function checkPrecondition(p, cwd = process.cwd()) {
-  const at = (t) => t.startsWith("/") ? t : `${cwd}/${t}`;
+  const at = (t) => isAbsolute(t) ? t : join2(cwd, t);
   switch (p.kind) {
     case "binary": {
       const path2 = which(p.target);
@@ -10572,7 +10587,7 @@ function checkPrecondition(p, cwd = process.cwd()) {
     }
     case "command": {
       try {
-        const out = execFileSync("sh", ["-c", p.target], {
+        const out = execSync(p.target, {
           encoding: "utf8",
           cwd,
           stdio: ["ignore", "pipe", "pipe"],
@@ -11036,7 +11051,7 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
-var VERSION2 = true ? "0.8.0" : "0.0.0-dev";
+var VERSION2 = true ? "0.8.1" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,

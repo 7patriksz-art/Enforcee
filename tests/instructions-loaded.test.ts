@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The guard turns an InstructionsLoaded event into OBSERVED load evidence.
@@ -18,7 +19,7 @@ import { join } from 'node:path';
  * gap the product is left with once the vendor's native behaviour is accounted for.
  */
 function runGuard(payload: object, cwd: string): void {
-  execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+  execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
     input: JSON.stringify(payload),
     cwd,
     encoding: 'utf8',
@@ -70,7 +71,7 @@ describe('InstructionsLoaded → observed load evidence', () => {
 
   it('never blocks — recording a load must not interfere with loading', () => {
     const dir = fixture();
-    const out = execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+    const out = execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
       input: JSON.stringify({ hook_event_name: 'InstructionsLoaded', session_id: 's3', cwd: dir, file_path: 'x', load_reason: 'session_start' }),
       cwd: dir,
       encoding: 'utf8',

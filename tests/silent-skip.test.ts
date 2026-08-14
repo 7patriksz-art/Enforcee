@@ -8,6 +8,7 @@ import { parseRuleset } from '../src/lib/rules/parse';
 import { inferPreconditions, clauses } from '../src/lib/prevent/infer';
 import { checkPrecondition } from '../src/lib/prevent/preconditions';
 import { checkClaim } from '../src/lib/prevent/claims';
+import { fileURLToPath } from 'node:url';
 
 /**
  * A skipped check reads exactly like a passed one. That is the failure this product is
@@ -110,7 +111,7 @@ describe('model prose cannot steer a filesystem probe', () => {
 
 describe('the loaded-instructions ledger does not overcount at scale', () => {
   function fire(dir: string, session: string) {
-    execFileSync(process.execPath, [new URL('../guard/guard.mjs', import.meta.url).pathname], {
+    execFileSync(process.execPath, [fileURLToPath(new URL('../guard/guard.mjs', import.meta.url))], {
       input: JSON.stringify({
         hook_event_name: 'InstructionsLoaded',
         session_id: session,

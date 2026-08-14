@@ -21,7 +21,7 @@
  */
 
 import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
-import { join, dirname, resolve, relative } from 'node:path';
+import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { createPublicKey, verify } from 'node:crypto';
 
@@ -225,7 +225,8 @@ function checkClaimsLocally(text, commands, cwd, toolCalls) {
 
   for (const m of text.matchAll(CLAIM_FILE)) {
     const target = m[1];
-    const full = resolve(target.startsWith('/') ? target : join(cwd, target));
+    // isAbsolute, not startsWith('/') — a Windows absolute path is `C:\...`.
+    const full = resolve(isAbsolute(target) ? target : join(cwd, target));
     // The path came out of model prose. A claim about a file outside the project is not one
     // we can adjudicate, and checking it would make this a filesystem oracle the model
     // steers. Same rule as src/lib/prevent/claims.ts.

@@ -24,7 +24,9 @@ describe('preconditions', () => {
   it('detects a present binary', () => {
     const r = checkPrecondition({ kind: 'binary', target: 'node', why: 'runs everything' });
     expect(r.met).toBe(true);
-    expect(r.evidence).toMatch(/→ \//);
+    // NOT /→ \// — that asserts a POSIX path separator, which made a green suite on Linux
+    // say nothing about Windows, where the resolved path starts `C:\`.
+    expect(r.evidence).toMatch(/→ \S+/);
   });
 
   it('distinguishes a missing file from a file of the wrong type', () => {
