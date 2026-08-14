@@ -45,9 +45,35 @@ export async function POST(req: Request) {
     );
   }
 
-  // Sign-in is not required to pay. Making someone create an account before they can
-  // give you money is a conversion tax with no upside; we reconcile on the webhook.
+  // SIGN IN FIRST. This reverses the previous comment, deliberately, and the reason is
+  // that the previous comment was wrong in the one direction that costs a real person money.
+  //
+  // Anonymous checkout set `client_reference_id: undefined` and `metadata.user_id: ''`, and
+  // the webhook wrote `user_id: null`. Nothing reads a null. So a signed-out person could
+  // pay, be charged every month, and hold a subscription attached to no account — no guard,
+  // no licence, no history, and no way to ever claim it by signing in afterwards. Taking
+  // money and delivering nothing is not a conversion problem, it is the worst outcome this
+  // codebase can produce.
+  //
+  // `12-DECISIONS-monetisation.md` listed this under "still open BEFORE checkout goes live".
+  // Checkout went live on 2026-08-14 with it still open, so it is closed here.
+  //
+  // The reconciliation route the doc prefers — match a Stripe subscription to a
+  // SUPABASE-VERIFIED email on sign-in, never a Stripe-supplied one — is the better long-term
+  // answer and is not built yet. Until it is, requiring an account is the only version of
+  // this that cannot silently take somebody's money.
   const user = await getUser();
+  if (!user) {
+    return NextResponse.json(
+      {
+        error: 'Sign in first, so the subscription lands on your account.',
+        detail:
+          'Payment has to be attached to an account or the licence has nowhere to go. It takes about twenty seconds and you come straight back here.',
+        signInUrl: '/signin?next=/pricing',
+      },
+      { status: 401 }
+    );
+  }
 
   try {
     const session = await stripe.checkout.sessions.create({

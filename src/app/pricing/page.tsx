@@ -353,6 +353,13 @@ export default function Pricing() {
         body: JSON.stringify({ plan, interval }),
       });
       const json = await res.json();
+      // A signed-out visitor is sent to sign in and returned here, rather than shown an
+      // error they cannot act on. Checkout requires an account because a subscription with
+      // no account attached is money taken for nothing — see the checkout route.
+      if (res.status === 401 && json.signInUrl) {
+        window.location.href = json.signInUrl as string;
+        return;
+      }
       if (!res.ok || !json.url) throw new Error(json.detail ?? json.error ?? 'Could not start checkout.');
       window.location.href = json.url as string;
     } catch (e) {

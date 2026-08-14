@@ -12,9 +12,11 @@
  */
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_ENV === 'production'
-    ? 'https://enforcee.com'
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000')
+  // NEVER fall back to the custom domain. It was hardcoded here as a production fallback
+  // on 2026-08-14, hours before the domain was actually attached to the project — so had
+  // that shipped while DNS still pointed at the registrar's parking page, every canonical
+  // URL, every OG card and every Stripe redirect would have sent a paying customer to a
+  // page that is not ours. The deployment URL always works. Switching to enforcee.com is a
+  // deliberate act: set NEXT_PUBLIC_SITE_URL in Vercel, once the domain resolves.
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
 ).replace(/\/+$/, '');

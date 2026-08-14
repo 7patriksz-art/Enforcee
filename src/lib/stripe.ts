@@ -1,3 +1,4 @@
+import { SITE_URL } from './site-url';
 import Stripe from 'stripe';
 
 /**
@@ -17,9 +18,13 @@ export function stripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
+/**
+ * Stripe's redirect origin — the SAME origin as everything else.
+ *
+ * This was a second, independent copy of the site-URL logic with a different fallback, in
+ * the one module where getting it wrong strands a customer who has just been charged.
+ * Twelfth instance on this project of one idea living in two places. It now delegates.
+ */
 export function siteUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-  );
+  return SITE_URL;
 }
