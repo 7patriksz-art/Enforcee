@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { ParsedSession } from '../transcript/parse';
 
 /**
@@ -148,7 +148,24 @@ export function checkClaim(claim: Claim, ctx: ClaimContext): CheckedClaim {
       // process.cwd() instead false-accused every file claim in a monorepo or any CI job
       // invoked from the repo root.
       const base = ctx.session?.cwd || ctx.cwd;
-      const full = isAbsolute(claim.subject) ? claim.subject : join(base, claim.subject);
+      const full = resolve(isAbsolute(claim.subject) ? claim.subject : join(base, claim.subject));
+
+      // The path came out of MODEL PROSE, matched by a regex that permits dots and slashes.
+      // "I created `../../../etc/shadow`" therefore turned this checker into a
+      // filesystem-existence oracle driven by whatever the model chose to write, reported
+      // back with the resolved absolute path in the evidence line. A claim about a file
+      // outside the project is not a claim we can adjudicate, and saying so is the honest
+      // answer as well as the safe one.
+      const inside = resolve(base) === full || !relative(resolve(base), full).startsWith('..');
+      if (!inside) {
+        return {
+          ...claim,
+          verdict: 'UNCHECKABLE',
+          evidence: `path escapes the session directory (${base})`,
+          reason: 'This claim names a path outside the project, so it is not checked here — deliberately, not by accident.',
+        };
+      }
+
       const there = existsSync(full) && statSync(full).isFile();
       return {
         ...claim,

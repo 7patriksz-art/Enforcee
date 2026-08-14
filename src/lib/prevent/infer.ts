@@ -50,6 +50,65 @@ const ENV_RE = /\b([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+){1,6})\b/g;
 
 /** Words that make a mention hypothetical rather than a dependency. */
 const HYPOTHETICAL = /\b(example|e\.g\.|such as|for instance|like|imagine|suppose|hypothetical|sample)\b/i;
+const NEGATIVE = /\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i;
+const POSITIVE = /\b(always|must|ensure|make sure|require[ds]?|should|need to)\b/i;
+
+export interface Clause {
+  text: string;
+  start: number;
+  end: number;
+  negative: boolean;
+  hypothetical: boolean;
+}
+
+/**
+ * Cut a rule into clauses, each carrying its own polarity and its own hypothetical-ness.
+ *
+ * Both flags used to be measured over the WHOLE rule, and one word anywhere in it decided
+ * everything. "Always run `dig` to check a domain, not something like `whois`" contains
+ * both "not" and "like", so every precondition in it was dropped — including the `dig` that
+ * this entire layer exists because of. The dropped inference is silent, which makes it the
+ * same failure shape as the missing tool it was meant to catch.
+ *
+ * Scope carries FORWARD across commas and resets at a sentence break, because that is how
+ * English works: "Never use `foo`, `bar`, or `baz`" forbids all three, and treating the
+ * later items as unscoped would turn a prohibition into a demand.
+ */
+export function clauses(text: string): Clause[] {
+  const out: Clause[] = [];
+  let neg = false;
+  let hypo = false;
+  let at = 0;
+
+  // Split on commas, semicolons, dashes and sentence ends, keeping offsets.
+  const re = /[;.]|\s+[—–-]\s+|,\s*/g;
+  const pieces: { text: string; start: number; reset: boolean }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    pieces.push({ text: text.slice(at, m.index), start: at, reset: /[;.]/.test(m[0]) });
+    at = m.index + m[0].length;
+  }
+  pieces.push({ text: text.slice(at), start: at, reset: false });
+
+  for (const p of pieces) {
+    if (!p.text.trim()) continue;
+    if (NEGATIVE.test(p.text)) neg = true;
+    else if (POSITIVE.test(p.text)) neg = false;
+    if (HYPOTHETICAL.test(p.text)) hypo = true;
+    else if (POSITIVE.test(p.text)) hypo = false;
+
+    out.push({ text: p.text, start: p.start, end: p.start + p.text.length, negative: neg, hypothetical: hypo });
+    if (p.reset) {
+      neg = false;
+      hypo = false;
+    }
+  }
+  return out;
+}
+
+function clauseAt(cs: Clause[], index: number): Clause | undefined {
+  return cs.find((c) => index >= c.start && index < c.end) ?? cs[cs.length - 1];
+}
 
 export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
   const out: InferredPrecondition[] = [];
@@ -64,20 +123,22 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
 
   for (const rule of rules) {
     const text = rule.text;
-    // "run something like `npm test`" names a tool as an illustration, not a dependency.
-    if (HYPOTHETICAL.test(text)) continue;
+    const cs = clauses(text);
 
-    // A rule that FORBIDS something does not require it to be present.
+    // A rule that FORBIDS something does not require it to be present, and an illustration
+    // is not a dependency — but both are decided per clause now, not per rule.
     //
     // "Never log or commit `DATABASE_URL`" made preflight demand that DATABASE_URL be
     // exported into the shell, and fail CI until it was — a security ruleset producing a
-    // demand to put production secrets in the environment. "Never run `terraform apply` by
-    // hand" demanded terraform be installed. Polarity was simply never consulted.
-    if (/\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i.test(text)) continue;
+    // demand to put production secrets in the environment. Polarity was never consulted.
+    const usable = (index: number) => {
+      const c = clauseAt(cs, index);
+      return c ? !c.negative && !c.hypothetical : true;
+    };
 
     for (const { re, bin } of TOOL_HINTS) {
       const m = text.match(re);
-      if (m) {
+      if (m && usable(m.index ?? 0)) {
         add({
           kind: 'binary',
           target: bin(m),
@@ -93,6 +154,7 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
         const name = m[1];
         // A path is handled below; a bare word with a dot is not a command.
         if (name.includes('.')) continue;
+        if (!usable(m.index ?? 0)) continue;
         add({
           kind: 'binary',
           target: name,
@@ -104,6 +166,7 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
     }
 
     for (const m of text.matchAll(PATH_RE)) {
+      if (!usable(m.index ?? 0)) continue;
       add({ kind: 'file', target: m[1], why: `referenced by a rule: "${text.slice(0, 70)}"`, from: m[0], ruleId: rule.id });
     }
 
@@ -111,6 +174,7 @@ export function inferPreconditions(rules: Rule[]): InferredPrecondition[] {
       // Skip acronyms that are not variables — HTTP, JSON, API on their own carry no underscore,
       // which the pattern already requires, but a few compound words still slip through.
       if (/^(HTTP_|WWW_)/.test(m[1])) continue;
+      if (!usable(m.index ?? 0)) continue;
       add({ kind: 'env', target: m[1], why: `required by a rule: "${text.slice(0, 70)}"`, from: m[1], ruleId: rule.id });
     }
   }

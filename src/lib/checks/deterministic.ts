@@ -1,4 +1,4 @@
-import type { EvidenceSpan, Rule, RuleResult } from '../types';
+import type { EvidenceSpan, LengthScope, Rule, RuleResult } from '../types';
 import { boundInput, checkRegexSafety, safeCompile } from './safe-regex';
 
 export const DETERMINISTIC_VERSION = 'det@1.0.0';
@@ -73,6 +73,73 @@ export function wordCount(s: string): number {
   return m ? m.length : 0;
 }
 
+/** A piece of the output a length rule is measured over, with its offsets kept. */
+export interface Segment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Cut the output into the units a rule named.
+ *
+ * Offsets are preserved so a violated segment can be quoted back as real evidence
+ * instead of a bare number. Fenced code blocks are excluded from bullet, line and
+ * sentence scopes — a code sample is not a bullet, and counting its words as if it were
+ * turns "keep each bullet under 12 words" into a complaint about your code.
+ */
+export function segments(output: string, scope: LengthScope): Segment[] {
+  if (scope === 'output') return [{ start: 0, end: output.length, text: output }];
+
+  // Blank out fenced blocks so they neither form segments nor pad neighbouring ones,
+  // while keeping every offset identical to the original string.
+  let masked = output;
+  const fence = /```[\s\S]*?(?:```|$)/g;
+  masked = masked.replace(fence, (m) => ' '.repeat(m.length));
+
+  const out: Segment[] = [];
+  const push = (start: number, end: number) => {
+    const raw = masked.slice(start, end);
+    const lead = raw.length - raw.trimStart().length;
+    const text = raw.trim();
+    if (text.length) out.push({ start: start + lead, end: start + lead + text.length, text });
+  };
+
+  if (scope === 'line' || scope === 'bullet') {
+    let at = 0;
+    for (const line of masked.split('\n')) {
+      const isBullet = /^\s*(?:[-*+]|\d+[.)])\s+\S/.test(line);
+      if (scope === 'line' || isBullet) {
+        // For a bullet, measure the content, not the marker.
+        const off = scope === 'bullet' ? (/^\s*(?:[-*+]|\d+[.)])\s+/.exec(line)?.[0].length ?? 0) : 0;
+        push(at + off, at + line.length);
+      }
+      at += line.length + 1;
+    }
+    return out;
+  }
+
+  if (scope === 'paragraph') {
+    let at = 0;
+    for (const para of masked.split(/\n\s*\n/)) {
+      push(at, at + para.length);
+      at += para.length + 2;
+    }
+    return out;
+  }
+
+  // Sentences. Deliberately crude and deliberately conservative: a split we are unsure
+  // about produces a longer segment, which can only ever under-report a violation.
+  const re = /[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(masked))) push(m.index, m.index + m[0].length);
+  return out;
+}
+
+function scopeNoun(scope: LengthScope): string {
+  return scope === 'output' ? 'the output' : scope;
+}
+
 /**
  * Cheap script/stopword-based language guess. Only used to check an explicit
  * "respond in <language>" rule, and only ever produces FOLLOWED/VIOLATED when
@@ -115,6 +182,122 @@ export function guessLanguage(s: string): string | null {
 function refusalReason(pattern: string): string {
   const v = checkRegexSafety(pattern);
   return `This rule was not checked because ${v.reason ?? 'its pattern could not be run safely'}. Rewriting the pattern more simply will get it checked — we would rather tell you than report a pass we did not earn.`;
+}
+
+function parseJson(s: string): { ok: true } | { ok: false; error: string } {
+  try {
+    JSON.parse(s);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/**
+ * Find a JSON value embedded in prose: a fenced block first, then a balanced brace or
+ * bracket run. Returns the span so the verdict can point at it rather than assert it.
+ */
+export function findJsonBlock(output: string): EvidenceSpan | null {
+  const fence = /```(?:json|jsonc|json5)?[ \t]*\r?\n([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = fence.exec(output))) {
+    const body = m[1];
+    if (parseJson(body.trim()).ok) {
+      const lead = body.length - body.trimStart().length;
+      const start = m.index + m[0].indexOf(body) + lead;
+      return { start, end: start + body.trim().length, quote: body.trim() };
+    }
+  }
+
+  // Balanced scan, so we never hand JSON.parse a truncated slice.
+  for (let i = 0; i < output.length; i++) {
+    const open = output[i];
+    if (open !== '{' && open !== '[') continue;
+    const close = open === '{' ? '}' : ']';
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < output.length; j++) {
+      const ch = output[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const slice = output.slice(i, j + 1);
+          if (slice.length > 1 && parseJson(slice).ok) return { start: i, end: j + 1, quote: slice };
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Length rules, measured over the unit the rule named.
+ *
+ * A per-unit violation quotes the offending unit. A per-unit pass says how many units
+ * were measured, because "0 bullets, therefore compliant" is not the same claim as
+ * "9 bullets, all within the limit" and the difference matters to whoever reads it.
+ */
+function lengthCheck(
+  rule: Rule,
+  output: string,
+  scope: LengthScope,
+  dir: 'max' | 'min',
+  n: number,
+  measure: (s: string) => number,
+  unit: string
+): RuleResult {
+  const segs = segments(output, scope);
+
+  if (scope !== 'output' && segs.length === 0) {
+    return res(
+      rule,
+      'NOT_APPLICABLE',
+      `The output contains no ${scopeNoun(scope)}s, so a per-${scopeNoun(scope)} limit never applied.`,
+      [],
+      false
+    );
+  }
+
+  const bad = segs
+    .map((s) => ({ s, v: measure(s.text) }))
+    .filter(({ v }) => (dir === 'max' ? v > n : v < n));
+
+  const word = dir === 'max' ? 'limit' : 'minimum';
+
+  if (bad.length === 0) {
+    const worst = segs.reduce((acc, s) => {
+      const v = measure(s.text);
+      return dir === 'max' ? Math.max(acc, v) : Math.min(acc, v);
+    }, dir === 'max' ? 0 : Number.POSITIVE_INFINITY);
+    return res(
+      rule,
+      'FOLLOWED',
+      scope === 'output'
+        ? `${worst} ${unit} ${dir === 'max' ? '≤' : '≥'} ${word} of ${n}.`
+        : `All ${segs.length} ${scopeNoun(scope)}s are within the ${word} of ${n} ${unit} (worst: ${worst}).`,
+      [],
+      true
+    );
+  }
+
+  const evidence = bad.slice(0, 3).map(({ s }) => ({ start: s.start, end: s.end, quote: s.text }));
+  const detail =
+    scope === 'output'
+      ? `${bad[0].v} ${unit} ${dir === 'max' ? 'exceeds' : 'is below'} the ${word} of ${n}.`
+      : `${bad.length} of ${segs.length} ${scopeNoun(scope)}s ${dir === 'max' ? 'exceed' : 'fall below'} the ${word} of ${n} ${unit} (worst: ${
+          dir === 'max' ? Math.max(...bad.map((b) => b.v)) : Math.min(...bad.map((b) => b.v))
+        }).`;
+  return res(rule, 'VIOLATED', detail, evidence, true);
 }
 
 function res(
@@ -192,37 +375,38 @@ export function runDeterministic(rule: Rule, output: string): RuleResult | null 
       return res(rule, 'FOLLOWED', 'No em dashes. This has a high natural base rate, so absence is a real signal.', [], true);
     }
 
-    case 'max_words': {
-      const n = wordCount(output);
-      return n <= c.n
-        ? res(rule, 'FOLLOWED', `${n} words ≤ limit of ${c.n}.`, [], true)
-        : res(rule, 'VIOLATED', `${n} words exceeds the limit of ${c.n}.`, [], true);
-    }
+    case 'max_words':
+      return lengthCheck(rule, output, c.scope, 'max', c.n, wordCount, 'words');
 
-    case 'min_words': {
-      const n = wordCount(output);
-      return n >= c.n
-        ? res(rule, 'FOLLOWED', `${n} words ≥ minimum of ${c.n}.`, [], true)
-        : res(rule, 'VIOLATED', `${n} words is below the minimum of ${c.n}.`, [], true);
-    }
+    case 'min_words':
+      return lengthCheck(rule, output, c.scope, 'min', c.n, wordCount, 'words');
 
-    case 'max_chars': {
-      const n = output.length;
-      return n <= c.n
-        ? res(rule, 'FOLLOWED', `${n} characters ≤ limit of ${c.n}.`, [], true)
-        : res(rule, 'VIOLATED', `${n} characters exceeds the limit of ${c.n}.`, [], true);
-    }
+    case 'max_chars':
+      return lengthCheck(rule, output, c.scope, 'max', c.n, (s) => s.length, 'characters');
 
     case 'format_json': {
-      const trimmed = output.trim();
-      const fenced = /^```(?:json)?\s*([\s\S]*?)```$/.exec(trimmed);
-      const candidate = fenced ? fenced[1].trim() : trimmed;
-      try {
-        JSON.parse(candidate);
-        return res(rule, 'FOLLOWED', 'Output parses as valid JSON.', [span(output, 0, Math.min(80, output.length))!].filter(Boolean), true);
-      } catch (e) {
-        return res(rule, 'VIOLATED', `Output is not valid JSON: ${(e as Error).message}`, [], true);
+      const whole = parseJson(output.trim());
+      if (whole.ok) {
+        return res(rule, 'FOLLOWED', 'The output parses as valid JSON.', [span(output, 0, Math.min(80, output.length))!].filter(Boolean), true);
       }
+
+      // A JSON block inside an explanation satisfies "return it as JSON". It does not
+      // satisfy "reply with nothing but JSON". Reporting the first as VIOLATED was a
+      // false accusation against an answer that did exactly what was asked.
+      const block = findJsonBlock(output);
+      if (block) {
+        if (!c.strict) {
+          return res(rule, 'FOLLOWED', 'A valid JSON block is present in the output.', [block], true);
+        }
+        return res(
+          rule,
+          'VIOLATED',
+          'A valid JSON block is present, but this rule asks for JSON and nothing else, and the output contains other text as well.',
+          [block],
+          true
+        );
+      }
+      return res(rule, 'VIOLATED', `No valid JSON found in the output: ${whole.error}`, [], true);
     }
 
     case 'format_markdown_table': {

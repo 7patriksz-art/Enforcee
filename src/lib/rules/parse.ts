@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CheckSpec, Rule, RuleSource } from '../types';
+import type { CheckSpec, LengthScope, Rule, RuleSource } from '../types';
 
 export const PARSER_VERSION = 'parse@1.0.0';
 
@@ -194,24 +194,110 @@ const LANGUAGES: Record<string, string> = {
 };
 
 /**
+ * What a length limit is measured over.
+ *
+ * "Keep each bullet under 12 words" measured across the whole answer is a guaranteed
+ * VIOLATED on any answer with two bullets, badged as proven by code. The distributive
+ * words — each, every, per, any, no ... longer than — are the whole signal, and they are
+ * unambiguous enough to read mechanically.
+ */
+export function lengthScope(lower: string): LengthScope {
+  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
+    lower
+  );
+  if (!unit) return 'output';
+  switch (unit[1].toLowerCase()) {
+    case 'bullet':
+    case 'item':
+    case 'point':
+    case 'entry':
+    case 'row':
+    case 'step':
+      return 'bullet';
+    case 'line':
+      return 'line';
+    case 'sentence':
+      return 'sentence';
+    case 'paragraph':
+      return 'paragraph';
+    default:
+      // "every answer", "each response" — the unit IS the whole output.
+      return 'output';
+  }
+}
+
+/**
+ * Is this rule asking for citations, or does it merely contain a word that citations use?
+ *
+ * "Always use the source of truth in config.ts" contains "source" and "always", which was
+ * the entire old test, and it was therefore compiled into a demand for a URL — reported
+ * VIOLATED, with a deterministic badge, against an answer that never had any business
+ * containing a link. Source, reference and link are among the most overloaded nouns in
+ * software English.
+ *
+ * So: an unambiguous citing word, or an explicit construction, and never when the phrase
+ * is one of the compounds where the noun means something else. Anything that misses here
+ * falls through to the judge, which costs a model call and accuses no one.
+ */
+const NOT_A_CITATION =
+  /\b(source code|sources? of truth|single source|open[- ]?sources?|source files?|source control|source maps?|data ?sources?|upstream sources?|reference implementations?|reference architectures?|reference manuals?|cross[- ]?references?|by reference|passed by reference|frame of reference|sym(?:bolic )?links?|hard links?|links? between|linke[dr]|linking (?:the|a|an|to)? ?(?:library|libraries|binary|object)|linker)\b/i;
+
+const CITATION_CONSTRUCTION: RegExp[] = [
+  // "cite", "citation", "cited" — this noun has one meaning.
+  /\bcit(?:e|es|ed|ing|ation|ations)\b/i,
+  // "include sources", "provide a link", "end with references"
+  /\b(?:provide|include|add|give|supply|attach|append|list|end with|finish with|back(?:ed)? (?:it |them |this )?(?:up )?with|support(?:ed)? (?:it |them |claims? |statements? )?with)\b[^.]{0,40}?\b(?:sources?|references?|links?|urls?)\b/i,
+  // "link to the docs", "with a link to"
+  /\blinks?\s+to\b/i,
+  // "sources for every claim", "a reference for each figure"
+  /\b(?:sources?|references?|links?|urls?)\b[^.]{0,25}?\bfor\s+(?:every|each|all|any)\b/i,
+];
+
+export function isCitationRule(text: string): boolean {
+  if (NOT_A_CITATION.test(text)) return false;
+  return CITATION_CONSTRUCTION.some((re) => re.test(text));
+}
+
+/**
  * Classify a rule into a deterministic checker, or fall through to the judge.
  * Order matters: most specific patterns first.
  */
 export function classify(text: string): CheckSpec {
   const t = text.trim();
   const lower = t.toLowerCase();
-  const negative = /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|not allowed)\b/i.test(lower);
+  // Polarity decides whether a pattern is something to demand or something to forbid, so
+  // missing a negation inverts the rule. "Reject anything matching /debug/" read as a
+  // POSITIVE requirement, and then reported VIOLATED against every answer that correctly
+  // contained no "debug" — an accusation for obeying.
+  const negative =
+    /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|forbid|not allowed|reject|rejects|prohibit|prohibits|prohibited|disallow|disallows|disallowed|ban|bans|banned|off[- ]limits)\b/i.test(
+      lower
+    );
 
   // Explicit user regex: /pattern/flags
-  const rx = /(?:^|\s)\/((?:[^/\\]|\\.){2,120})\/([gimsuy]{0,5})(?=\s|$)/.exec(t);
+  //
+  // Slashes are ordinary punctuation in English, so the shape alone is not consent.
+  // "Never write to /etc/ or /tmp/ directly" parsed as the regex /etc/ — and "etc" is a
+  // substring of "fetch", so every answer that used the word fetch was reported VIOLATED
+  // with a code badge on it. A path is not a pattern, and reading one as the other turns a
+  // sensible rule into a machine that accuses you at random.
+  //
+  // So we require a deliberate signal: a regex metacharacter inside the pattern, explicit
+  // flags after it, or the rule saying in words that it means a pattern. Everything else
+  // falls through to the literal and judged paths, which cost a model call at worst.
+  const rx = /(?:^|\s)\/((?:[^/\\]|\\.){2,120})\/([gimsuy]{0,5})(?=[\s.,;:!?]|$)/.exec(t);
   if (rx) {
-    try {
-      new RegExp(rx[1], rx[2]);
-      return negative
-        ? { kind: 'forbidden_regex', pattern: rx[1], flags: rx[2] || 'g' }
-        : { kind: 'required_regex', pattern: rx[1], flags: rx[2] || 'g' };
-    } catch {
-      /* fall through */
+    const meta = /[\\^$.*+?()[\]{}|]/.test(rx[1]);
+    const declared = /\b(regex|regexp|regular expression|pattern|matche?s?|matching)\b/i.test(lower);
+    if (meta || rx[2].length > 0 || declared) {
+      try {
+        new RegExp(rx[1], rx[2]);
+        return negative
+          ? { kind: 'forbidden_regex', pattern: rx[1], flags: rx[2] || 'g' }
+          : { kind: 'required_regex', pattern: rx[1], flags: rx[2] || 'g' };
+      } catch {
+        /* fall through */
+      }
     }
   }
 
@@ -224,16 +310,22 @@ export function classify(text: string): CheckSpec {
   }
 
   const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within)\s+(\d{1,5})\s+words?\b/i.exec(lower);
-  if (maxWords) return { kind: 'max_words', n: Number(maxWords[1]) };
+  if (maxWords) return { kind: 'max_words', n: Number(maxWords[1]), scope: lengthScope(lower) };
 
   const minWords = /\b(?:at least|no fewer than|minimum of|more than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
-  if (minWords) return { kind: 'min_words', n: Number(minWords[1]) };
+  if (minWords) return { kind: 'min_words', n: Number(minWords[1]), scope: lengthScope(lower) };
 
   const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
-  if (maxChars) return { kind: 'max_chars', n: Number(maxChars[1]) };
+  if (maxChars) return { kind: 'max_chars', n: Number(maxChars[1]), scope: lengthScope(lower) };
 
   if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative) {
-    return { kind: 'format_json' };
+    // "Return the config as JSON" is satisfied by a JSON block inside an explanation.
+    // "Reply with nothing but JSON" is not. Only the second licenses parsing the whole
+    // output, so only the second sets strict.
+    const strict =
+      /\b(only|nothing but|just|solely|exclusively|entire|whole)\b/i.test(lower) ||
+      /\bno (prose|commentary|explanation|preamble|other text|extra text)\b/i.test(lower);
+    return { kind: 'format_json', strict };
   }
 
   if (/\b(markdown\s+)?table\b/i.test(lower) && /\b(use|include|present|format|as|show)\b/i.test(lower) && !negative) {
@@ -248,9 +340,7 @@ export function classify(text: string): CheckSpec {
   const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*["'`“]?([^"'`”.]{2,50})/i.exec(t);
   if (headingReq) return { kind: 'heading_required', heading: headingReq[1].trim() };
 
-  if (/\b(cite|citation|source|reference|link)s?\b/i.test(lower) && /\b(always|must|include|provide|add|end with|required)\b/i.test(lower) && !negative) {
-    return { kind: 'citation_required' };
-  }
+  if (!negative && isCitationRule(t)) return { kind: 'citation_required' };
 
   // A rule about DOING something is not a rule about the text containing something.
   //
@@ -267,9 +357,19 @@ export function classify(text: string): CheckSpec {
   // Deliberately narrow: it fires only on an action verb, and never when the rule is
   // explicitly about the text ("include", "mention", "start with"). A missed action rule
   // costs an unnecessary judged call; a false positive here costs someone's trust.
+  // `call` is not on this list, and the reason is a missed violation rather than a false
+  // one: `Never call a defect a "bug"` is a rule about WORDS. It was classified as an
+  // action, so it resolved to UNVERIFIABLE — and an output that used the word "bug" ten
+  // times passed a check that was one string comparison away from proving otherwise. A rule
+  // silently exempted from checking is the failure this product exists to name, and it
+  // reads exactly like compliance.
   const ACTION_VERB =
-    /\b(run|execute|invoke|call|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
-  const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|output|respond|reply|format)\b/i;
+    /\b(run|execute|invoke|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
+  // Naming verbs need an object to be naming verbs. A bare `\bcall\b` also matches the
+  // "call" in "on-call engineer", which sent "Escalate to the on-call engineer within 15
+  // minutes" — an action rule if there ever was one — back to the judge.
+  const ABOUT_TEXT =
+    /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|word|phrase|spell|spelled|capitali[sz]e|output|respond|reply|format)\b|\b(?:call|calls|called|calling|refer to|describe|describes|label|labels|name)\s+(?:it|them|that|this|a|an|the|any|every|each)\b/i;
   if (ACTION_VERB.test(t) && !ABOUT_TEXT.test(t)) {
     return { kind: 'action', hint: 'enforcee verify' };
   }

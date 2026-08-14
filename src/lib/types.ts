@@ -68,6 +68,16 @@ export interface Rule {
   tokens: number;
 }
 
+/**
+ * What a length limit is measured over.
+ *
+ * "Keep each bullet under 12 words" and "Keep the answer under 12 words" are different
+ * rules, and measuring the first over the whole output produces a VIOLATED badged
+ * "proven by code" against an answer that obeyed it perfectly. The scope is parsed from
+ * the rule and carried here so the checker measures the thing the rule named.
+ */
+export type LengthScope = 'output' | 'bullet' | 'line' | 'sentence' | 'paragraph';
+
 export type CheckSpec =
   | { kind: 'forbidden_literal'; needles: string[]; caseSensitive: boolean }
   | { kind: 'required_literal'; needles: string[]; caseSensitive: boolean }
@@ -75,10 +85,10 @@ export type CheckSpec =
   | { kind: 'required_regex'; pattern: string; flags: string }
   | { kind: 'no_emoji' }
   | { kind: 'no_em_dash' }
-  | { kind: 'max_words'; n: number }
-  | { kind: 'min_words'; n: number }
-  | { kind: 'max_chars'; n: number }
-  | { kind: 'format_json' }
+  | { kind: 'max_words'; n: number; scope: LengthScope }
+  | { kind: 'min_words'; n: number; scope: LengthScope }
+  | { kind: 'max_chars'; n: number; scope: LengthScope }
+  | { kind: 'format_json'; strict: boolean }
   | { kind: 'format_markdown_table' }
   | { kind: 'format_code_fence' }
   | { kind: 'code_fence_language'; language: string }
@@ -134,7 +144,9 @@ export interface HealthFinding {
     /** Too many rules to compare every pair; analysis was bounded and says so. */
     | 'ruleset_too_large'
     /** Pair analysis stopped early. Never let a cap read as a clean bill of health. */
-    | 'pair_findings_truncated';
+    | 'pair_findings_truncated'
+    /** Nothing was extracted at all — an empty audit is not a passing one. */
+    | 'no_rules';
   severity: 'info' | 'warn' | 'error';
   ruleIds: string[];
   message: string;

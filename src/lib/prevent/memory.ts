@@ -39,6 +39,13 @@ export interface MemoryEntry {
   supersededBy?: string;
   /** Why it was declined or retired, in the user's terms. */
   note?: string;
+  /**
+   * Fingerprints of the occurrences already counted, so a mention is a mention and not a
+   * run. Without it, `enforcee learn notes.md` twice reported "heard 2×" and offered a rule
+   * the person had said exactly once — the tool counting its own invocations as evidence
+   * about the user, which is the flattery loop in miniature.
+   */
+  occurrences?: string[];
 }
 
 export interface Memory {
@@ -134,17 +141,60 @@ export function saveMemory(memory: Memory, cwd = process.cwd()): void {
  * Returns the entry so the caller can see how many times it now stands at — the second
  * mention is what turns a remark into a proposal.
  */
-export function noteMention(memory: Memory, id: string, rule: string, quote: string, today: string): MemoryEntry {
+export function noteMention(
+  memory: Memory,
+  id: string,
+  rule: string,
+  quote: string,
+  today: string,
+  /**
+   * Identifies the OCCURRENCE — which sentence, in which document, at which offset. The
+   * same occurrence seen again is the same mention seen again, not a second one. Omit only
+   * where no stable source exists, and accept the over-count that follows.
+   */
+  occurrence?: string
+): MemoryEntry {
   // Matched on the preference, not the exact wording — see preferenceKey.
   const found = memory.entries.find((e) => e.id === id || samePreference(e.rule, rule));
   if (found) {
+    if (occurrence) {
+      const seen = (found.occurrences ??= []);
+      if (seen.includes(occurrence)) return found;
+      seen.push(occurrence);
+    }
     found.mentions += 1;
     return found;
   }
   const entry: MemoryEntry = {
     id, rule, quote, firstSeen: today, mentions: 1, status: 'proposed', consequence: 'audited',
+    ...(occurrence ? { occurrences: [occurrence] } : {}),
   };
   memory.entries.push(entry);
+  return entry;
+}
+
+/**
+ * Record the user's decision about a learned preference.
+ *
+ * Until this existed, nothing in the product ever set a status other than `proposed`, so
+ * `activeRules()` returned an empty list on every call and the entire supersession layer —
+ * the part that stops a passing remark quietly undoing a rule — could not fire. It was
+ * tested, documented and unreachable.
+ *
+ * Nothing is removed here either. A declined preference stays declined so it is not
+ * re-proposed, and an accepted one becomes something a future contradiction is measured
+ * against.
+ */
+export function decide(
+  memory: Memory,
+  id: string,
+  status: MemoryEntry['status'],
+  note?: string
+): MemoryEntry | null {
+  const entry = memory.entries.find((e) => e.id === id || e.id.startsWith(id));
+  if (!entry) return null;
+  entry.status = status;
+  if (note) entry.note = note;
   return entry;
 }
 

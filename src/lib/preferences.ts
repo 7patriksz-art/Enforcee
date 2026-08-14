@@ -17,7 +17,16 @@ export const PREFERENCES_VERSION = 'prefs@1.0.0';
  * The user promotes it to a rule, or it stays a suggestion forever.
  */
 
-export type Polarity = 'require' | 'forbid';
+/**
+ * `permit` is not a rule and never becomes one.
+ *
+ * "You can always force-push there" was read as an instruction and became the rule
+ * "Always force-push there" — an obligation manufactured out of a permission, inverting
+ * what the person said into something they would never have written. Permissions REMOVE
+ * constraints. The right response is not a new rule; it is to notice that an existing rule
+ * may no longer be wanted and say so, which is what supersede.ts does with these.
+ */
+export type Polarity = 'require' | 'forbid' | 'permit';
 export type Strength = 'strong' | 'medium' | 'weak';
 
 export interface PreferenceCandidate {
@@ -161,9 +170,21 @@ const GERUND = /^\w+ing\b/i;
 function frame(object: string, polarity: Polarity): string {
   const o = tidy(object);
   if (!o) return '';
+  if (polarity === 'permit') return `Allowed: ${o}.`;
   if (GERUND.test(o)) return polarity === 'forbid' ? `Avoid ${o}.` : `Prefer ${o}.`;
   return polarity === 'forbid' ? `Never ${o}.` : `Always ${o}.`;
 }
+
+/**
+ * Permission framing immediately before an instruction word.
+ *
+ * "you can always force-push there", "it's fine to skip the linter", "feel free to just
+ * commit it" — each contains a word the instruction patterns match, and each is granting
+ * latitude rather than issuing an order. Checked against the text just before the match so
+ * the instruction patterns themselves stay simple.
+ */
+const PERMISSION_LEAD =
+  /\b(can|could|may|are (?:free|welcome|allowed)|feel free|it'?s (?:fine|ok|okay|alright)|that'?s (?:fine|ok|okay)|fine|ok|okay|allowed|no problem|happy for you|up to you|if you (?:want|like|prefer))\b[^.!?]{0,12}$/i;
 
 const TOO_VAGUE = /^(?:it|that|this|them|those|these|things?|stuff|anything|something)\b/i;
 
@@ -202,7 +223,13 @@ export function extractPreferences(text: string, opts: ExtractOptions = {}): Pre
       if (TOO_VAGUE.test(tidied.replace(/^(?:do|be|have|make|say|get|use)\s+/i, ''))) continue;
       if (!hasSubstance(tidied)) continue;
 
-      const rule = p.rule(object);
+      // Latitude, not an order. Reading "you can always X" as "Always X." invents an
+      // obligation out of a permission — and then, being a rule, it would be enforced.
+      const lead = text.slice(Math.max(0, m.index - 40), m.index);
+      const permitted = p.polarity === 'require' && PERMISSION_LEAD.test(lead);
+      const polarity: Polarity = permitted ? 'permit' : p.polarity;
+
+      const rule = permitted ? frame(object, 'permit') : p.rule(object);
       if (!rule) continue;
       const norm = normalize(rule);
       if (norm.length < 6) continue;
@@ -219,9 +246,9 @@ export function extractPreferences(text: string, opts: ExtractOptions = {}): Pre
       out.push({
         id,
         rule,
-        polarity: p.polarity,
+        polarity,
         strength: p.strength,
-        basis: p.basis,
+        basis: permitted ? `${p.basis}, framed as permission — recorded, never turned into an obligation` : p.basis,
         quote: m[0],
         start,
         end,

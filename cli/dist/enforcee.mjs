@@ -7,7 +7,7 @@ var __export = (target, all) => {
 
 // cli/index.ts
 import { readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, existsSync as existsSync5, copyFileSync, chmodSync } from "node:fs";
-import { join as join4, dirname } from "node:path";
+import { join as join5, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
@@ -121,16 +121,60 @@ var LANGUAGES = {
   romanian: "ro",
   slovak: "sk"
 };
+function lengthScope(lower) {
+  const unit = /\b(?:each|every|per|any|all|no)\s+(?:\w+\s+){0,2}?(bullet|line|sentence|paragraph|item|point|entry|row|step|answer|response|reply|message|output)\b/i.exec(
+    lower
+  );
+  if (!unit) return "output";
+  switch (unit[1].toLowerCase()) {
+    case "bullet":
+    case "item":
+    case "point":
+    case "entry":
+    case "row":
+    case "step":
+      return "bullet";
+    case "line":
+      return "line";
+    case "sentence":
+      return "sentence";
+    case "paragraph":
+      return "paragraph";
+    default:
+      return "output";
+  }
+}
+var NOT_A_CITATION = /\b(source code|sources? of truth|single source|open[- ]?sources?|source files?|source control|source maps?|data ?sources?|upstream sources?|reference implementations?|reference architectures?|reference manuals?|cross[- ]?references?|by reference|passed by reference|frame of reference|sym(?:bolic )?links?|hard links?|links? between|linke[dr]|linking (?:the|a|an|to)? ?(?:library|libraries|binary|object)|linker)\b/i;
+var CITATION_CONSTRUCTION = [
+  // "cite", "citation", "cited" — this noun has one meaning.
+  /\bcit(?:e|es|ed|ing|ation|ations)\b/i,
+  // "include sources", "provide a link", "end with references"
+  /\b(?:provide|include|add|give|supply|attach|append|list|end with|finish with|back(?:ed)? (?:it |them |this )?(?:up )?with|support(?:ed)? (?:it |them |claims? |statements? )?with)\b[^.]{0,40}?\b(?:sources?|references?|links?|urls?)\b/i,
+  // "link to the docs", "with a link to"
+  /\blinks?\s+to\b/i,
+  // "sources for every claim", "a reference for each figure"
+  /\b(?:sources?|references?|links?|urls?)\b[^.]{0,25}?\bfor\s+(?:every|each|all|any)\b/i
+];
+function isCitationRule(text) {
+  if (NOT_A_CITATION.test(text)) return false;
+  return CITATION_CONSTRUCTION.some((re) => re.test(text));
+}
 function classify(text) {
   const t = text.trim();
   const lower = t.toLowerCase();
-  const negative2 = /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|not allowed)\b/i.test(lower);
-  const rx = /(?:^|\s)\/((?:[^/\\]|\\.){2,120})\/([gimsuy]{0,5})(?=\s|$)/.exec(t);
+  const negative2 = /\b(never|don't|do not|must not|mustn't|avoid|no |without|refrain from|omit|exclude|forbidden|forbid|not allowed|reject|rejects|prohibit|prohibits|prohibited|disallow|disallows|disallowed|ban|bans|banned|off[- ]limits)\b/i.test(
+    lower
+  );
+  const rx = /(?:^|\s)\/((?:[^/\\]|\\.){2,120})\/([gimsuy]{0,5})(?=[\s.,;:!?]|$)/.exec(t);
   if (rx) {
-    try {
-      new RegExp(rx[1], rx[2]);
-      return negative2 ? { kind: "forbidden_regex", pattern: rx[1], flags: rx[2] || "g" } : { kind: "required_regex", pattern: rx[1], flags: rx[2] || "g" };
-    } catch {
+    const meta = /[\\^$.*+?()[\]{}|]/.test(rx[1]);
+    const declared = /\b(regex|regexp|regular expression|pattern|matche?s?|matching)\b/i.test(lower);
+    if (meta || rx[2].length > 0 || declared) {
+      try {
+        new RegExp(rx[1], rx[2]);
+        return negative2 ? { kind: "forbidden_regex", pattern: rx[1], flags: rx[2] || "g" } : { kind: "required_regex", pattern: rx[1], flags: rx[2] || "g" };
+      } catch {
+      }
     }
   }
   if (/\bem[- ]?dash(es)?\b/i.test(lower) && negative2) return { kind: "no_em_dash" };
@@ -140,13 +184,14 @@ function classify(text) {
     return { kind: "language", code: LANGUAGES[lang[1]], name: lang[1] };
   }
   const maxWords = /\b(?:no more than|at most|under|fewer than|less than|max(?:imum)? of|maximum|within)\s+(\d{1,5})\s+words?\b/i.exec(lower);
-  if (maxWords) return { kind: "max_words", n: Number(maxWords[1]) };
+  if (maxWords) return { kind: "max_words", n: Number(maxWords[1]), scope: lengthScope(lower) };
   const minWords = /\b(?:at least|no fewer than|minimum of|more than)\s+(\d{1,5})\s+words?\b/i.exec(lower);
-  if (minWords) return { kind: "min_words", n: Number(minWords[1]) };
+  if (minWords) return { kind: "min_words", n: Number(minWords[1]), scope: lengthScope(lower) };
   const maxChars = /\b(?:no more than|at most|under|max(?:imum)? of|within)\s+(\d{1,6})\s+(?:characters|chars)\b/i.exec(lower);
-  if (maxChars) return { kind: "max_chars", n: Number(maxChars[1]) };
+  if (maxChars) return { kind: "max_chars", n: Number(maxChars[1]), scope: lengthScope(lower) };
   if (/\b(valid\s+)?json\b/i.test(lower) && /\b(respond|reply|answer|output|return|format|as|in)\b/i.test(lower) && !negative2) {
-    return { kind: "format_json" };
+    const strict = /\b(only|nothing but|just|solely|exclusively|entire|whole)\b/i.test(lower) || /\bno (prose|commentary|explanation|preamble|other text|extra text)\b/i.test(lower);
+    return { kind: "format_json", strict };
   }
   if (/\b(markdown\s+)?table\b/i.test(lower) && /\b(use|include|present|format|as|show)\b/i.test(lower) && !negative2) {
     return { kind: "format_markdown_table" };
@@ -156,11 +201,9 @@ function classify(text) {
   if (/\bcode\s+(?:block|fence)s?\b/i.test(lower) && !negative2) return { kind: "format_code_fence" };
   const headingReq = /\b(?:section|heading)\b[^.]{0,20}\b(?:titled|called|named)\b\s*["'`“]?([^"'`”.]{2,50})/i.exec(t);
   if (headingReq) return { kind: "heading_required", heading: headingReq[1].trim() };
-  if (/\b(cite|citation|source|reference|link)s?\b/i.test(lower) && /\b(always|must|include|provide|add|end with|required)\b/i.test(lower) && !negative2) {
-    return { kind: "citation_required" };
-  }
-  const ACTION_VERB = /\b(run|execute|invoke|call|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
-  const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|output|respond|reply|format)\b/i;
+  if (!negative2 && isCitationRule(t)) return { kind: "citation_required" };
+  const ACTION_VERB = /\b(run|execute|invoke|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
+  const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|word|phrase|spell|spelled|capitali[sz]e|output|respond|reply|format)\b|\b(?:call|calls|called|calling|refer to|describe|describes|label|labels|name)\s+(?:it|them|that|this|a|an|the|any|every|each)\b/i;
   if (ACTION_VERB.test(t) && !ABOUT_TEXT.test(t)) {
     return { kind: "action", hint: "enforcee verify" };
   }
@@ -407,6 +450,46 @@ function wordCount(s) {
   const m = s.trim().match(/\S+/g);
   return m ? m.length : 0;
 }
+function segments(output, scope) {
+  if (scope === "output") return [{ start: 0, end: output.length, text: output }];
+  let masked = output;
+  const fence = /```[\s\S]*?(?:```|$)/g;
+  masked = masked.replace(fence, (m2) => " ".repeat(m2.length));
+  const out = [];
+  const push = (start, end) => {
+    const raw = masked.slice(start, end);
+    const lead = raw.length - raw.trimStart().length;
+    const text = raw.trim();
+    if (text.length) out.push({ start: start + lead, end: start + lead + text.length, text });
+  };
+  if (scope === "line" || scope === "bullet") {
+    let at = 0;
+    for (const line of masked.split("\n")) {
+      const isBullet = /^\s*(?:[-*+]|\d+[.)])\s+\S/.test(line);
+      if (scope === "line" || isBullet) {
+        const off = scope === "bullet" ? /^\s*(?:[-*+]|\d+[.)])\s+/.exec(line)?.[0].length ?? 0 : 0;
+        push(at + off, at + line.length);
+      }
+      at += line.length + 1;
+    }
+    return out;
+  }
+  if (scope === "paragraph") {
+    let at = 0;
+    for (const para of masked.split(/\n\s*\n/)) {
+      push(at, at + para.length);
+      at += para.length + 2;
+    }
+    return out;
+  }
+  const re = /[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g;
+  let m;
+  while (m = re.exec(masked)) push(m.index, m.index + m[0].length);
+  return out;
+}
+function scopeNoun(scope) {
+  return scope === "output" ? "the output" : scope;
+}
 function guessLanguage(s) {
   const t = s.toLowerCase();
   if (/[一-鿿]/.test(s)) return "zh";
@@ -442,6 +525,84 @@ function guessLanguage(s) {
 function refusalReason(pattern) {
   const v = checkRegexSafety(pattern);
   return `This rule was not checked because ${v.reason ?? "its pattern could not be run safely"}. Rewriting the pattern more simply will get it checked \u2014 we would rather tell you than report a pass we did not earn.`;
+}
+function parseJson(s) {
+  try {
+    JSON.parse(s);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+function findJsonBlock(output) {
+  const fence = /```(?:json|jsonc|json5)?[ \t]*\r?\n([\s\S]*?)```/gi;
+  let m;
+  while (m = fence.exec(output)) {
+    const body = m[1];
+    if (parseJson(body.trim()).ok) {
+      const lead = body.length - body.trimStart().length;
+      const start = m.index + m[0].indexOf(body) + lead;
+      return { start, end: start + body.trim().length, quote: body.trim() };
+    }
+  }
+  for (let i = 0; i < output.length; i++) {
+    const open = output[i];
+    if (open !== "{" && open !== "[") continue;
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < output.length; j++) {
+      const ch = output[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const slice = output.slice(i, j + 1);
+          if (slice.length > 1 && parseJson(slice).ok) return { start: i, end: j + 1, quote: slice };
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+function lengthCheck(rule, output, scope, dir, n, measure, unit) {
+  const segs = segments(output, scope);
+  if (scope !== "output" && segs.length === 0) {
+    return res(
+      rule,
+      "NOT_APPLICABLE",
+      `The output contains no ${scopeNoun(scope)}s, so a per-${scopeNoun(scope)} limit never applied.`,
+      [],
+      false
+    );
+  }
+  const bad = segs.map((s) => ({ s, v: measure(s.text) })).filter(({ v }) => dir === "max" ? v > n : v < n);
+  const word = dir === "max" ? "limit" : "minimum";
+  if (bad.length === 0) {
+    const worst = segs.reduce((acc, s) => {
+      const v = measure(s.text);
+      return dir === "max" ? Math.max(acc, v) : Math.min(acc, v);
+    }, dir === "max" ? 0 : Number.POSITIVE_INFINITY);
+    return res(
+      rule,
+      "FOLLOWED",
+      scope === "output" ? `${worst} ${unit} ${dir === "max" ? "\u2264" : "\u2265"} ${word} of ${n}.` : `All ${segs.length} ${scopeNoun(scope)}s are within the ${word} of ${n} ${unit} (worst: ${worst}).`,
+      [],
+      true
+    );
+  }
+  const evidence = bad.slice(0, 3).map(({ s }) => ({ start: s.start, end: s.end, quote: s.text }));
+  const detail = scope === "output" ? `${bad[0].v} ${unit} ${dir === "max" ? "exceeds" : "is below"} the ${word} of ${n}.` : `${bad.length} of ${segs.length} ${scopeNoun(scope)}s ${dir === "max" ? "exceed" : "fall below"} the ${word} of ${n} ${unit} (worst: ${dir === "max" ? Math.max(...bad.map((b) => b.v)) : Math.min(...bad.map((b) => b.v))}).`;
+  return res(rule, "VIOLATED", detail, evidence, true);
 }
 function res(rule, verdict, rationale, evidence, engaged) {
   return { ruleId: rule.id, verdict, method: "deterministic", evidence, rationale, engaged };
@@ -489,28 +650,31 @@ function runDeterministic(rule, output) {
       if (hits.length) return res(rule, "VIOLATED", `${hits.length} em dash(es) found.`, hits, true);
       return res(rule, "FOLLOWED", "No em dashes. This has a high natural base rate, so absence is a real signal.", [], true);
     }
-    case "max_words": {
-      const n = wordCount(output);
-      return n <= c.n ? res(rule, "FOLLOWED", `${n} words \u2264 limit of ${c.n}.`, [], true) : res(rule, "VIOLATED", `${n} words exceeds the limit of ${c.n}.`, [], true);
-    }
-    case "min_words": {
-      const n = wordCount(output);
-      return n >= c.n ? res(rule, "FOLLOWED", `${n} words \u2265 minimum of ${c.n}.`, [], true) : res(rule, "VIOLATED", `${n} words is below the minimum of ${c.n}.`, [], true);
-    }
-    case "max_chars": {
-      const n = output.length;
-      return n <= c.n ? res(rule, "FOLLOWED", `${n} characters \u2264 limit of ${c.n}.`, [], true) : res(rule, "VIOLATED", `${n} characters exceeds the limit of ${c.n}.`, [], true);
-    }
+    case "max_words":
+      return lengthCheck(rule, output, c.scope, "max", c.n, wordCount, "words");
+    case "min_words":
+      return lengthCheck(rule, output, c.scope, "min", c.n, wordCount, "words");
+    case "max_chars":
+      return lengthCheck(rule, output, c.scope, "max", c.n, (s) => s.length, "characters");
     case "format_json": {
-      const trimmed = output.trim();
-      const fenced = /^```(?:json)?\s*([\s\S]*?)```$/.exec(trimmed);
-      const candidate = fenced ? fenced[1].trim() : trimmed;
-      try {
-        JSON.parse(candidate);
-        return res(rule, "FOLLOWED", "Output parses as valid JSON.", [span(output, 0, Math.min(80, output.length))].filter(Boolean), true);
-      } catch (e) {
-        return res(rule, "VIOLATED", `Output is not valid JSON: ${e.message}`, [], true);
+      const whole = parseJson(output.trim());
+      if (whole.ok) {
+        return res(rule, "FOLLOWED", "The output parses as valid JSON.", [span(output, 0, Math.min(80, output.length))].filter(Boolean), true);
       }
+      const block = findJsonBlock(output);
+      if (block) {
+        if (!c.strict) {
+          return res(rule, "FOLLOWED", "A valid JSON block is present in the output.", [block], true);
+        }
+        return res(
+          rule,
+          "VIOLATED",
+          "A valid JSON block is present, but this rule asks for JSON and nothing else, and the output contains other text as well.",
+          [block],
+          true
+        );
+      }
+      return res(rule, "VIOLATED", `No valid JSON found in the output: ${whole.error}`, [], true);
     }
     case "format_markdown_table": {
       const hits = regexSpans(output, "^\\|.*\\|\\s*$\\n\\|[\\s:|-]+\\|\\s*$", "gm", 2) ?? [];
@@ -747,7 +911,7 @@ var safeJSON = (text) => {
 };
 
 // node_modules/@anthropic-ai/sdk/internal/utils/sleep.mjs
-var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+var sleep = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
 
 // node_modules/@anthropic-ai/sdk/version.mjs
 var VERSION = "0.65.0";
@@ -1384,10 +1548,10 @@ var SSEDecoder = class {
     return null;
   }
 };
-function partition(str, delimiter) {
-  const index = str.indexOf(delimiter);
+function partition(str, delimiter2) {
+  const index = str.indexOf(delimiter2);
   if (index !== -1) {
-    return [str.substring(0, index), delimiter, str.substring(index + delimiter.length)];
+    return [str.substring(0, index), delimiter2, str.substring(index + delimiter2.length)];
   }
   return [str, "", ""];
 }
@@ -1442,8 +1606,8 @@ function addRequestID(value, response) {
 var _APIPromise_client;
 var APIPromise = class _APIPromise extends Promise {
   constructor(client, responsePromise, parseResponse = defaultParseResponse) {
-    super((resolve) => {
-      resolve(null);
+    super((resolve2) => {
+      resolve2(null);
     });
     this.responsePromise = responsePromise;
     this.parseResponse = parseResponse;
@@ -2540,12 +2704,12 @@ var BetaMessageStream = class _BetaMessageStream {
       }
       return this._emit("error", new AnthropicError(String(error)));
     });
-    __classPrivateFieldSet(this, _BetaMessageStream_connectedPromise, new Promise((resolve, reject) => {
-      __classPrivateFieldSet(this, _BetaMessageStream_resolveConnectedPromise, resolve, "f");
+    __classPrivateFieldSet(this, _BetaMessageStream_connectedPromise, new Promise((resolve2, reject) => {
+      __classPrivateFieldSet(this, _BetaMessageStream_resolveConnectedPromise, resolve2, "f");
       __classPrivateFieldSet(this, _BetaMessageStream_rejectConnectedPromise, reject, "f");
     }), "f");
-    __classPrivateFieldSet(this, _BetaMessageStream_endPromise, new Promise((resolve, reject) => {
-      __classPrivateFieldSet(this, _BetaMessageStream_resolveEndPromise, resolve, "f");
+    __classPrivateFieldSet(this, _BetaMessageStream_endPromise, new Promise((resolve2, reject) => {
+      __classPrivateFieldSet(this, _BetaMessageStream_resolveEndPromise, resolve2, "f");
       __classPrivateFieldSet(this, _BetaMessageStream_rejectEndPromise, reject, "f");
     }), "f");
     __classPrivateFieldGet(this, _BetaMessageStream_connectedPromise, "f").catch(() => {
@@ -2711,11 +2875,11 @@ var BetaMessageStream = class _BetaMessageStream {
    *   const message = await stream.emitted('message') // rejects if the stream errors
    */
   emitted(event) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       __classPrivateFieldSet(this, _BetaMessageStream_catchingPromiseCreated, true, "f");
       if (event !== "error")
         this.once("error", reject);
-      this.once(event, resolve);
+      this.once(event, resolve2);
     });
   }
   async done() {
@@ -3039,7 +3203,7 @@ var BetaMessageStream = class _BetaMessageStream {
           if (done) {
             return { value: void 0, done: true };
           }
-          return new Promise((resolve, reject) => readQueue.push({ resolve, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
+          return new Promise((resolve2, reject) => readQueue.push({ resolve: resolve2, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
         }
         const chunk = pushQueue.shift();
         return { value: chunk, done: false };
@@ -3082,13 +3246,13 @@ var _BetaToolRunner_completion;
 var _BetaToolRunner_iterationCount;
 var _BetaToolRunner_generateToolResponse;
 function promiseWithResolvers() {
-  let resolve;
+  let resolve2;
   let reject;
   const promise = new Promise((res2, rej) => {
-    resolve = res2;
+    resolve2 = res2;
     reject = rej;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve: resolve2, reject };
 }
 var BetaToolRunner = class {
   constructor(client, params, options) {
@@ -3520,12 +3684,12 @@ var MessageStream = class _MessageStream {
       }
       return this._emit("error", new AnthropicError(String(error)));
     });
-    __classPrivateFieldSet(this, _MessageStream_connectedPromise, new Promise((resolve, reject) => {
-      __classPrivateFieldSet(this, _MessageStream_resolveConnectedPromise, resolve, "f");
+    __classPrivateFieldSet(this, _MessageStream_connectedPromise, new Promise((resolve2, reject) => {
+      __classPrivateFieldSet(this, _MessageStream_resolveConnectedPromise, resolve2, "f");
       __classPrivateFieldSet(this, _MessageStream_rejectConnectedPromise, reject, "f");
     }), "f");
-    __classPrivateFieldSet(this, _MessageStream_endPromise, new Promise((resolve, reject) => {
-      __classPrivateFieldSet(this, _MessageStream_resolveEndPromise, resolve, "f");
+    __classPrivateFieldSet(this, _MessageStream_endPromise, new Promise((resolve2, reject) => {
+      __classPrivateFieldSet(this, _MessageStream_resolveEndPromise, resolve2, "f");
       __classPrivateFieldSet(this, _MessageStream_rejectEndPromise, reject, "f");
     }), "f");
     __classPrivateFieldGet(this, _MessageStream_connectedPromise, "f").catch(() => {
@@ -3691,11 +3855,11 @@ var MessageStream = class _MessageStream {
    *   const message = await stream.emitted('message') // rejects if the stream errors
    */
   emitted(event) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       __classPrivateFieldSet(this, _MessageStream_catchingPromiseCreated, true, "f");
       if (event !== "error")
         this.once("error", reject);
-      this.once(event, resolve);
+      this.once(event, resolve2);
     });
   }
   async done() {
@@ -4012,7 +4176,7 @@ var MessageStream = class _MessageStream {
           if (done) {
             return { value: void 0, done: true };
           }
-          return new Promise((resolve, reject) => readQueue.push({ resolve, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
+          return new Promise((resolve2, reject) => readQueue.push({ resolve: resolve2, reject })).then((chunk2) => chunk2 ? { value: chunk2, done: false } : { value: void 0, done: true });
         }
         const chunk = pushQueue.shift();
         return { value: chunk, done: false };
@@ -9161,6 +9325,15 @@ function runHealth(rules, rulesetText, totalTokens, opts = {}) {
   const buriedAfter = opts.buriedAfter ?? 0.75;
   const oversizedTokens = opts.oversizedTokens ?? 6e3;
   const findings = [];
+  if (rules.length === 0) {
+    const hasText = rulesetText.trim().length > 0;
+    findings.push({
+      code: "no_rules",
+      severity: "error",
+      ruleIds: [],
+      message: hasText ? `No rules could be extracted from this file, so nothing was checked. The green result below is the absence of a question, not an answer. Rules are read from bullets, numbered items and directive sentences \u2014 if yours are written another way, they were not seen.` : `The ruleset is empty, so nothing was checked. This is not a pass.`
+    });
+  }
   const dupes = findDuplicates(rulesetText);
   for (const rule of rules) {
     const n = dupes.get(rule.id) ?? 1;
@@ -9675,9 +9848,11 @@ var GERUND = /^\w+ing\b/i;
 function frame(object, polarity) {
   const o = tidy(object);
   if (!o) return "";
+  if (polarity === "permit") return `Allowed: ${o}.`;
   if (GERUND.test(o)) return polarity === "forbid" ? `Avoid ${o}.` : `Prefer ${o}.`;
   return polarity === "forbid" ? `Never ${o}.` : `Always ${o}.`;
 }
+var PERMISSION_LEAD = /\b(can|could|may|are (?:free|welcome|allowed)|feel free|it'?s (?:fine|ok|okay|alright)|that'?s (?:fine|ok|okay)|fine|ok|okay|allowed|no problem|happy for you|up to you|if you (?:want|like|prefer))\b[^.!?]{0,12}$/i;
 var TOO_VAGUE = /^(?:it|that|this|them|those|these|things?|stuff|anything|something)\b/i;
 var RANK = { weak: 0, medium: 1, strong: 2 };
 function extractPreferences(text, opts = {}) {
@@ -9697,7 +9872,10 @@ function extractPreferences(text, opts = {}) {
       if (TOO_VAGUE.test(tidied)) continue;
       if (TOO_VAGUE.test(tidied.replace(/^(?:do|be|have|make|say|get|use)\s+/i, ""))) continue;
       if (!hasSubstance(tidied)) continue;
-      const rule = p.rule(object);
+      const lead = text.slice(Math.max(0, m.index - 40), m.index);
+      const permitted = p.polarity === "require" && PERMISSION_LEAD.test(lead);
+      const polarity = permitted ? "permit" : p.polarity;
+      const rule = permitted ? frame(object, "permit") : p.rule(object);
       if (!rule) continue;
       const norm = normalize(rule);
       if (norm.length < 6) continue;
@@ -9710,9 +9888,9 @@ function extractPreferences(text, opts = {}) {
       out.push({
         id,
         rule,
-        polarity: p.polarity,
+        polarity,
         strength: p.strength,
-        basis: p.basis,
+        basis: permitted ? `${p.basis}, framed as permission \u2014 recorded, never turned into an obligation` : p.basis,
         quote: m[0],
         start,
         end,
@@ -10094,6 +10272,38 @@ var BARE_COMMAND = /`([a-z][\w-]{1,20})`/g;
 var PATH_RE = /[`"']([\w./-]+\.(?:json|ya?ml|toml|md|ts|tsx|js|mjs|cjs|py|sql|env|lock))[`"']/g;
 var ENV_RE = /\b([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+){1,6})\b/g;
 var HYPOTHETICAL = /\b(example|e\.g\.|such as|for instance|like|imagine|suppose|hypothetical|sample)\b/i;
+var NEGATIVE2 = /\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i;
+var POSITIVE2 = /\b(always|must|ensure|make sure|require[ds]?|should|need to)\b/i;
+function clauses(text) {
+  const out = [];
+  let neg = false;
+  let hypo = false;
+  let at = 0;
+  const re = /[;.]|\s+[—–-]\s+|,\s*/g;
+  const pieces = [];
+  let m;
+  while (m = re.exec(text)) {
+    pieces.push({ text: text.slice(at, m.index), start: at, reset: /[;.]/.test(m[0]) });
+    at = m.index + m[0].length;
+  }
+  pieces.push({ text: text.slice(at), start: at, reset: false });
+  for (const p of pieces) {
+    if (!p.text.trim()) continue;
+    if (NEGATIVE2.test(p.text)) neg = true;
+    else if (POSITIVE2.test(p.text)) neg = false;
+    if (HYPOTHETICAL.test(p.text)) hypo = true;
+    else if (POSITIVE2.test(p.text)) hypo = false;
+    out.push({ text: p.text, start: p.start, end: p.start + p.text.length, negative: neg, hypothetical: hypo });
+    if (p.reset) {
+      neg = false;
+      hypo = false;
+    }
+  }
+  return out;
+}
+function clauseAt(cs, index) {
+  return cs.find((c) => index >= c.start && index < c.end) ?? cs[cs.length - 1];
+}
 function inferPreconditions(rules) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
@@ -10105,11 +10315,14 @@ function inferPreconditions(rules) {
   };
   for (const rule of rules) {
     const text = rule.text;
-    if (HYPOTHETICAL.test(text)) continue;
-    if (/\b(never|not|don't|do not|avoid|no|forbid|without|must not|refrain)\b/i.test(text)) continue;
+    const cs = clauses(text);
+    const usable = (index) => {
+      const c = clauseAt(cs, index);
+      return c ? !c.negative && !c.hypothetical : true;
+    };
     for (const { re, bin } of TOOL_HINTS) {
       const m = text.match(re);
-      if (m) {
+      if (m && usable(m.index ?? 0)) {
         add({
           kind: "binary",
           target: bin(m),
@@ -10123,6 +10336,7 @@ function inferPreconditions(rules) {
       for (const m of text.matchAll(BARE_COMMAND)) {
         const name = m[1];
         if (name.includes(".")) continue;
+        if (!usable(m.index ?? 0)) continue;
         add({
           kind: "binary",
           target: name,
@@ -10133,10 +10347,12 @@ function inferPreconditions(rules) {
       }
     }
     for (const m of text.matchAll(PATH_RE)) {
+      if (!usable(m.index ?? 0)) continue;
       add({ kind: "file", target: m[1], why: `referenced by a rule: "${text.slice(0, 70)}"`, from: m[0], ruleId: rule.id });
     }
     for (const m of text.matchAll(ENV_RE)) {
       if (/^(HTTP_|WWW_)/.test(m[1])) continue;
+      if (!usable(m.index ?? 0)) continue;
       add({ kind: "env", target: m[1], why: `required by a rule: "${text.slice(0, 70)}"`, from: m[1], ruleId: rule.id });
     }
   }
@@ -10148,16 +10364,26 @@ function actionShaped(rules) {
 
 // src/lib/prevent/preconditions.ts
 import { execFileSync } from "node:child_process";
-import { existsSync as existsSync2, statSync } from "node:fs";
+import { accessSync, constants, existsSync as existsSync2, statSync } from "node:fs";
+import { delimiter, isAbsolute, join as join2 } from "node:path";
+var SAFE_BIN = /^[A-Za-z0-9._+-]{1,64}$/;
 function which(bin) {
-  try {
-    return execFileSync("sh", ["-c", `command -v ${JSON.stringify(bin).slice(1, -1)}`], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim() || null;
-  } catch {
-    return null;
+  if (!SAFE_BIN.test(bin)) return null;
+  const isExecutable = (p) => {
+    try {
+      accessSync(p, constants.X_OK);
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (bin.includes("/")) return isExecutable(bin) ? bin : null;
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+    if (!dir) continue;
+    const full = isAbsolute(dir) ? join2(dir, bin) : join2(process.cwd(), dir, bin);
+    if (isExecutable(full)) return full;
   }
+  return null;
 }
 function checkPrecondition(p, cwd = process.cwd()) {
   const at = (t) => t.startsWith("/") ? t : `${cwd}/${t}`;
@@ -10235,7 +10461,7 @@ function preflight(preconditions, cwd = process.cwd()) {
 
 // src/lib/prevent/claims.ts
 import { existsSync as existsSync3, statSync as statSync2 } from "node:fs";
-import { isAbsolute, join as join2 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join3, relative, resolve } from "node:path";
 var FILE_CLAIM = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
 var TESTS_PASS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
 var COMMITTED = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
@@ -10291,7 +10517,16 @@ function checkClaim(claim, ctx) {
   switch (claim.kind) {
     case "file-created": {
       const base = ctx.session?.cwd || ctx.cwd;
-      const full = isAbsolute(claim.subject) ? claim.subject : join2(base, claim.subject);
+      const full = resolve(isAbsolute2(claim.subject) ? claim.subject : join3(base, claim.subject));
+      const inside = resolve(base) === full || !relative(resolve(base), full).startsWith("..");
+      if (!inside) {
+        return {
+          ...claim,
+          verdict: "UNCHECKABLE",
+          evidence: `path escapes the session directory (${base})`,
+          reason: "This claim names a path outside the project, so it is not checked here \u2014 deliberately, not by accident."
+        };
+      }
       const there = existsSync3(full) && statSync2(full).isFile();
       return {
         ...claim,
@@ -10328,7 +10563,7 @@ function checkClaim(claim, ctx) {
       };
     }
     case "installed": {
-      const full = join2(ctx.cwd, "node_modules", claim.subject);
+      const full = join3(ctx.cwd, "node_modules", claim.subject);
       const there = existsSync3(full);
       return {
         ...claim,
@@ -10400,20 +10635,53 @@ function overlap2(a, b) {
   for (const w of a) if (b.has(w)) shared++;
   return shared / Math.min(a.size, b.size);
 }
-var NEGATIVE2 = /\b(never|not|don't|do not|avoid|no|forbid|without|exclude|omit)\b/i;
+var NEGATIVE3 = /\b(never|not|don't|do not|avoid|no|forbid|without|exclude|omit)\b/i;
+var SUBORDINATE = /\b(without|unless|except|other than|besides|before|after|until|while|when|whenever|if|in case of|in case)\b/i;
+function mainClause(text) {
+  const m = SUBORDINATE.exec(text);
+  if (!m) return text;
+  if (m.index > 0) return text.slice(0, m.index).trim() || text;
+  const comma = text.indexOf(",");
+  return comma > -1 ? text.slice(comma + 1).trim() || text : text;
+}
 var SAME_SUBJECT = 0.6;
 function contradicts(a, b) {
-  if (NEGATIVE2.test(a) === NEGATIVE2.test(b)) return false;
-  const sa = subject(a);
-  const sb = subject(b);
+  const ma = mainClause(a);
+  const mb = mainClause(b);
+  if (NEGATIVE3.test(ma) === NEGATIVE3.test(mb)) return false;
+  const sa = subject(ma);
+  const sb = subject(mb);
   let shared = 0;
   for (const w of sa) if (sb.has(w)) shared++;
   const ratio = overlap2(sa, sb);
   return (shared >= 2 || ratio === 1 && shared >= 1) && ratio >= SAME_SUBJECT;
 }
 function equivalent(a, b) {
-  if (NEGATIVE2.test(a) !== NEGATIVE2.test(b)) return false;
-  return overlap2(subject(a), subject(b)) >= 0.8;
+  if (NEGATIVE3.test(mainClause(a)) !== NEGATIVE3.test(mainClause(b))) return false;
+  const sa = subject(a);
+  const sb = subject(b);
+  if (!sa.size || !sb.size) return false;
+  let shared = 0;
+  for (const w of sa) if (sb.has(w)) shared++;
+  const union = sa.size + sb.size - shared;
+  return union > 0 && shared / union >= 0.8;
+}
+function refines(a, b) {
+  if (NEGATIVE3.test(mainClause(a)) !== NEGATIVE3.test(mainClause(b))) return null;
+  const sa = subject(a);
+  const sb = subject(b);
+  if (!sa.size || !sb.size || sa.size === sb.size) return null;
+  const small = sa.size < sb.size ? sa : sb;
+  const large = small === sa ? sb : sa;
+  for (const w of small) if (!large.has(w)) return null;
+  return sb.size > sa.size ? "narrower" : "broader";
+}
+function existingFromRuleset(rules, enforcedIds = /* @__PURE__ */ new Set()) {
+  return rules.map((r) => ({
+    id: r.id,
+    text: r.text,
+    consequence: enforcedIds.has(r.id) ? "enforced" : "audited"
+  }));
 }
 function propose(candidates, existing, mentionsOf, opts = {}) {
   const minMentions = opts.minMentions ?? 2;
@@ -10426,6 +10694,24 @@ function propose(candidates, existing, mentionsOf, opts = {}) {
         mentions,
         disposition: { kind: "duplicate", existing: dupe },
         message: `Already covered by an existing rule. Nothing to change.`
+      };
+    }
+    if (candidate.polarity === "permit") {
+      const lifted = existing.find((e) => contradicts(e.text, candidate.rule) || overlap2(subject(e.text), subject(candidate.rule)) >= 0.8);
+      if (lifted) {
+        const weight = lifted.consequence === "enforced" ? `That rule is ENFORCED: it currently blocks tool calls in your sessions.` : `That rule is audited: it affects verdicts on your receipts.`;
+        return {
+          candidate,
+          mentions,
+          disposition: { kind: "permits", existing: lifted, autoApplicable: false },
+          message: `You said this is allowed: "${candidate.quote}". You have a rule that forbids it: "${lifted.text}". ${weight} A permission is not a rule, so nothing was added, and nothing was removed either \u2014 if you meant to drop that rule, drop it yourself.`
+        };
+      }
+      return {
+        candidate,
+        mentions,
+        disposition: { kind: "new" },
+        message: "A permission, not a rule. Recorded; nothing added, because permissions remove constraints rather than creating them."
       };
     }
     const clash = existing.find((e) => contradicts(e.text, candidate.rule));
@@ -10445,6 +10731,15 @@ function propose(candidates, existing, mentionsOf, opts = {}) {
         message: `This contradicts a rule you already have${when}: "${clash.text}"${said}. You now said: "${candidate.quote}". ${weight} Nothing has been changed or removed \u2014 pick which one you meant.`
       };
     }
+    const wider = existing.map((e) => ({ e, dir: refines(e.text, candidate.rule) })).find((x) => x.dir !== null);
+    if (wider) {
+      return {
+        candidate,
+        mentions,
+        disposition: { kind: "refines", existing: wider.e, direction: wider.dir },
+        message: wider.dir === "narrower" ? `A narrower version of a rule you already have: "${wider.e.text}". Both can be true at once, so nothing was changed \u2014 keep the general one, or replace it with this.` : `A wider version of a rule you already have: "${wider.e.text}". You have just asked for more than that rule covers, and it was NOT quietly extended \u2014 say which you meant.`
+      };
+    }
     return {
       candidate,
       mentions,
@@ -10460,19 +10755,30 @@ function selfCheckable(candidate) {
       why: "nothing in the engine can decide this one by code \u2014 it would need the judge every time, and may still come back unverifiable"
     };
   }
+  if (candidate.check === "action") {
+    return {
+      ok: false,
+      why: "this asks whether an action happened, which no reading of an answer can settle \u2014 `enforcee verify` checks it against the environment instead"
+    };
+  }
   return { ok: true, why: `checkable by code (${candidate.check})` };
 }
 function readyToOffer(proposals, opts = {}) {
   const minMentions = opts.minMentions ?? 2;
-  return proposals.filter((p) => p.disposition.kind === "new" && p.mentions >= minMentions);
+  return proposals.filter(
+    (p) => p.disposition.kind === "new" && p.mentions >= minMentions && p.candidate.polarity !== "permit"
+  );
 }
 function needsDecision(proposals) {
-  return proposals.filter((p) => p.disposition.kind === "contradicts");
+  return proposals.filter((p) => p.disposition.kind === "contradicts" || p.disposition.kind === "permits");
+}
+function needsReview(proposals) {
+  return proposals.filter((p) => p.disposition.kind === "refines");
 }
 
 // src/lib/prevent/memory.ts
 import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "node:fs";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 var MEMORY_VERSION = "memory@1.0.0";
 var FILE = "learned.json";
 var STOP2 = /* @__PURE__ */ new Set([
@@ -10518,7 +10824,7 @@ function samePreference(a, b) {
   return shared / Math.min(wa.size, wb.size) >= 0.6;
 }
 function memoryPath(cwd = process.cwd()) {
-  return join3(cwd, ".enforcee", FILE);
+  return join4(cwd, ".enforcee", FILE);
 }
 function loadMemory(cwd = process.cwd()) {
   const path2 = memoryPath(cwd);
@@ -10532,13 +10838,18 @@ function loadMemory(cwd = process.cwd()) {
   }
 }
 function saveMemory(memory, cwd = process.cwd()) {
-  const dir = join3(cwd, ".enforcee");
+  const dir = join4(cwd, ".enforcee");
   mkdirSync(dir, { recursive: true });
   writeFileSync(memoryPath(cwd), JSON.stringify({ ...memory, version: MEMORY_VERSION }, null, 2) + "\n");
 }
-function noteMention(memory, id, rule, quote, today) {
+function noteMention(memory, id, rule, quote, today, occurrence) {
   const found = memory.entries.find((e) => e.id === id || samePreference(e.rule, rule));
   if (found) {
+    if (occurrence) {
+      const seen = found.occurrences ??= [];
+      if (seen.includes(occurrence)) return found;
+      seen.push(occurrence);
+    }
     found.mentions += 1;
     return found;
   }
@@ -10549,9 +10860,17 @@ function noteMention(memory, id, rule, quote, today) {
     firstSeen: today,
     mentions: 1,
     status: "proposed",
-    consequence: "audited"
+    consequence: "audited",
+    ...occurrence ? { occurrences: [occurrence] } : {}
   };
   memory.entries.push(entry);
+  return entry;
+}
+function decide(memory, id, status, note) {
+  const entry = memory.entries.find((e) => e.id === id || e.id.startsWith(id));
+  if (!entry) return null;
+  entry.status = status;
+  if (note) entry.note = note;
   return entry;
 }
 function activeRules(memory) {
@@ -10562,7 +10881,8 @@ function alreadyDeclined(memory, id) {
 }
 
 // cli/index.ts
-var VERSION2 = true ? "0.6.0" : "0.0.0-dev";
+import { createHash as createHash3 } from "node:crypto";
+var VERSION2 = true ? "0.7.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
@@ -10585,7 +10905,9 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
   ${C.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
   ${C.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
-  ${C.bold("enforcee learn")} <conversation-file>           propose rules from what you already said
+  ${C.bold("enforcee learn")} <conversation-file> [rules]   propose rules from what you already said
+  ${C.bold("enforcee learned")}                             what has been learned, and what you decided
+  ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence")}                             show the licence this machine is using
@@ -10734,18 +11056,32 @@ async function main() {
       process.exit(2);
     }
     const text = read(args[1]);
-    const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : void 0;
+    const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
+    const existing = args[2] ? new Set(rulesetRules.map((r) => r.id)) : void 0;
     const found = extractPreferences(text, { existingRuleIds: existing });
     if (json) return console.log(JSON.stringify(found, null, 2));
     const memory = loadMemory();
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    for (const c of found) noteMention(memory, c.id, c.rule, c.quote, today);
+    for (const c of found) {
+      const occurrence = createHash3("sha256").update(`${args[1]}|${c.start}|${c.quote}`).digest("hex").slice(0, 16);
+      noteMention(memory, c.id, c.rule, c.quote, today, occurrence);
+    }
+    let enforcedIds = /* @__PURE__ */ new Set();
+    const policyFile = join5(process.cwd(), ".enforcee", "policy.json");
+    if (existsSync5(policyFile)) {
+      try {
+        const policy = JSON.parse(readFileSync3(policyFile, "utf8"));
+        enforcedIds = new Set((policy.deny ?? []).map((d) => d.ruleId).filter((x) => typeof x === "string"));
+      } catch {
+      }
+    }
     const proposals = propose(
       found,
-      activeRules(memory),
+      [...existingFromRuleset(rulesetRules, enforcedIds), ...activeRules(memory)],
       (c) => memory.entries.find((e) => e.id === c.id || samePreference(e.rule, c.rule))?.mentions ?? 1
     );
     const conflicts = needsDecision(proposals);
+    const review = needsReview(proposals);
     const fresh = readyToOffer(proposals).filter((p) => !alreadyDeclined(memory, p.candidate.id)).filter((p, i, all) => all.findIndex((q) => samePreference(q.candidate.rule, p.candidate.rule)) === i);
     const held = proposals.filter((p) => p.disposition.kind === "new" && p.mentions < 2);
     console.log("");
@@ -10754,11 +11090,17 @@ async function main() {
       for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
       console.log("");
     }
+    for (const p of review) {
+      console.log(`  ${C.yellow("OVERLAPS ")} ${C.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
+      console.log("");
+    }
     for (const p of fresh) {
       const check = selfCheckable(p.candidate);
       console.log(`  ${check.ok ? C.green("READY    ") : C.yellow("WEAK     ")} ${C.bold(p.candidate.rule)}`);
       console.log(C.grey(`    heard ${p.mentions}\xD7 \xB7 ${check.why}`));
       console.log(C.grey(`    "${p.candidate.quote.replace(/\s+/g, " ").slice(0, 84)}"`));
+      console.log(C.grey(`    accept with: enforcee accept ${p.candidate.id.slice(0, 8)}`));
       console.log("");
     }
     if (held.length) {
@@ -10778,6 +11120,49 @@ async function main() {
       console.log(C.grey("  Nothing new to offer. That is a real answer, not an empty one."));
       console.log("");
     }
+    return;
+  }
+  if (cmd === "accept" || cmd === "decline" || cmd === "retire") {
+    const id = args[1];
+    if (!id) {
+      console.error(C.red(`usage: enforcee ${cmd} <id>   (ids are shown by \`enforcee learned\`)`));
+      process.exit(2);
+    }
+    const memory = loadMemory();
+    const status = cmd === "accept" ? "accepted" : cmd === "decline" ? "declined" : "retired";
+    const entry = decide(memory, id, status, args.slice(2).join(" ") || void 0);
+    if (!entry) {
+      console.error(C.red(`No learned preference starting with "${id}". Run \`enforcee learned\` to see them.`));
+      process.exit(2);
+    }
+    saveMemory(memory);
+    console.log("");
+    console.log(`  ${C.bold(status.toUpperCase())}  ${entry.rule}`);
+    console.log(
+      C.grey(
+        status === "accepted" ? "  Recorded. Anything you say later that contradicts this will be raised with you rather than applied." : "  Recorded, and kept \u2014 a decision is not a deletion. It will not be proposed again."
+      )
+    );
+    console.log("");
+    return;
+  }
+  if (cmd === "learned") {
+    const memory = loadMemory();
+    if (json) return console.log(JSON.stringify(memory, null, 2));
+    console.log("");
+    if (!memory.entries.length) {
+      console.log(C.grey("  Nothing learned yet in this project. Run `enforcee learn <conversation-file>`."));
+      console.log("");
+      return;
+    }
+    for (const e of memory.entries) {
+      const tint = e.status === "accepted" ? C.green : e.status === "proposed" ? C.yellow : C.grey;
+      console.log(`  ${tint(e.status.padEnd(9))} ${C.dim(e.id.slice(0, 8))}  ${e.rule}`);
+      console.log(C.grey(`            heard ${e.mentions}\xD7 \xB7 first seen ${e.firstSeen}${e.note ? ` \xB7 ${e.note}` : ""}`));
+    }
+    console.log("");
+    console.log(C.grey("  enforcee accept <id> \xB7 enforcee decline <id> \xB7 nothing here is ever deleted."));
+    console.log("");
     return;
   }
   if (cmd === "session") {
@@ -10839,14 +11224,14 @@ async function main() {
       on.filter((p) => p.severity === "warn").map(toDenyRule)
     );
     mkdirSync2(".enforcee", { recursive: true });
-    writeFileSync2(join4(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    writeFileSync2(join5(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
     let runner = false;
     try {
       const here = dirname(fileURLToPath(import.meta.url));
-      for (const candidate of [join4(here, "..", "guard", "guard.mjs"), join4(here, "..", "..", "guard", "guard.mjs")]) {
+      for (const candidate of [join5(here, "..", "guard", "guard.mjs"), join5(here, "..", "..", "guard", "guard.mjs")]) {
         if (existsSync5(candidate)) {
-          copyFileSync(candidate, join4(".enforcee", "guard.mjs"));
-          chmodSync(join4(".enforcee", "guard.mjs"), 493);
+          copyFileSync(candidate, join5(".enforcee", "guard.mjs"));
+          chmodSync(join5(".enforcee", "guard.mjs"), 493);
           runner = true;
           break;
         }

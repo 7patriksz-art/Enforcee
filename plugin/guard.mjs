@@ -20,8 +20,8 @@
  * We always exit 0 and speak JSON, so a guard bug can never wedge a session.
  */
 
-import { readFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { join, dirname, resolve, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { createPublicKey, verify } from 'node:crypto';
 
@@ -121,54 +121,133 @@ function readStdin() {
 const CLAIM_FILE = /\b(?:created|wrote|added|generated|saved)\s+(?:the\s+)?(?:new\s+)?(?:file\s+)?[`"']([\w./-]+\.[a-z]{1,5})[`"']/gi;
 const CLAIM_TESTS = /\b(?:all\s+)?tests?\s+(?:are\s+)?(?:now\s+)?(?:pass(?:ing|ed|es)?|green)\b|\b(?:test\s+suite\s+pass|suite\s+is\s+green)\b/gi;
 const CLAIM_COMMIT = /\b(?:committed|pushed)\s+(?:the\s+)?(?:changes?|fix|work|it)\b/gi;
-const RAN_TESTS = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test\b/;
-const RAN_COMMIT = /\bgit\s+(commit|push)\b/;
+const RAN_TESTS = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?t(est)?\b|vitest|jest|pytest|go\s+test|cargo\s+test|mvn\b.*\btest|gradle\b.*\btest|dotnet\s+test|make\b.*\btest|rspec|phpunit|tox|\btest(s)?\.(sh|ps1|bat)\b|run-tests/;
+const RAN_COMMIT = /\bgit\s+(commit|push)\b|\bgh\s+pr\s+create\b/;
+const NOT_AN_ASSERTION = /\b(not|n't|never|unless|if|once|when|after|before|should|would|could|please|let me know|do you want|shall i|will i|going to|i'll|i will|todo|to do|need to|needs to|make sure|ensure|confirm|verify that)\b/i;
 
-/** Last assistant prose, plus every bash command that ran, read from the transcript. */
+/**
+ * The model's own prose, plus every bash command that ran, read from the transcript.
+ *
+ * TWO filters, and both of them are the difference between evidence and an accusation:
+ *
+ * ROLE. A transcript interleaves the person's turns with the model's, and both carry
+ * `type: 'text'` blocks. Collecting every one of them meant the guard read the USER saying
+ * "all tests pass" and then refuted the user — told them, in their own session, that they
+ * had lied about something they never claimed. src/lib/preferences.ts does the opposite
+ * filter explicitly and says why; the guard had no equivalent.
+ *
+ * BRANCH. Pressing escape and retrying forks the file, and the abandoned branch stays in
+ * it. Reading top to bottom mixes work that was thrown away into "what actually happened" —
+ * so a command from a rewound attempt could confirm a claim, or prose from a discarded
+ * draft could be checked as though it had been said. src/lib/transcript/parse.ts walks the
+ * parentUuid DAG for exactly this reason. Same walk here.
+ */
 function readTranscript(file) {
-  const text = [];
-  const commands = [];
   let raw = '';
   try {
     raw = readFileSync(file, 'utf8');
   } catch {
     return null;
   }
+
+  const records = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
-    let rec;
-    try { rec = JSON.parse(line); } catch { continue; }
-    const content = rec?.message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (part?.type === 'text' && typeof part.text === 'string') text.push(part.text);
-      if (part?.type === 'tool_use' && typeof part?.input?.command === 'string') commands.push(part.input.command);
+    try { records.push(JSON.parse(line)); } catch { /* skip */ }
+  }
+  if (!records.length) return null;
+
+  // Keep only the surviving branch of the parentUuid DAG.
+  const byUuid = new Map();
+  const childCount = new Map();
+  for (const r of records) if (typeof r.uuid === 'string') byUuid.set(r.uuid, r);
+  for (const r of records) {
+    if (typeof r.parentUuid === 'string' && byUuid.has(r.parentUuid)) {
+      childCount.set(r.parentUuid, (childCount.get(r.parentUuid) ?? 0) + 1);
     }
   }
-  return { text: text.join('\n'), commands };
+  const leaves = records.filter((r) => typeof r.uuid === 'string' && !childCount.has(r.uuid));
+  const tip = leaves.length ? leaves[leaves.length - 1] : records[records.length - 1];
+  const onPath = new Set();
+  let cursor = tip;
+  while (cursor && typeof cursor.uuid === 'string' && !onPath.has(cursor.uuid)) {
+    onPath.add(cursor.uuid);
+    cursor = typeof cursor.parentUuid === 'string' ? byUuid.get(cursor.parentUuid) : undefined;
+  }
+  const path = records.filter((r) => typeof r.uuid !== 'string' || onPath.has(r.uuid));
+
+  const text = [];
+  const commands = [];
+  let cwd = null;
+  let toolCalls = 0;
+  for (const rec of path) {
+    if (!cwd && typeof rec?.cwd === 'string') cwd = rec.cwd;
+    const content = rec?.message?.content;
+    if (!Array.isArray(content)) continue;
+    // Only the model's own words are claims. The person's words are not on trial.
+    const isAssistant = rec?.type === 'assistant' || rec?.message?.role === 'assistant';
+    for (const part of content) {
+      if (isAssistant && part?.type === 'text' && typeof part.text === 'string') text.push(part.text);
+      if (part?.type === 'tool_use') {
+        toolCalls++;
+        if (typeof part?.input?.command === 'string') commands.push(part.input.command);
+      }
+    }
+  }
+  return { text: text.join('\n'), commands, cwd, toolCalls };
 }
 
-function checkClaimsLocally(text, commands, cwd) {
+/** Sentence containing an offset, matching src/lib/prevent/claims.ts. */
+function sentenceAt(text, idx) {
+  const bounds = [0];
+  for (const m of text.matchAll(/[.!?](?=\s|$)/g)) bounds.push((m.index ?? 0) + 1);
+  bounds.push(text.length);
+  let start = 0;
+  let end = text.length;
+  for (const b of bounds) {
+    if (b <= idx) start = b;
+    else { end = b; break; }
+  }
+  return text.slice(start, end).replace(/\s+/g, ' ').trim();
+}
+
+function checkClaimsLocally(text, commands, cwd, toolCalls) {
   const out = [];
+  // The positive control. A transcript with no tool calls at all cannot answer a question
+  // about which commands ran — "we did not see it" and "it did not happen" are different
+  // facts, and reporting the first as the second is a confident accusation from no evidence.
+  const usable = toolCalls > 0;
   const ran = (re) => commands.some((c) => re.test(c));
+  const settle = (re) =>
+    !usable
+      ? { verdict: 'UNCHECKABLE', evidence: 'the transcript contains no tool calls — empty, truncated, or not a transcript' }
+      : { verdict: ran(re) ? 'CONFIRMED' : 'REFUTED', evidence: 'transcript tool calls' };
 
   for (const m of text.matchAll(CLAIM_FILE)) {
     const target = m[1];
-    const full = target.startsWith('/') ? target : join(cwd, target);
+    const full = resolve(target.startsWith('/') ? target : join(cwd, target));
+    // The path came out of model prose. A claim about a file outside the project is not one
+    // we can adjudicate, and checking it would make this a filesystem oracle the model
+    // steers. Same rule as src/lib/prevent/claims.ts.
+    const inside = resolve(cwd) === full || !relative(resolve(cwd), full).startsWith('..');
     out.push({
       kind: 'file-created',
       subject: target,
-      verdict: existsSync(full) ? 'CONFIRMED' : 'REFUTED',
-      evidence: `stat ${full}`,
+      verdict: !inside ? 'UNCHECKABLE' : existsSync(full) ? 'CONFIRMED' : 'REFUTED',
+      evidence: inside ? `stat ${full}` : `path escapes the session directory (${cwd})`,
     });
   }
-  if (CLAIM_TESTS.test(text)) {
-    CLAIM_TESTS.lastIndex = 0;
-    out.push({ kind: 'tests-pass', subject: 'test suite', verdict: ran(RAN_TESTS) ? 'CONFIRMED' : 'REFUTED', evidence: 'transcript tool calls' });
+  for (const m of text.matchAll(CLAIM_TESTS)) {
+    // "I have not committed yet", "If the tests pass, we can ship" — telling the truth
+    // about a failure must never be read as claiming a success.
+    if (NOT_AN_ASSERTION.test(sentenceAt(text, m.index ?? 0))) continue;
+    out.push({ kind: 'tests-pass', subject: 'test suite', ...settle(RAN_TESTS) });
+    break;
   }
-  if (CLAIM_COMMIT.test(text)) {
-    CLAIM_COMMIT.lastIndex = 0;
-    out.push({ kind: 'committed', subject: 'git', verdict: ran(RAN_COMMIT) ? 'CONFIRMED' : 'REFUTED', evidence: 'transcript tool calls' });
+  for (const m of text.matchAll(CLAIM_COMMIT)) {
+    if (NOT_AN_ASSERTION.test(sentenceAt(text, m.index ?? 0))) continue;
+    out.push({ kind: 'committed', subject: 'git', ...settle(RAN_COMMIT) });
+    break;
   }
   return out;
 }
@@ -194,18 +273,42 @@ function findPolicy(startDir) {
  */
 function alreadyLogged(policyPath, session, filePath, loadReason) {
   if (!policyPath) return false;
+  // A dedicated marker file, not a tail of the ledger.
+  //
+  // The first version scanned the last 400 ledger rows, which is a window rather than a
+  // memory: a busy session writes 400 rows between two InstructionsLoaded events without
+  // trying, after which the first record scrolls out of view and the same fact is recorded
+  // again. The bug it was written to fix — a 3x overcount from claude-code#52176 — simply
+  // came back at scale, and only at scale, which is where nobody would look for it.
+  //
+  // This file holds one small entry per session and is exact regardless of how much else
+  // happened. Bounded by pruning old sessions, not by forgetting recent ones.
+  const key = `${filePath} ${loadReason}`;
+  const path = join(dirname(policyPath), 'loaded.json');
+  let state = { sessions: [] };
   try {
-    const lines = readFileSync(join(dirname(policyPath), 'ledger.jsonl'), 'utf8').trim().split('\n');
-    for (const line of lines.slice(-400)) {
-      if (!line) continue;
-      let e;
-      try { e = JSON.parse(line); } catch { continue; }
-      if (e.decision === 'LOADED' && e.session === session && e.filePath === filePath && e.loadReason === loadReason) {
-        return true;
-      }
-    }
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    if (Array.isArray(parsed?.sessions)) state = parsed;
   } catch {
-    // No ledger yet, or unreadable. Recording a duplicate is better than losing the first one.
+    /* absent or corrupt — treated as empty, and rewritten below */
+  }
+
+  let entry = state.sessions.find((s) => s.id === session);
+  if (entry && Array.isArray(entry.keys) && entry.keys.includes(key)) return true;
+  if (!entry) {
+    entry = { id: session, keys: [] };
+    state.sessions.push(entry);
+  }
+  if (!Array.isArray(entry.keys)) entry.keys = [];
+  entry.keys.push(key);
+  // Keep the most recent sessions only. Old ones can never dedupe anything again.
+  state.sessions = state.sessions.slice(-32);
+
+  try {
+    mkdirSync(dirname(policyPath), { recursive: true });
+    writeFileSync(path, JSON.stringify(state), 'utf8');
+  } catch {
+    // Best-effort. Recording a duplicate is better than breaking a session.
   }
   return false;
 }
@@ -428,8 +531,20 @@ function main() {
     // remember to run and a safety net: the moment a false claim is most costly is exactly
     // the moment nobody is going to type a command.
     const t = typeof payload.transcript_path === 'string' ? readTranscript(payload.transcript_path) : null;
-    if (t) {
-      const claims = checkClaimsLocally(t.text, t.commands, dirname(dirname(policyPath)));
+    if (!t) {
+      // A silent skip reads exactly like a clean session. It is not one: it is a session we
+      // could not look at. The ledger has to be able to tell those apart afterwards, or
+      // "no CLAIM rows" becomes a claim of its own that we never earned.
+      log(policyPath, {
+        ...base,
+        decision: 'CLAIM_SKIPPED',
+        reason: typeof payload.transcript_path === 'string' ? 'transcript unreadable or empty' : 'no transcript_path in the hook payload',
+        transcript: payload.transcript_path ?? null,
+      });
+    } else {
+      // The transcript records the directory the session actually ran in; the policy's
+      // parent is only a guess at it, and a wrong one in a monorepo.
+      const claims = checkClaimsLocally(t.text, t.commands, t.cwd || dirname(dirname(policyPath)), t.toolCalls);
       const refuted = claims.filter((c) => c.verdict === 'REFUTED');
       for (const c of claims) {
         log(policyPath, { ...base, decision: 'CLAIM', kind: c.kind, subject: c.subject, verdict: c.verdict, evidence: c.evidence });

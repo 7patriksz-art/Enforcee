@@ -72,6 +72,26 @@ export function runHealth(
   const oversizedTokens = opts.oversizedTokens ?? 6000;
   const findings: HealthFinding[] = [];
 
+  // 0. Nothing was extracted.
+  //
+  // An empty rule list produced a receipt reading 0 violations, 0 unverifiable, 100%
+  // coverage — a perfect score, printed in green, for a file the parser could make no sense
+  // of. Every other cap and refusal in this module reports what it skipped for exactly this
+  // reason, and the largest possible skip had no message at all. A misnamed file, a PDF
+  // pasted as text, a ruleset written entirely in prose the splitter does not accept: all
+  // of them looked like flawless compliance.
+  if (rules.length === 0) {
+    const hasText = rulesetText.trim().length > 0;
+    findings.push({
+      code: 'no_rules',
+      severity: 'error',
+      ruleIds: [],
+      message: hasText
+        ? `No rules could be extracted from this file, so nothing was checked. The green result below is the absence of a question, not an answer. Rules are read from bullets, numbered items and directive sentences — if yours are written another way, they were not seen.`
+        : `The ruleset is empty, so nothing was checked. This is not a pass.`,
+    });
+  }
+
   // 1. Exact duplicates (dropped from the rule list, recovered here).
   const dupes = findDuplicates(rulesetText);
   for (const rule of rules) {

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { runControlled, type ControlledResult } from './control';
 
 /**
@@ -35,14 +36,38 @@ export interface PreconditionResult {
   evidence: string;
 }
 
+/**
+ * Is this binary on PATH?
+ *
+ * No shell. The previous version built `sh -c "command -v <bin>"` and sanitised `bin` by
+ * running it through JSON.stringify and slicing the quotes off — which escapes quotes and
+ * backslashes and nothing else, so `;`, `$(…)` and backticks passed straight through into a
+ * shell. The binary name is inferred from a rule the user wrote, so today it is inert; the
+ * next caller that infers one from a plan, a transcript or model prose makes it live, and
+ * that caller will not know this line exists.
+ *
+ * Reading the directories directly is also a better answer: it cannot be confused by shell
+ * aliases or functions, which `command -v` reports as if they were executables.
+ */
+const SAFE_BIN = /^[A-Za-z0-9._+-]{1,64}$/;
+
 function which(bin: string): string | null {
-  try {
-    return execFileSync('sh', ['-c', `command -v ${JSON.stringify(bin).slice(1, -1)}`], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim() || null;
-  } catch {
-    return null;
+  if (!SAFE_BIN.test(bin)) return null;
+  const isExecutable = (p: string) => {
+    try {
+      accessSync(p, constants.X_OK);
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (bin.includes('/')) return isExecutable(bin) ? bin : null;
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue;
+    const full = isAbsolute(dir) ? join(dir, bin) : join(process.cwd(), dir, bin);
+    if (isExecutable(full)) return full;
   }
+  return null;
 }
 
 export function checkPrecondition(p: Precondition, cwd = process.cwd()): PreconditionResult {

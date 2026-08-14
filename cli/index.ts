@@ -18,8 +18,9 @@ import { checkLocalLicence, LICENCE_PATHS } from '../src/lib/licence-local';
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
 import { checkClaims } from '../src/lib/prevent/claims';
-import { propose, readyToOffer, needsDecision, selfCheckable } from '../src/lib/prevent/supersede';
-import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference } from '../src/lib/prevent/memory';
+import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, existingFromRuleset } from '../src/lib/prevent/supersede';
+import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference, decide } from '../src/lib/prevent/memory';
+import { createHash } from 'node:crypto';
 import { licenceMessage } from '../src/lib/licence';
 import type { RuleResult } from '../src/lib/types';
 
@@ -56,7 +57,9 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee preflight')} <rules-file>              check what your rules assume, before you start
   ${C.bold('enforcee verify')} <output> [transcript]       did it do what it said it did?
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
-  ${C.bold('enforcee learn')} <conversation-file>           propose rules from what you already said
+  ${C.bold('enforcee learn')} <conversation-file> [rules]   propose rules from what you already said
+  ${C.bold('enforcee learned')}                             what has been learned, and what you decided
+  ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence')}                             show the licence this machine is using
@@ -236,7 +239,8 @@ async function main(): Promise<void> {
       process.exit(2);
     }
     const text = read(args[1]);
-    const existing = args[2] ? new Set(parseRuleset(read(args[2])).rules.map((r) => r.id)) : undefined;
+    const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
+    const existing = args[2] ? new Set(rulesetRules.map((r) => r.id)) : undefined;
     const found = extractPreferences(text, { existingRuleIds: existing });
     if (json) return console.log(JSON.stringify(found, null, 2));
 
@@ -244,13 +248,33 @@ async function main(): Promise<void> {
     // knows which rules are already active so a new preference cannot silently undo one.
     const memory = loadMemory();
     const today = new Date().toISOString().slice(0, 10);
-    for (const c of found) noteMention(memory, c.id, c.rule, c.quote, today);
+    // Fingerprint the OCCURRENCE, not the run. Re-reading the same file must not look like
+    // the person saying it again — see noteMention.
+    for (const c of found) {
+      const occurrence = createHash('sha256').update(`${args[1]}|${c.start}|${c.quote}`).digest('hex').slice(0, 16);
+      noteMention(memory, c.id, c.rule, c.quote, today, occurrence);
+    }
 
-    const proposals = propose(found, activeRules(memory), (c) =>
+    // Rules already in the user's own ruleset count as things a new preference can
+    // contradict — and they are the ones that matter, because they are the ones in force.
+    // A rule compiled into the guard is ENFORCED and gets the heavier warning.
+    let enforcedIds = new Set<string>();
+    const policyFile = join(process.cwd(), '.enforcee', 'policy.json');
+    if (existsSync(policyFile)) {
+      try {
+        const policy = JSON.parse(readFileSync(policyFile, 'utf8')) as { deny?: { ruleId?: string }[] };
+        enforcedIds = new Set((policy.deny ?? []).map((d) => d.ruleId).filter((x): x is string => typeof x === 'string'));
+      } catch {
+        /* a corrupt policy is the guard's problem to report, not a reason to fail here */
+      }
+    }
+
+    const proposals = propose(found, [...existingFromRuleset(rulesetRules, enforcedIds), ...activeRules(memory)], (c) =>
       memory.entries.find((e) => e.id === c.id || samePreference(e.rule, c.rule))?.mentions ?? 1
     );
 
     const conflicts = needsDecision(proposals);
+    const review = needsReview(proposals);
     // One offer per preference, not per phrasing. Saying the same thing two ways is what
     // reached the threshold in the first place; showing it back twice would be absurd.
     const fresh = readyToOffer(proposals)
@@ -267,11 +291,18 @@ async function main(): Promise<void> {
       console.log('');
     }
 
+    for (const p of review) {
+      console.log(`  ${C.yellow('OVERLAPS ')} ${C.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
+      console.log('');
+    }
+
     for (const p of fresh) {
       const check = selfCheckable(p.candidate);
       console.log(`  ${check.ok ? C.green('READY    ') : C.yellow('WEAK     ')} ${C.bold(p.candidate.rule)}`);
       console.log(C.grey(`    heard ${p.mentions}× · ${check.why}`));
       console.log(C.grey(`    "${p.candidate.quote.replace(/\s+/g, ' ').slice(0, 84)}"`));
+      console.log(C.grey(`    accept with: enforcee accept ${p.candidate.id.slice(0, 8)}`));
       console.log('');
     }
 
@@ -295,6 +326,59 @@ async function main(): Promise<void> {
       console.log(C.grey('  Nothing new to offer. That is a real answer, not an empty one.'));
       console.log('');
     }
+    return;
+  }
+
+  // accept / decline / retire — the missing half of learning.
+  //
+  // Every status other than `proposed` was unreachable: nothing in the product ever set
+  // one, so `activeRules()` returned an empty list on every call and the supersession
+  // layer — the part that stops a passing remark quietly undoing a rule you rely on —
+  // could never fire. It had tests. It had documentation. It had no way in.
+  if (cmd === 'accept' || cmd === 'decline' || cmd === 'retire') {
+    const id = args[1];
+    if (!id) {
+      console.error(C.red(`usage: enforcee ${cmd} <id>   (ids are shown by \`enforcee learned\`)`));
+      process.exit(2);
+    }
+    const memory = loadMemory();
+    const status = cmd === 'accept' ? 'accepted' : cmd === 'decline' ? 'declined' : 'retired';
+    const entry = decide(memory, id, status, args.slice(2).join(' ') || undefined);
+    if (!entry) {
+      console.error(C.red(`No learned preference starting with "${id}". Run \`enforcee learned\` to see them.`));
+      process.exit(2);
+    }
+    saveMemory(memory);
+    console.log('');
+    console.log(`  ${C.bold(status.toUpperCase())}  ${entry.rule}`);
+    console.log(
+      C.grey(
+        status === 'accepted'
+          ? '  Recorded. Anything you say later that contradicts this will be raised with you rather than applied.'
+          : '  Recorded, and kept — a decision is not a deletion. It will not be proposed again.'
+      )
+    );
+    console.log('');
+    return;
+  }
+
+  if (cmd === 'learned') {
+    const memory = loadMemory();
+    if (json) return console.log(JSON.stringify(memory, null, 2));
+    console.log('');
+    if (!memory.entries.length) {
+      console.log(C.grey('  Nothing learned yet in this project. Run `enforcee learn <conversation-file>`.'));
+      console.log('');
+      return;
+    }
+    for (const e of memory.entries) {
+      const tint = e.status === 'accepted' ? C.green : e.status === 'proposed' ? C.yellow : C.grey;
+      console.log(`  ${tint(e.status.padEnd(9))} ${C.dim(e.id.slice(0, 8))}  ${e.rule}`);
+      console.log(C.grey(`            heard ${e.mentions}× · first seen ${e.firstSeen}${e.note ? ` · ${e.note}` : ''}`));
+    }
+    console.log('');
+    console.log(C.grey('  enforcee accept <id> · enforcee decline <id> · nothing here is ever deleted.'));
+    console.log('');
     return;
   }
 
