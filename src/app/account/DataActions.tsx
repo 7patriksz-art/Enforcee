@@ -67,10 +67,9 @@ export default function DataActions({ email }: { email: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: typed }),
       });
-      const json = (await res.json()) as { error?: string; stripeStillActive?: boolean };
+      const json = (await res.json()) as { error?: string; subscriptionsCancelled?: number };
       if (!res.ok) throw new Error(json.error ?? 'Deletion failed.');
-      // Told before the redirect, because after it there is no account to tell.
-      window.location.href = json.stripeStillActive ? '/?deleted=1&billing=1' : '/?deleted=1';
+      window.location.href = json.subscriptionsCancelled ? '/?deleted=1&cancelled=1' : '/?deleted=1';
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
@@ -95,7 +94,7 @@ export default function DataActions({ email }: { email: string }) {
       <section className="rounded-2xl border border-fail-line bg-fail-pale px-5 py-5">
         <div className="text-[14px] font-semibold text-ink">Delete account</div>
         <p className="readable mt-1.5 text-[13px]">
-          Removes your account, subscription record and stored receipts. Auditing keeps working.
+          Cancels any subscription, then removes your account and stored receipts. Auditing keeps working.
         </p>
 
         {!arming ? (
@@ -137,10 +136,11 @@ export default function DataActions({ email }: { email: string }) {
                 Cancel
               </button>
             </div>
-            {/* Said before the click, not after. Learning from a bank statement that
-                deleting an account did not stop the billing is the worst outcome here. */}
+            {/* Was: "this does not cancel a paid plan". Deleting a login while the card
+                keeps being charged is indistinguishable from a scam however clearly it is
+                disclosed, so the behaviour changed rather than the warning. */}
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink-mid">
-              This does not cancel a paid plan. Cancel in Billing first if one is running.
+              Any active subscription is cancelled first. If that fails, nothing is deleted.
             </p>
           </div>
         )}
