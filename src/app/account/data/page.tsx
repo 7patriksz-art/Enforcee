@@ -20,8 +20,7 @@ export default async function DataPage() {
   if (!access.signedIn) {
     return (
       <p className="readable measure">
-        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see what is held
-        against your account.
+        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see what is held.
       </p>
     );
   }
@@ -32,9 +31,11 @@ export default async function DataPage() {
         <div className="border-b hairline px-5 py-3.5 text-[14px] font-semibold">What we hold</div>
         <ul className="divide-y hairline text-[13.5px]">
           {[
-            ['Your email', access.email ?? '—', 'For sign-in and receipts. Never sold, never used for marketing.'],
-            ['Subscription state', access.plan, 'Plan, status and paid-through date, written by Stripe.'],
-            ['Audit receipts', 'Only if you are signed in when you run one', 'Verdicts and rule text. Never your source code.'],
+            // The third column stays. On a privacy page the caveat IS the content — but
+            // each is now the promise alone, with the setup around it deleted.
+            ['Your email', access.email ?? '—', 'Never sold. Never marketed to.'],
+            ['Subscription state', access.plan, 'Written by Stripe.'],
+            ['Audit receipts', 'Only when signed in', 'Verdicts and rule text. Never your code.'],
           ].map(([k, v, why]) => (
             <li key={k} className="px-5 py-3.5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -50,10 +51,10 @@ export default async function DataPage() {
       <section className="rounded-2xl border hairline bg-white">
         <div className="border-b hairline px-5 py-3.5 text-[14px] font-semibold">What never leaves your machine</div>
         <div className="px-5 py-4">
+          {/* Three sentences became two. The middle one listed what "no network call"
+              already covers; the last one is the evidence and is the reason to believe it. */}
           <p className="readable text-[13.5px]">
-            The CLI and the guard make no network call at all on the free paths. Your transcripts, your rulesets and
-            your code are read locally and never uploaded. That is enforced by a check in our release pipeline that
-            stubs the network and fails the build if a free audit opens a socket.
+            No network call on the free paths. Our release pipeline fails the build if one opens a socket.
           </p>
           <Link href="/what-is-already-free" className="mt-3 inline-block text-[13.5px] text-brand underline underline-offset-4">
             What runs without an account
@@ -83,9 +84,7 @@ export default async function DataPage() {
       <section className="rounded-2xl border border-fail-line bg-fail-pale px-5 py-5">
         <div className="text-[14px] font-semibold text-ink">Export or delete everything</div>
         <p className="readable mt-2 text-[13.5px]">
-          Email us and it is done the same day — a copy of everything held against your account, or its deletion.
-          Deleting removes your account, your subscription and your stored receipts. Auditing keeps working
-          afterwards, because it never needed an account.
+          Email us — a copy of everything, or its deletion, the same day. Auditing survives either way.
         </p>
         <a
           href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Data request')}`}

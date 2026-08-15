@@ -21,8 +21,7 @@ export default async function BillingPage() {
   if (!access.signedIn) {
     return (
       <p className="readable measure">
-        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see billing for
-        your account.
+        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see billing.
       </p>
     );
   }
@@ -66,23 +65,29 @@ export default async function BillingPage() {
         </dl>
       </section>
 
+      {/* Two facts, so two lines. The paragraph spent thirty words establishing them. */}
       <section className="rounded-2xl border hairline bg-white px-5 py-5">
         <div className="text-[14px] font-semibold">Invoices</div>
         <p className="readable mt-2 text-[13.5px]">
-          Stripe emails a receipt for every payment to {access.email ?? 'your account email'}, and each one links to a
-          downloadable PDF. We do not hold your card details at any point — Stripe does.
+          Stripe emails a PDF receipt to {access.email ?? 'your account email'} for every payment. Your card details
+          are held by Stripe, never by us.
         </p>
       </section>
 
       {/* Documented as prominently as upgrading, and with what actually happens. */}
       <section className="rounded-2xl border hairline bg-paper-soft px-5 py-5">
         <div className="text-[14px] font-semibold">Changing or cancelling</div>
+        {/* The three consequences were one 45-word sentence. As a list they are scanned
+            in about two seconds, and the reader looking for exactly one of them finds it. */}
         <p className="readable mt-2 text-[13.5px]">
           Email <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand underline underline-offset-4">{CONTACT_EMAIL}</a>{' '}
-          and it is done the same day. You keep everything you paid for until the end of the period, your issued
-          licence keeps working until it expires, and auditing keeps working forever because it never needed an
-          account.
+          — done the same day.
         </p>
+        <ul className="mt-2.5 space-y-1 text-[13px] text-ink-mid">
+          <li>· Paid features run to the end of the period.</li>
+          <li>· Your licence works until it expires.</li>
+          <li>· Auditing keeps working. It never needed an account.</li>
+        </ul>
         <Link href="/pricing" className="press mt-4 inline-block rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-[13.5px] font-medium hover:border-ink/30">
           Compare plans
         </Link>

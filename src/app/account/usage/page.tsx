@@ -22,8 +22,7 @@ export default async function UsagePage() {
   if (!access.signedIn) {
     return (
       <p className="readable measure">
-        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see usage for
-        your account.
+        <Link href="/signin" className="text-brand underline underline-offset-4">Sign in</Link> to see your usage.
       </p>
     );
   }
@@ -32,13 +31,11 @@ export default async function UsagePage() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border hairline bg-white px-5 py-5">
-        <div className="text-[14px] font-semibold">Nothing here is metered</div>
-        <p className="readable mt-2 text-[13.5px]">
-          Audits are unlimited on every plan, including free. There is no counter to watch, no overage, and no way
-          for this account to generate a bill you did not choose. Paid plans unlock capabilities, never volume.
-        </p>
-      </section>
+      {/* Was a heading plus a four-clause paragraph saying "nothing is metered" four
+          different ways. The table below already says Audits · Unlimited. One line. */}
+      <p className="readable measure">
+        Nothing here is metered. Paid plans unlock capabilities, never volume.
+      </p>
 
       <section className="rounded-2xl border hairline bg-white">
         <div className="border-b hairline px-5 py-3.5 text-[14px] font-semibold">Limits that do exist</div>
@@ -62,8 +59,7 @@ export default async function UsagePage() {
         <Link href="/value" className="lift block rounded-2xl border border-clay-line bg-clay-pale px-5 py-4">
           <div className="text-[13.5px] font-semibold">Is this worth it?</div>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-mid">
-            What it has actually caught for you, from your own history — and a straight answer if the honest one
-            is no.
+            What it has caught, from your own history — including if the answer is nothing.
           </p>
         </Link>
       )}

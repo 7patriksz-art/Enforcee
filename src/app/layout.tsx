@@ -7,6 +7,7 @@ import { CONTACT_EMAIL } from '@/lib/contact';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
 import { softwareSchema, organizationSchema, jsonLd } from '@/lib/seo';
 import ThemeToggle from '@/components/ThemeToggle';
+import AccountIcon from '@/components/AccountIcon';
 
 const TITLE = 'Enforcee — stop fighting your own AI';
 const DESCRIPTION =
@@ -75,6 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 the thing we actually want pressed. */}
             <div className="ml-auto flex items-center gap-2 md:ml-0">
               <ThemeToggle />
+              <AccountIcon />
               <Link
                 href="/audit"
                 className="press rounded-lg bg-ink px-3.5 py-2 text-[13.5px] font-medium text-white hover:bg-ink-soft"

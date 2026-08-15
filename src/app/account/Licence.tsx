@@ -32,8 +32,8 @@ export default function Licence({ entitled }: { entitled: boolean }) {
       <section className="rounded-2xl border border-honey-line bg-honey-pale/50 px-5 py-5">
         <h2 className="font-display text-[20px] tracking-tight">No licence on this account yet</h2>
         <p className="readable mt-2 max-w-2xl">
-          Auditing needs no licence and never will. The guard does.{' '}
-          <span className="hi font-semibold text-ink">Auditing stays free and unlimited.</span>
+          The guard needs a licence.{' '}
+          <span className="hi font-semibold text-ink">Auditing never will.</span>
         </p>
         {/* Said "Start the trial" until 2026-08-14. There is no trial — D-021, decided
             9 August, and one of the load-bearing honesty claims on the pricing page.
@@ -57,8 +57,7 @@ export default function Licence({ entitled }: { entitled: boolean }) {
     <section className="rounded-2xl border hairline bg-white px-5 py-5">
       <h2 className="font-display text-[20px] tracking-tight">Your licence</h2>
       <p className="readable mt-2 max-w-2xl">
-        One line of signed text. It is checked on your own machine, offline, every time the guard compiles — we never
-        find out that you ran it.
+        One signed line, checked offline every time the guard compiles. We never learn that you ran it.
       </p>
 
       {!licence ? (

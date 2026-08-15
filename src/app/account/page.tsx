@@ -25,8 +25,7 @@ export default async function Account() {
     return (
       <Shell>
         <p className="readable max-w-2xl">
-          Sign in to manage your subscription and collect your licence. Auditing does not need an account — this page is
-          only for the parts that do.
+          Sign in for your subscription and licence. Auditing needs neither.
         </p>
         <Link
           href="/signin"
@@ -130,14 +129,9 @@ export default async function Account() {
             </Link>
           )}
 
-          <section className="rounded-2xl border hairline bg-paper-soft px-5 py-4">
-            <div className="text-[13.5px] font-semibold">Changing or cancelling</div>
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-mid">
-              Email <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand hover:underline">{CONTACT_EMAIL}</a> and
-              it is done the same day. You keep the paid features until the end of the period you already paid for, and
-              auditing keeps working afterwards regardless.
-            </p>
-          </section>
+          {/* "Changing or cancelling" lived here AND on /account/billing, word for word.
+              Two tabs, one fact, and the two copies had already drifted apart in wording.
+              Billing is where someone goes to cancel, so that is where it stays. */}
         </aside>
       </div>
     </Shell>
