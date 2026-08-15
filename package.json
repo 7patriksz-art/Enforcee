@@ -14,7 +14,9 @@
     "pack:cli": "node scripts/pack-cli.mjs --check",
     "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist",
     "selfcheck": "node cli/dist/enforcee.mjs health CLAUDE.md && node cli/dist/enforcee.mjs preflight CLAUDE.md",
-    "verify:ui": "node scripts/verify-ui.mjs"
+    "verify:ui": "node scripts/verify-ui.mjs",
+    "email:check": "node scripts/push-email-templates.mjs --check",
+    "email:push": "node scripts/push-email-templates.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
