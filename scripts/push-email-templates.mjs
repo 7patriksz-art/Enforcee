@@ -76,17 +76,45 @@ const args = process.argv.slice(2);
 const CHECK = args.includes('--check');
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 
-function refFromEnvFile() {
-  const p = resolve(ROOT, '.env.local');
+/**
+ * The project ref, from somewhere that exists in EVERY environment.
+ *
+ * The first run of the email-templates workflow died here:
+ *
+ *     No project ref. Pass --ref=<ref>, or set NEXT_PUBLIC_SUPABASE_URL.
+ *
+ * The three sources it had — an argument, $NEXT_PUBLIC_SUPABASE_URL, and `.env.local` — are
+ * all things that exist on the machine this was written on and on no runner. `.env.local` is
+ * gitignored, correctly, because it holds the service-role key.
+ *
+ * That is the third instance in one day of a single defect: something that only works in the
+ * environment that wrote it. The pixel audit hardcoded `/opt/pw-browsers/chromium-1194/…`.
+ * The email logo pointed at a URL only one deploy could answer. Adding a fourth fallback
+ * would have been fixing the instance; the fix is to put the value where every environment
+ * can see it.
+ *
+ * `supabase/project-ref` is committed. It is NOT a secret — it is the host part of
+ * NEXT_PUBLIC_SUPABASE_URL, which Next inlines into the browser bundle. Verified on
+ * 2026-08-15 by building and finding it in `.next/static/chunks/*.js`, a file served to
+ * every visitor. See supabase/project-ref.md.
+ *
+ * Overrides still win, most explicit first.
+ */
+function refFromFile(name) {
+  const p = resolve(ROOT, name);
   if (!existsSync(p)) return null;
-  const m = readFileSync(p, 'utf8').match(/NEXT_PUBLIC_SUPABASE_URL=\s*https:\/\/([a-z0-9]+)\.supabase\.co/i);
+  const raw = readFileSync(p, 'utf8');
+  // Same file shape for both: a bare ref, or a NEXT_PUBLIC_SUPABASE_URL= line.
+  const m = raw.match(/https:\/\/([a-z0-9]{15,})\.supabase\.co/i) ?? raw.trim().match(/^([a-z0-9]{15,})$/i);
   return m ? m[1] : null;
 }
 
 const ref =
   (args.find((a) => a.startsWith('--ref=')) ?? '').slice(6) ||
+  process.env.SUPABASE_PROJECT_REF ||
   (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)?.[1] ||
-  refFromEnvFile();
+  refFromFile('supabase/project-ref') ||
+  refFromFile('.env.local');
 
 function die(msg) {
   console.error(`\n  ${msg}\n`);
@@ -101,7 +129,13 @@ if (!token) {
       '  This is the personal access token, NOT the anon key and NOT the service role key.'
   );
 }
-if (!ref) die('No project ref. Pass --ref=<ref>, or set NEXT_PUBLIC_SUPABASE_URL.');
+if (!ref) {
+  die(
+    'No project ref.\n\n' +
+      '  supabase/project-ref is committed and should have supplied this — if you are seeing\n' +
+      '  this message, that file is missing or malformed. Override with --ref=<ref> to unblock.'
+  );
+}
 
 const API = `https://api.supabase.com/v1/projects/${ref}/config/auth`;
 
