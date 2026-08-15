@@ -45,3 +45,28 @@ jobs:
       - run: npm run pack:cli
 
       - run: npm run build
+
+      # ── The two controls we built after the two worst incidents, and then ran nowhere ──
+      #
+      # Both of these existed, passed, and were wired into nothing. They were a thing someone
+      # had to remember to type, which is precisely the category of control this product
+      # exists because models ignore. Checked 2026-08-15:
+      #   grep -c 'selfcheck|verify:ui' .github/workflows/ci.yml  ->  0
+      #
+      # `selfcheck` runs `health` + `preflight` over our own CLAUDE.md. Its first ever run
+      # found a real defect — CLAUDE.md referenced a charter path that did not exist. That is
+      # the dogfooding loop, and it was running by hand or not at all.
+      - run: npm run selfcheck
+
+      # `verify:ui` builds, serves, renders every page in both themes in real Chromium and
+      # SAMPLES PAINTED PIXELS. It exists because of the `.invert` disaster: a custom class
+      # collided with Tailwind's `filter: invert(100%)`, every panel painted backwards, and
+      # 546 contrast measurements plus 123 unit assertions stayed green throughout —
+      # getComputedStyle reports values before filters, and a filter inverts foreground and
+      # background together, preserving the ratio exactly. Only a sampled pixel disagreed.
+      #
+      # It is the only control we own that reads the layer the user actually sees. Ubuntu
+      # only: it needs a Chromium download, and paying that on three runners to re-test one
+      # renderer is cost without information.
+      - run: npm run verify:ui
+        if: matrix.os == 'ubuntu-latest'
