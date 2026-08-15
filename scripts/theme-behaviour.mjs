@@ -1,7 +1,8 @@
 /** Does the button actually work? Clicked, persisted, and re-read after a reload. */
 import { chromium } from 'playwright';
+import { launchOptions } from './chrome.mjs';
 const B = process.env.BASE ?? 'http://localhost:3300';
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await chromium.launch(launchOptions());
 const fails = [];
 const ok = (c, m) => { console.log((c ? '  PASS  ' : '  FAIL  ') + m); if (!c) fails.push(m); };
 

@@ -11,6 +11,7 @@
  * inferred from the stylesheet.
  */
 import { chromium } from 'playwright';
+import { launchOptions } from './chrome.mjs';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
 const BASE = process.env.BASE ?? 'http://localhost:3000';
@@ -30,9 +31,7 @@ const parse = (s) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 const over = (fg, a, bg) => fg.map((c, i) => Math.round(c * a + bg[i] * (1 - a)));
 
 mkdirSync('theme-audit', { recursive: true });
-const browser = await chromium.launch({
-  executablePath: process.env.CHROME ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-});
+const browser = await chromium.launch(launchOptions());
 const findings = [];
 // "0 findings" is only meaningful next to how much was looked at. A selector typo
 // that matches nothing also reports zero, and reads identical in CI.

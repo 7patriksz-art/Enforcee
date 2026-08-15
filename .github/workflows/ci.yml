@@ -68,5 +68,13 @@ jobs:
       # It is the only control we own that reads the layer the user actually sees. Ubuntu
       # only: it needs a Chromium download, and paying that on three runners to re-test one
       # renderer is cost without information.
+      #
+      # The runner has no browser until we ask for one, and the scripts used to hardcode
+      # `/opt/pw-browsers/chromium-1194/...` — the path in the sandbox this is built in,
+      # pinned to a build number. That is why the first CI run of this step went red.
+      # scripts/chrome.mjs now resolves it, and falls through to Playwright's own answer.
+      - run: npx playwright install --with-deps chromium
+        if: matrix.os == 'ubuntu-latest'
+
       - run: npm run verify:ui
         if: matrix.os == 'ubuntu-latest'
