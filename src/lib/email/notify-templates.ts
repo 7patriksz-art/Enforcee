@@ -1,10 +1,13 @@
-import { SITE_URL } from '../site-url';
 import { CONTACT_EMAIL } from '../contact';
 
 /**
  * The notification emails, as a MODULE rather than files on disk.
  *
  * ── Two production bugs are fixed here, both found by Patrik sending real mail ──
+ *
+ * (The logo is a third, told in full above `MARK` below. Read that one first if you are
+ * here to change the branding — it is the only part of this file that has been wrong three
+ * separate times.)
  *
  * 1. THE TEMPLATES DID NOT EXIST AT RUNTIME. They were `.html` files read with
  *    `readFileSync(join(process.cwd(), 'supabase', 'email', …))`. Nothing imports a file
@@ -23,9 +26,11 @@ import { CONTACT_EMAIL } from '../contact';
  *    precisely what he saw. Gmail also strips `data:` URIs in `<img>`, so even a PNG data
  *    URI would have failed.
  *
- *    The only thing that works is a hosted raster at an https URL. `public/email-logo.png`
- *    is our own asset on our own domain, so it is not a third-party tracker — but it IS an
- *    external request, and the templates are built to look right with images blocked.
+ *    This paragraph used to end "the only thing that works is a hosted raster at an https
+ *    URL". That sentence was written with confidence and was wrong within the hour — the
+ *    hosted PNG broke too. It is left here, corrected rather than deleted, because the
+ *    mistake it records is the useful part: a compatibility table tells you which formats
+ *    a client can draw, and says nothing about whether your server will answer. See `MARK`.
  *
  * Everything else is unchanged and deliberate: inline styles only (Gmail strips `<style>`,
  * Outlook renders through Word), tables not flex, light-mode declared so clients do not
@@ -35,18 +40,42 @@ import { CONTACT_EMAIL } from '../contact';
  */
 
 /**
- * Only ever an https URL, or nothing.
+ * The mark is DRAWN, not fetched. There is no <img> in any Enforcee email.
  *
- * SITE_URL falls back to `http://localhost:3000` when NEXT_PUBLIC_SITE_URL and VERCEL_URL
- * are both absent (D-025 — it must never fall back to the custom domain). An email built
- * in that state would carry `src="http://localhost:3000/email-logo.png"`, which is a
- * guaranteed broken image in every recipient's inbox.
+ * THREE image treatments have now failed in Patrik's real inbox, and each one was defended
+ * with reasoning that was locally correct:
  *
- * A BROKEN IMAGE IS WORSE THAN NO IMAGE. The alt text already carries the brand — that is
- * what every corporate client with images blocked sees anyway — so the fallback is simply
- * the wordmark, which looks deliberate rather than faulty.
+ *   1. An SVG data URI — so it would render with images blocked and could never drift from
+ *      the favicon. Gmail supports neither half: `<img src="*.svg">` is ~60% supported and
+ *      Gmail is not in it, and Gmail strips `data:` URIs in images regardless.
+ *   2. A hosted SVG. Same format table, same broken-image glyph.
+ *   3. A hosted PNG at https://enforcee.com/email-logo.png — the format the compatibility
+ *      table actually endorses. It still drew broken, for a reason no compatibility table
+ *      could have told me: the asset was committed in the SAME commit as the template, and
+ *      the mail had already been sent. The URL was a 404 at the moment it was requested.
+ *
+ * The third failure is the instructive one. The format was right and the deploy ordering
+ * was wrong, which means "pick the correct format" was never the whole problem. ANY
+ * fetched image couples this email to a deploy, a DNS answer, a CDN, and the recipient's
+ * "display images" setting — four things that can each be false when the mail is opened,
+ * none of which a unit test on this repo can observe.
+ *
+ * So the coupling is removed rather than fixed again. A table cell with a background
+ * colour and a letter in it is a mark that renders from the HTML itself: no request, no
+ * deploy, no permission, nothing to 404. Outlook's Word engine ignores border-radius and
+ * draws a square — that is a square logo, not a broken one, which is the entire point.
+ *
+ * A side effect worth naming: this module no longer imports SITE_URL at all. The template
+ * used to be sensitive to which host built it — the same code produced a working logo on
+ * Vercel and a `localhost:3000` broken image anywhere else. It now renders one identical
+ * mark from any environment, which is one fewer thing that can differ between the version
+ * a test sees and the version a customer opens.
  */
-const LOGO = SITE_URL.startsWith('https://') ? `${SITE_URL}/email-logo.png` : null;
+const MARK = `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td width="28" height="28" align="center" valign="middle" bgcolor="#1A1614"
+        style="width:28px;height:28px;background:#1A1614;border-radius:7px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:28px;color:#FFFFFF;text-align:center;mso-line-height-rule:exactly;">E</td>
+    <td style="padding-left:10px;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#1A1614;letter-spacing:-0.2px;">Enforcee</td>
+  </tr></table>`;
 
 function shell({
   subject,
@@ -77,17 +106,7 @@ function shell({
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#FFFFFF;border:1px solid #E4DED0;border-radius:14px;">
 
 <tr><td style="padding:26px 30px 0 30px;">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-    ${
-      LOGO
-        ? `<td style="padding-right:10px;">
-      <img src="${LOGO}" width="28" height="28" alt="Enforcee"
-           style="display:block;border:0;border-radius:7px;width:28px;height:28px;">
-    </td>`
-        : ''
-    }
-    <td style="font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#1A1614;letter-spacing:-0.2px;">Enforcee</td>
-  </tr></table>
+  ${MARK}
 </td></tr>
 
 <tr><td style="padding:22px 30px 0 30px;">

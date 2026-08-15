@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { renderNotify, SUBJECTS, type NotifyKind } from '../src/lib/email/notify-templates';
 import { CONTACT_EMAIL } from '../src/lib/contact';
@@ -78,7 +78,27 @@ describe('notify templates are bundled, not read from disk', () => {
   });
 });
 
-describe('the logo renders in Gmail', () => {
+/**
+ * ── 3. THE HOSTED PNG DREW BROKEN TOO ───────────────────────────────────────
+ *
+ * The fix for (2) was a hosted https PNG — the format the compatibility table endorses —
+ * and Patrik reported it broken as well. The reason was not the format. `public/email-logo.png`
+ * was committed in the SAME commit as the template that points at it, so at the moment his
+ * mail was opened that URL was a 404.
+ *
+ * The tests below USED TO ENFORCE THE MECHANISM: "the src is an https URL ending in
+ * email-logo.png, 28x28, with alt text", plus "the PNG exists on disk and has the right
+ * magic number". Every one of those passed while the image was broken in his inbox, because
+ * every one of them was a statement about this repository and the failure was about the
+ * internet. A file being in `public/` is not the same claim as a byte being served.
+ *
+ * The lesson is the one this product is built on, turned on ourselves: a check that can
+ * only see the repo cannot verify a property of the world. Given that, the right move is
+ * not a better image check — it is to stop depending on the fetch. So these now enforce the
+ * OUTCOME, which is checkable here in full: no Enforcee email contains an <img> at all.
+ * The mark is drawn from a table cell, and a table cell cannot 404.
+ */
+describe('no Enforcee email fetches an image', () => {
   const templates = [
     ...readdirSync(join(ROOT, 'supabase/email'))
       .filter((f) => f.endsWith('.html'))
@@ -92,41 +112,28 @@ describe('the logo renders in Gmail', () => {
 
   for (const [name, html] of templates) {
     describe(name, () => {
-      it('uses no SVG image — Gmail draws a broken-image glyph', () => {
-        expect(html, 'SVG is back in an email').not.toMatch(/image\/svg|\.svg["')]/);
+      it('contains no <img> at all', () => {
+        // Multiline-safe on purpose. The line-anchored version of this pattern reported
+        // "no images" for four templates that each had one — the tag wraps across two
+        // lines. A scanner that silently matches nothing is the failure mode in E-3.
+        expect(html.match(/<img[\s\S]*?>/g) ?? [], `${name} fetches an image again`).toEqual([]);
       });
 
-      it('uses no data: URI — Gmail strips them in <img>', () => {
-        expect(html, 'a data URI is back in an email').not.toMatch(/src="data:/);
+      it('references no external asset of any kind', () => {
+        // Not just <img>: a background="" attribute or a url() would reintroduce the same
+        // coupling to a deploy under a different tag name.
+        expect(html, 'an external asset is back').not.toMatch(/background="http|url\(http/);
+        expect(html, 'a data URI is back').not.toMatch(/data:image/);
+        expect(html, 'SVG is back').not.toMatch(/image\/svg|\.svg["')]/);
       });
 
-      it('either points at the hosted https PNG or ships no image at all', () => {
-        // Under test SITE_URL falls back to localhost (D-025 forbids defaulting to the
-        // custom domain), and a localhost src would be a guaranteed broken image in every
-        // recipient's inbox. The renderer drops the <img> rather than shipping one.
-        const img = (html.match(/<img[^>]*>/) ?? [])[0];
-        if (!img) {
-          expect(html, 'no logo AND no wordmark').toContain('Enforcee');
-          return;
-        }
-        expect(img).toMatch(/src="https:\/\/[^"]*email-logo\.png"/);
-        // Outlook ignores the style and would otherwise draw the source at 168px.
-        expect(img).toMatch(/\swidth="28"/);
-        expect(img).toMatch(/\sheight="28"/);
-        expect(img).toMatch(/alt="Enforcee"/);
+      it('still shows a mark and the wordmark', () => {
+        // Deleting the image must not quietly delete the branding with it.
+        expect(html, `${name} lost the drawn mark`).toMatch(/bgcolor="#1A1614"/);
+        expect(html, `${name} lost the wordmark`).toContain('Enforcee');
       });
     });
   }
-
-  it('the PNG the templates point at actually exists and is a PNG', () => {
-    // The check that would have caught this whole class: the asset is real, and it is the
-    // format the compatibility table says works.
-    const p = join(ROOT, 'public/email-logo.png');
-    const bytes = readFileSync(p);
-    expect(statSync(p).size).toBeGreaterThan(500);
-    // PNG magic number. A renamed SVG would pass a filename check and fail in Gmail.
-    expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
-  });
 
   it('names the contact address, not a reply promise', () => {
     for (const [name, html] of templates) {
@@ -136,6 +143,69 @@ describe('the logo renders in Gmail', () => {
       );
     }
   });
+});
+
+describe('the fallback link is quiet but still readable', () => {
+  // "Make the url link more discreet and premium" — Patrik, 2026-08-15. A raw URL shouted
+  // in dark monospace is what phishing looks like. But a fallback nobody can read is not a
+  // fallback, and the two auth flows that need it most are password reset and magic link,
+  // where the button is exactly what a corporate scanner rewrites. So: quieter, and still
+  // above 4.5:1 on the card. Both halves are asserted, because softening the colour until
+  // it disappears is the obvious way to satisfy "discreet" and break the feature.
+  const authTemplates = readdirSync(join(ROOT, 'supabase/email'))
+    .filter((f) => f.endsWith('.html'))
+    .map((f) => [f, readFileSync(join(ROOT, 'supabase/email', f), 'utf8')] as const);
+
+  function contrast(hex: string, on = '#FFFFFF'): number {
+    const lum = (h: string) => {
+      const c = [1, 3, 5]
+        .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+        .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const [hi, lo] = [lum(hex), lum(on)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it('there are auth templates to check', () => {
+    expect(authTemplates.length).toBe(4);
+  });
+
+  for (const [name, html] of authTemplates) {
+    describe(name, () => {
+      it('still carries the pasteable URL', () => {
+        expect(html, 'the fallback link is gone').toMatch(/Or paste this link/i);
+        // Twice: once in the button href, once as text. If it only appears once, the
+        // fallback was deleted rather than restyled.
+        expect((html.match(/\{\{ \.ConfirmationURL \}\}/g) ?? []).length).toBeGreaterThanOrEqual(2);
+      });
+
+      it('keeps the fallback as plain text, not a second <a>', () => {
+        // The scanner that rewrites the button rewrites an <a> here identically, which
+        // would leave the mail with no working path at all — the one case this exists for.
+        const block = html.slice(html.indexOf('Or paste this link'));
+        const upToFooter = block.slice(0, block.indexOf('</td></tr>'));
+        expect(upToFooter, 'the fallback became a link and can be rewritten too').not.toMatch(/<a\s/);
+      });
+
+      it('reads at 4.5:1 or better despite being discreet', () => {
+        const block = html.slice(html.indexOf('Or paste this link'));
+        const colours = [...block.slice(0, 900).matchAll(/color:(#[0-9A-Fa-f]{6})/g)].map((m) => m[1]);
+        expect(colours.length, 'no colours found — the selector missed').toBeGreaterThan(0);
+        for (const c of colours) {
+          expect(contrast(c), `${name}: ${c} is ${contrast(c).toFixed(2)}:1, unreadable`).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+
+      it('is quieter than the body copy it sits under', () => {
+        // The point of the change. #57504A body text is 7.9:1; the fallback must recede.
+        const block = html.slice(html.indexOf('Or paste this link'));
+        const urlColour = (block.match(/monospace;font-size:[\d.]+px;line-height:[\d.]+;color:(#[0-9A-Fa-f]{6})/) ?? [])[1];
+        expect(urlColour, 'could not find the URL colour').toBeTruthy();
+        expect(contrast(urlColour!)).toBeLessThan(contrast('#57504A'));
+      });
+    });
+  }
 });
 
 describe('the UI never claims an email was sent without checking', () => {
