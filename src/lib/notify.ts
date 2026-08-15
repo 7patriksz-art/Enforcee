@@ -1,49 +1,37 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { CONTACT_EMAIL } from './contact';
+import { renderNotify, SUBJECTS, type NotifyKind } from './email/notify-templates';
+
+export type { NotifyKind };
 
 /**
  * Product notifications — the mail that is not an auth flow.
  *
- * Supabase Auth owns sign-in, confirmation and password reset, and its templates live in
- * its dashboard. It does not send "your export is ready" or "your account has been
- * deleted", and those are precisely the moments a user needs a written record: something
- * irreversible just happened to their account and the only evidence is a screen they have
- * already navigated away from.
+ * Supabase Auth owns sign-in, confirmation and password reset. It does not send "your
+ * export is ready" or "your account has been deleted", and those are exactly the moments
+ * a user needs a written record: something irreversible just happened and the only
+ * evidence is a screen they have already navigated away from.
  *
- * DEGRADES QUIETLY AND SAYS SO. With no `RESEND_API_KEY` the send is skipped and logged,
- * and the caller is told it did not send. It must never throw: an email failure cannot be
- * allowed to fail the deletion the user just asked for — that would leave them believing
- * their data is still held when it is not, which is the worse of the two errors by a wide
- * margin.
+ * ── This file used to read templates off disk, and that silently broke in production ──
+ *
+ * `readFileSync(join(process.cwd(), 'supabase', 'email', …))` works locally and does not
+ * work on Vercel: nothing imports a path assembled at runtime, so Next's file tracer never
+ * bundles it into the deployed function. Confirmed after the fact by grepping every
+ * `.nft.json` under `.next/server` for `supabase/email` — zero functions carried them.
+ *
+ * The failure was invisible in every way that matters. The export downloaded fine, the
+ * request returned 200, and `notify()` reported `template missing` into a server log
+ * nobody reads. Patrik found it by sending a real email and noticing one never arrived,
+ * which is the only thing that could have found it.
+ *
+ * Templates are an imported module now. A string in a `.ts` file is part of the module
+ * graph by definition, on every host, with no configuration. `tests/notify.test.ts` pins
+ * that this file performs no filesystem access at all.
+ *
+ * DEGRADES QUIETLY AND SAYS SO. With no `RESEND_API_KEY` the send is skipped and the
+ * reason returned. It must never throw: an email failure cannot fail the deletion the user
+ * just asked for, which would leave them believing their data is still held when it is not.
  */
 
-const FROM = process.env.ENFORCEE_MAIL_FROM ?? `Enforcee <noreply@enforcee.com>`;
-
-export type NotifyKind = 'export-ready' | 'account-deleted' | 'subscription-cancelled';
-
-const SUBJECTS: Record<NotifyKind, string> = {
-  'export-ready': 'Your Enforcee data export',
-  'account-deleted': 'Your Enforcee account has been deleted',
-  'subscription-cancelled': 'Your Enforcee subscription was cancelled',
-};
-
-/** Read a template off disk and fill `{{ key }}` placeholders. */
-function render(kind: NotifyKind, vars: Record<string, string>): string | null {
-  try {
-    // Templates ship in the repo rather than being inlined here, so the same file can be
-    // opened in a browser and reviewed like any other design surface.
-    const path = join(process.cwd(), 'supabase', 'email', `notify-${kind}.html`);
-    let html = readFileSync(path, 'utf8');
-    for (const [k, v] of Object.entries({ ...vars, contact: CONTACT_EMAIL })) {
-      html = html.replaceAll(`{{ ${k} }}`, v);
-    }
-    return html;
-  } catch (e) {
-    console.error(`[notify] template notify-${kind}.html unavailable`, e);
-    return null;
-  }
-}
+const FROM = process.env.ENFORCEE_MAIL_FROM ?? 'Enforcee <noreply@enforcee.com>';
 
 export async function notify(
   kind: NotifyKind,
@@ -54,19 +42,23 @@ export async function notify(
   if (!key) return { sent: false, reason: 'no RESEND_API_KEY configured' };
   if (!to) return { sent: false, reason: 'no recipient' };
 
-  const html = render(kind, vars);
-  if (!html) return { sent: false, reason: 'template missing' };
-
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM, to, subject: SUBJECTS[kind], html }),
+      body: JSON.stringify({
+        from: FROM,
+        to,
+        subject: SUBJECTS[kind],
+        html: renderNotify(kind, vars),
+      }),
       // A hung mail provider must not hold a deletion request open.
       signal: AbortSignal.timeout(8000),
     });
+
     if (!res.ok) {
-      console.error(`[notify] ${kind} rejected`, res.status, await res.text().catch(() => ''));
+      const detail = await res.text().catch(() => '');
+      console.error(`[notify] ${kind} rejected`, res.status, detail);
       return { sent: false, reason: `provider returned ${res.status}` };
     }
     return { sent: true };

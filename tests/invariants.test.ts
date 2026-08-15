@@ -136,7 +136,10 @@ describe('D-025 · the custom domain arrives only by env var', () => {
     // where being wrong strands a customer who has just been charged.
     const offenders = src
       .filter((f) => !f.endsWith(join('lib', 'site-url.ts')))
-      .filter((f) => /VERCEL_URL/.test(readFileSync(f, 'utf8')))
+      // Comments stripped: notify-templates.ts explains WHY it must not hardcode a
+      // domain, and naming VERCEL_URL in that explanation is not a second copy of the
+      // logic. Fourth time a control here has flagged its own documentation.
+      .filter((f) => /VERCEL_URL/.test(code(readFileSync(f, 'utf8'))))
       .map((f) => relative(ROOT, f));
     expect(offenders, `second copy of the site-URL logic in: ${offenders.join(', ')}`).toEqual([]);
   });

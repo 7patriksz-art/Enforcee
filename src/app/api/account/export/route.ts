@@ -53,9 +53,16 @@ export async function GET() {
     ],
   };
 
-  // Best effort, and explicitly not awaited into the failure path: a mail provider being
-  // down must not turn a successful export into an error the user cannot act on.
-  void notify('export-ready', user.email ?? '', { when: generatedAt.slice(0, 10) });
+  // AWAITED, and the outcome reported. It was fire-and-forget, and the UI said "a copy of
+  // this notice is in your inbox" whether or not one had been sent — a claim about
+  // something we had not checked, on the page whose whole job is being believed.
+  //
+  // It also hid a real production bug for a day: with RESEND_API_KEY missing the send was
+  // skipped silently and the only evidence was an email that never arrived.
+  //
+  // The result rides in a header because the body is the file itself. A failed send must
+  // never fail the export — the user asked for their data, not for a notification.
+  const mail = await notify('export-ready', user.email ?? '', { when: generatedAt.slice(0, 10) });
 
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {
@@ -63,6 +70,10 @@ export async function GET() {
       'content-disposition': `attachment; filename="enforcee-export-${generatedAt.slice(0, 10)}.json"`,
       // Never cached anywhere: this is the whole of someone's account in one response.
       'cache-control': 'no-store, private',
+      'x-enforcee-notified': mail.sent ? 'sent' : (mail.reason ?? 'not sent'),
+      // Without this the browser cannot read the header at all — same-origin fetch still
+      // hides non-safelisted response headers unless they are explicitly exposed.
+      'access-control-expose-headers': 'x-enforcee-notified',
     },
   });
 }

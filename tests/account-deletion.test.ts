@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { renderNotify } from '../src/lib/email/notify-templates';
 
 /**
  * Deleting an account must never leave a card being charged.
@@ -71,7 +72,10 @@ describe('deleting an account cancels the subscription', () => {
     // time on this project a control has flagged its own documentation.
     const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/[^\n]*$/gm, '');
     const ui = strip(readFileSync(join(ROOT, 'src/app/account/DataActions.tsx'), 'utf8'));
-    const email = readFileSync(join(ROOT, 'supabase/email/notify-account-deleted.html'), 'utf8');
+    // Rendered from the module rather than read from disk — the file no longer exists,
+    // because a runtime file read is never bundled into a Vercel function and the mail
+    // silently stopped sending.
+    const email = renderNotify('account-deleted');
     for (const [name, text] of [['UI', ui], ['deletion email', email]] as const) {
       expect(text, `${name} still says deletion leaves billing running`).not.toMatch(
         /does not (cancel|stop)[^.]*(plan|subscription|charg)/i
@@ -88,7 +92,7 @@ describe('deleting an account cancels the subscription', () => {
     // Stripe retains the customer, invoices and payments independently — that is what a
     // chargeback is defended with, and what tax law requires be kept through a deletion
     // request. Saying so is what stops "you deleted my records" becoming the dispute.
-    const email = readFileSync(join(ROOT, 'supabase/email/notify-account-deleted.html'), 'utf8');
+    const email = renderNotify('account-deleted');
     expect(email).toMatch(/Stripe keeps your invoices/i);
     expect(email, 'no route to a refund of the unused period').toMatch(/refund/i);
   });

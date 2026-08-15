@@ -41,6 +41,9 @@ export default function DataActions({ email }: { email: string }) {
     try {
       const res = await fetch('/api/account/export');
       if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? 'Export failed.');
+      // The server tells us whether the confirmation actually sent. Saying "check your
+      // inbox" when nothing was sent is the kind of small lie this page cannot afford.
+      const mailed = res.headers.get('x-enforcee-notified');
       // Streamed to a file rather than rendered. An account's whole history in a browser
       // tab is a screenshot waiting to happen.
       const blob = await res.blob();
@@ -50,7 +53,11 @@ export default function DataActions({ email }: { email: string }) {
       a.download = `enforcee-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setNote('Downloaded. A copy of this notice is in your inbox.');
+      setNote(
+        mailed === 'sent'
+          ? 'Downloaded. A confirmation is in your inbox.'
+          : 'Downloaded. No confirmation email was sent.'
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {

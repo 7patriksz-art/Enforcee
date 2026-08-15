@@ -160,12 +160,18 @@ export async function POST(req: Request) {
     );
   }
 
-  void notify('account-deleted', email, {
+  const mail = await notify('account-deleted', email, {
     when,
     subscription: cancelled.length
       ? 'Your subscription was cancelled at the same time, so nothing further will be charged.'
       : 'You had no active subscription, so there was nothing to cancel.',
   });
 
-  return NextResponse.json({ deleted: true, subscriptionsCancelled: cancelled.length });
+  // Reported rather than assumed. This is the last contact the user will ever have with
+  // us, so whether it actually went is worth one boolean.
+  return NextResponse.json({
+    deleted: true,
+    subscriptionsCancelled: cancelled.length,
+    emailed: mail.sent,
+  });
 }

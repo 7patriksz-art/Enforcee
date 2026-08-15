@@ -39,11 +39,10 @@ describe('email templates', () => {
       'magic-link.html',
       'reset-password.html',
     ]);
-    expect(NOTIFY.sort()).toEqual([
-      'notify-account-deleted.html',
-      'notify-export-ready.html',
-      'notify-subscription-cancelled.html',
-    ]);
+    // The notify templates are no longer files — they are a module, because a file read
+    // at runtime is never bundled into a Vercel function and the mail silently stopped
+    // sending. tests/notify.test.ts owns them now.
+    expect(NOTIFY, 'notify templates are back on disk').toEqual([]);
   });
 
   for (const f of AUTH) {
@@ -68,12 +67,16 @@ describe('email templates', () => {
         expect(html).toMatch(/display:none;max-height:0/);
       });
 
-      it('requests no external resource', () => {
-        // An external <img> is a tracking pixel by another name, breaks with images
-        // blocked, and would let the mark drift from the site favicon.
-        const remote = html.match(/(?:src|href)="https?:\/\/(?!enforcee)[^"]*"/g) ?? [];
-        expect(remote, `remote resources: ${remote.join(', ')}`).toEqual([]);
-        expect(html).toContain('data:image/svg+xml;base64,');
+      it('requests nothing from a third party', () => {
+        // This test USED TO REQUIRE the SVG data URI — it was defending the bug. Gmail
+        // draws SVG as a broken-image glyph and strips data: URIs in <img> regardless, so
+        // the assertion enforced an image that could never render in the most popular
+        // client on earth. A control can encode a wrong belief and then protect it.
+        //
+        // What actually matters is unchanged: nothing loads from a domain we do not own.
+        // Our own hosted PNG is not a tracker.
+        const remote = html.match(/(?:src|href)="https?:\/\/(?!enforcee\.com)[^"]*"/g) ?? [];
+        expect(remote, `third-party resources: ${remote.join(', ')}`).toEqual([]);
       });
 
       it('declares light mode rather than letting clients invert it', () => {
@@ -105,31 +108,6 @@ describe('email templates', () => {
         for (const m of html.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []) {
           expect(m).toBe(CONTACT_EMAIL);
         }
-      });
-    });
-  }
-
-  for (const f of NOTIFY) {
-    const html = readFileSync(join(DIR, f), 'utf8');
-
-    describe(f, () => {
-      it('carries the placeholder its own renderer fills', () => {
-        // notify.ts substitutes `{{ contact }}`. A template that lost it would ship the
-        // literal braces to a customer, which is the notify-family equivalent of a
-        // button that goes nowhere.
-        expect(html).toContain('{{ contact }}');
-      });
-
-      it('carries NO Supabase confirmation link', () => {
-        // These are records of something that already happened. A confirmation link in
-        // one would be an unactionable button on an irreversible event.
-        expect(html).not.toContain('.ConfirmationURL');
-      });
-
-      it('is rendered by notify.ts, so the kind is wired up', () => {
-        const notify = readFileSync(resolve(__dirname, '../src/lib/notify.ts'), 'utf8');
-        const kind = f.replace(/^notify-|\.html$/g, '');
-        expect(notify, `${f} exists but nothing sends it`).toContain(`'${kind}'`);
       });
     });
   }
@@ -192,10 +170,9 @@ describe('rules that apply to every template, whoever renders it', () => {
       it('has a preheader', () => {
         expect(html).toMatch(/display:none;max-height:0/);
       });
-      it('requests no external resource', () => {
-        const remote = html.match(/(?:src|href)="https?:\/\/(?!enforcee)[^"]*"/g) ?? [];
-        expect(remote, `remote resources: ${remote.join(', ')}`).toEqual([]);
-        expect(html).toContain('data:image/svg+xml;base64,');
+      it('requests nothing from a third party', () => {
+        const remote = html.match(/(?:src|href)="https?:\/\/(?!enforcee\.com)[^"]*"/g) ?? [];
+        expect(remote, `third-party resources: ${remote.join(', ')}`).toEqual([]);
       });
       it('declares light mode', () => {
         expect(html).toContain('content="light"');

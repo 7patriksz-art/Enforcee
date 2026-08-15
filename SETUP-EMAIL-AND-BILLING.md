@@ -112,8 +112,10 @@ nothing until the portal is configured once.
 
 For each: open the template, switch the editor to **source/HTML**, select all, paste, save.
 
-**The three `notify-*.html` files do NOT go here.** The app sends those itself using the
-key from step 4. There is nowhere in Supabase to put them.
+**There are only four templates to paste.** The account notifications — export, deletion —
+are generated in code (`src/lib/email/notify-templates.ts`) and sent by the app using the
+key from step 4. They were `.html` files briefly; that was a bug, because a file read at
+runtime is never bundled into a Vercel function and the mail silently never sent.
 
 ## Step 7 — Prove it works, rather than assuming
 
@@ -125,8 +127,14 @@ Do all four. A dashboard saying "sent" is not a control.
    email arrives.
 3. **Manage or cancel** on `/account/billing`. Confirm Stripe's portal opens. (Needs a
    subscription on that account; a free account correctly says there is no billing record.)
-4. **Check spam** for all of the above. If they land there, add a DMARC record —
+4. **Check the logo renders.** It is a hosted PNG now. It was an SVG data URI, which Gmail
+   draws as a broken-image glyph — that was the broken favicon.
+5. **Check spam** for all of the above. If they land there, add a DMARC record —
    Resend → Domains → your domain suggests one.
+
+If the export downloads but says *"No confirmation email was sent"*, `RESEND_API_KEY` is
+missing from Vercel or the deployment predates it. Re-check step 4, including the redeploy.
+The page now tells you which happened instead of claiming an inbox delivery it did not make.
 
 ---
 
