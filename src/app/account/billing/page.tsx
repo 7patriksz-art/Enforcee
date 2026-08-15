@@ -1,7 +1,7 @@
 import Link from 'next/link';
+import BillingActions from '../BillingActions';
 import { getAccess } from '@/lib/entitlements';
 import { planById } from '@/lib/plans';
-import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,23 +74,19 @@ export default async function BillingPage() {
         </p>
       </section>
 
-      {/* Documented as prominently as upgrading, and with what actually happens. */}
+      {/* Was: "email this address and it is done the same day". A promise from one
+          person's inbox, on the screen where a customer decides whether leaving will be
+          made difficult. Now it is Stripe's own portal. */}
       <section className="rounded-2xl border hairline bg-paper-soft px-5 py-5">
-        <div className="text-[14px] font-semibold">Changing or cancelling</div>
-        {/* The three consequences were one 45-word sentence. As a list they are scanned
-            in about two seconds, and the reader looking for exactly one of them finds it. */}
-        <p className="readable mt-2 text-[13.5px]">
-          Email <a href={`mailto:${CONTACT_EMAIL}`} className="text-brand underline underline-offset-4">{CONTACT_EMAIL}</a>{' '}
-          — done the same day.
-        </p>
-        <ul className="mt-2.5 space-y-1 text-[13px] text-ink-mid">
+        <div className="text-[14px] font-semibold">Your subscription</div>
+        <ul className="mt-2 space-y-1 text-[13px] text-ink-mid">
           <li>· Paid features run to the end of the period.</li>
           <li>· Your licence works until it expires.</li>
           <li>· Auditing keeps working. It never needed an account.</li>
         </ul>
-        <Link href="/pricing" className="press mt-4 inline-block rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-[13.5px] font-medium hover:border-ink/30">
-          Compare plans
-        </Link>
+        <div className="mt-4">
+          <BillingActions />
+        </div>
       </section>
     </div>
   );

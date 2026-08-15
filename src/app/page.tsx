@@ -27,8 +27,12 @@ export default function Home() {
           rule checking for AI coding agents
         </p>
 
-        <h1 className="mt-5 max-w-[17ch] font-display text-[42px] leading-[1.08] tracking-[-0.02em] sm:text-[58px]">
-          Did it actually follow your rules?
+        {/* "Did it actually follow your rules?" states the PROBLEM, which is the half
+            vigiles now leads with too. This states the OUTCOME, and it is already the
+            title tag — so the headline, the browser tab and the search result finally
+            say the same thing. */}
+        <h1 className="mt-5 max-w-[15ch] font-display text-[42px] leading-[1.08] tracking-[-0.02em] sm:text-[58px]">
+          Stop fighting your AI.
         </h1>
 
         <p className="readable mt-6 max-w-[54ch] text-[17px]">

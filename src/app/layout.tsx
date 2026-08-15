@@ -8,6 +8,7 @@ import { THEME_INIT_SCRIPT } from '@/lib/theme';
 import { softwareSchema, organizationSchema, jsonLd } from '@/lib/seo';
 import ThemeToggle from '@/components/ThemeToggle';
 import AccountIcon from '@/components/AccountIcon';
+import SiteNav from '@/components/SiteNav';
 
 const TITLE = 'Enforcee — stop fighting your own AI';
 const DESCRIPTION =
@@ -61,13 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Mark size={28} />
               <span className="font-display text-[17px] tracking-tight">Enforcee</span>
             </Link>
-            <nav className="ml-auto hidden items-center gap-5 text-[13.5px] text-ink-mid md:flex">
-              {NAV.map(([href, label]) => (
-                <Link key={href} href={href} className="transition-colors hover:text-ink">
-                  {label}
-                </Link>
-              ))}
-            </nav>
+            <SiteNav items={NAV as [string, string][]} variant="bar" />
             {/* Theme switch and CTA travel together, right-aligned at every width.
                 The switch sits OUTSIDE the md:hidden nav on purpose — it is the one
                 control that has to survive on a phone, where dark mode is not a
@@ -85,13 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
             </div>
           </div>
-          <nav className="flex gap-4 overflow-x-auto border-t hairline px-5 py-2 text-[13px] text-ink-mid md:hidden">
-            {NAV.map(([href, label]) => (
-              <Link key={href} href={href} className="whitespace-nowrap">
-                {label}
-              </Link>
-            ))}
-          </nav>
+          <SiteNav items={NAV as [string, string][]} variant="rail" />
         </header>
 
         {children}

@@ -15,18 +15,38 @@ import { CONTACT_EMAIL } from '../src/lib/contact';
 const DIR = resolve(__dirname, '../supabase/email');
 const FILES = readdirSync(DIR).filter((f) => f.endsWith('.html'));
 
+/**
+ * Two families, and they are placeholder-incompatible.
+ *
+ * AUTH templates are pasted into the Supabase dashboard and Supabase fills
+ * `{{ .ConfirmationURL }}`. NOTIFY templates are rendered by src/lib/notify.ts, which
+ * fills `{{ contact }}` and friends — they carry no confirmation link because there is
+ * nothing to confirm; they are a record that something already happened.
+ *
+ * Asserting one family's rules against the other is how this suite first went red. The
+ * shared rules — preheader, no external image, light-mode declared, no CSS variables —
+ * apply to every template regardless of who renders it.
+ */
+const AUTH = FILES.filter((f) => !f.startsWith('notify-'));
+const NOTIFY = FILES.filter((f) => f.startsWith('notify-'));
+
 describe('email templates', () => {
-  it('there are templates to check', () => {
+  it('there are templates of both kinds to check', () => {
     // The scan's own control. An empty directory passes every assertion below it.
-    expect(FILES.sort()).toEqual([
+    expect(AUTH.sort()).toEqual([
       'change-email.html',
       'confirm-signup.html',
       'magic-link.html',
       'reset-password.html',
     ]);
+    expect(NOTIFY.sort()).toEqual([
+      'notify-account-deleted.html',
+      'notify-export-ready.html',
+      'notify-subscription-cancelled.html',
+    ]);
   });
 
-  for (const f of FILES) {
+  for (const f of AUTH) {
     const html = readFileSync(join(DIR, f), 'utf8');
 
     describe(f, () => {
@@ -89,9 +109,34 @@ describe('email templates', () => {
     });
   }
 
+  for (const f of NOTIFY) {
+    const html = readFileSync(join(DIR, f), 'utf8');
+
+    describe(f, () => {
+      it('carries the placeholder its own renderer fills', () => {
+        // notify.ts substitutes `{{ contact }}`. A template that lost it would ship the
+        // literal braces to a customer, which is the notify-family equivalent of a
+        // button that goes nowhere.
+        expect(html).toContain('{{ contact }}');
+      });
+
+      it('carries NO Supabase confirmation link', () => {
+        // These are records of something that already happened. A confirmation link in
+        // one would be an unactionable button on an irreversible event.
+        expect(html).not.toContain('.ConfirmationURL');
+      });
+
+      it('is rendered by notify.ts, so the kind is wired up', () => {
+        const notify = readFileSync(resolve(__dirname, '../src/lib/notify.ts'), 'utf8');
+        const kind = f.replace(/^notify-|\.html$/g, '');
+        expect(notify, `${f} exists but nothing sends it`).toContain(`'${kind}'`);
+      });
+    });
+  }
+
   it('every template is documented with the Supabase screen it belongs on', () => {
     const readme = readFileSync(join(DIR, 'README.md'), 'utf8');
-    for (const f of FILES) expect(readme, `${f} is undocumented`).toContain(f);
+    for (const f of AUTH) expect(readme, `${f} is undocumented`).toContain(f);
   });
 
   /**
@@ -138,4 +183,30 @@ describe('email templates', () => {
     // And a verification step, because a dashboard reporting "sent" is not a control.
     expect(readme, 'must tell the reader to check a real inbox').toMatch(/Prove it works|check the inbox/i);
   });
+});
+
+describe('rules that apply to every template, whoever renders it', () => {
+  for (const f of FILES) {
+    const html = readFileSync(join(DIR, f), 'utf8');
+    describe(f, () => {
+      it('has a preheader', () => {
+        expect(html).toMatch(/display:none;max-height:0/);
+      });
+      it('requests no external resource', () => {
+        const remote = html.match(/(?:src|href)="https?:\/\/(?!enforcee)[^"]*"/g) ?? [];
+        expect(remote, `remote resources: ${remote.join(', ')}`).toEqual([]);
+        expect(html).toContain('data:image/svg+xml;base64,');
+      });
+      it('declares light mode', () => {
+        expect(html).toContain('content="light"');
+      });
+      it('carries no CSS custom properties and no <style> block', () => {
+        expect(html).not.toMatch(/var\(--/);
+        expect(html).not.toMatch(/<style[\s>]/i);
+      });
+      it('never promises a reply the sender cannot receive', () => {
+        expect(html).not.toMatch(/reply to this email/i);
+      });
+    });
+  }
 });

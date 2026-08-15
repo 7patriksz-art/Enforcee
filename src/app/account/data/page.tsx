@@ -1,6 +1,6 @@
 import Link from 'next/link';
+import DataActions from '../DataActions';
 import { getAccess } from '@/lib/entitlements';
-import { CONTACT_EMAIL } from '@/lib/contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,20 +79,10 @@ export default async function DataPage() {
         </ul>
       </section>
 
-      {/* Deletion is as prominent as upgrading. A cancel path that is harder to find
-          than the buy path is the thing people screenshot and post about. */}
-      <section className="rounded-2xl border border-fail-line bg-fail-pale px-5 py-5">
-        <div className="text-[14px] font-semibold text-ink">Export or delete everything</div>
-        <p className="readable mt-2 text-[13.5px]">
-          Email us — a copy of everything, or its deletion, the same day. Auditing survives either way.
-        </p>
-        <a
-          href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Data request')}`}
-          className="press mt-4 inline-block rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-[13.5px] font-medium hover:border-ink/30"
-        >
-          Email {CONTACT_EMAIL}
-        </a>
-      </section>
+      {/* Was a mailto with a "Data request" subject line. Export and deletion are the
+          two things a privacy page is judged on; routing both through an inbox is the
+          answer that reads as least trustworthy, on the page where it costs most. */}
+      <DataActions email={access.email ?? ''} />
     </div>
   );
 }
