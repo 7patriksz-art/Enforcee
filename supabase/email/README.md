@@ -1,5 +1,9 @@
 # Transactional email templates
 
+> **Doing the setup? Follow `SETUP-EMAIL-AND-BILLING.md` in the repo root instead.**
+> It is the click-by-click version and it covers Stripe and Vercel too. This file is the
+> reference for what the templates are and why they are built this way.
+
 ## STOP — check these before pasting anything
 
 **These templates do not work on a fresh Supabase project.** Pasting them in and stopping
