@@ -141,6 +141,31 @@ function couldBeRule(text: string): boolean {
   return true;
 }
 
+/**
+ * A line that cannot be the continuation of the paragraph above it.
+ *
+ * Deliberately the same set the bullet branch already stops at, plus a horizontal rule —
+ * so the two branches agree on where a block ends instead of each having its own opinion.
+ */
+function endsProse(line: string): boolean {
+  const t = line.trim();
+  return (
+    t === '' ||
+    /^```/.test(t) ||
+    /^#{1,6}\s/.test(t) ||
+    /^\s*(?:[-*+]|\d+[.)])\s+/.test(line) ||
+    /^([-*_])\1{2,}\s*$/.test(t)
+  );
+}
+
+/** Prose blocks only join with their own kind: a quote never absorbs the paragraph below it. */
+function proseKind(line: string): 'table' | 'quote' | 'plain' {
+  const t = line.trim();
+  if (t.startsWith('|')) return 'table';
+  if (t.startsWith('>')) return 'quote';
+  return 'plain';
+}
+
 interface RawRule {
   text: string;
   startLine: number;
@@ -211,14 +236,66 @@ export function splitRules(text: string, artifact = 'ruleset', skipped: { text: 
       continue;
     }
 
-    // Prose paragraph: split into sentences, keep the directive-looking ones.
-    const sentences = trimmed.split(/(?<=[.!?])\s+(?=[A-Z"'`])/);
+    // Prose paragraph. Markdown HARD-WRAPS, so a paragraph is a run of lines and a sentence
+    // routinely crosses a line break. This used to hand each physical line to the sentence
+    // splitter on its own, which meant a wrapped sentence was never one sentence: 53 of the
+    // 98 prose rules taken from this repo's own markdown were mid-sentence fragments.
+    //
+    // That is a false accusation generator, not a cosmetic defect. Each half is classified
+    // on whatever it happens to contain, so a backticked command sitting in a descriptive
+    // clause became `required_literal` and every output that did not quote it verbatim was
+    // reported VIOLATED with a deterministic badge. Found 2026-08-15 by running
+    // `enforcee audit CLAUDE.md SETUP-EMAIL-AND-BILLING.md` — two violations, both of them
+    // halves of one sentence in our own preamble that describes what the tool does.
+    //
+    // It also broke a guarantee that is not about parsing at all: rule ids are
+    // content-addressed so a rule survives being reworded. Re-wrapping a paragraph is not
+    // even a rewording, and it changed every id in it.
+    const kind = proseKind(line);
+    const strip = (l: string) => (kind === 'quote' ? l.trim().replace(/^>\s?/, '').trim() : l.trim());
+    const parts: { text: string; line: number }[] = [{ text: strip(line), line: i + 1 }];
+    let end = i;
+    // A table row is a record, not a wrapped line. Joining rows would glue unrelated ones
+    // into a single "sentence", so a table stays one unit per row.
+    if (kind !== 'table') {
+      while (end + 1 < lines.length && !endsProse(lines[end + 1]) && proseKind(lines[end + 1]) === kind) {
+        const next = strip(lines[end + 1]);
+        if (next === '') break;
+        end++;
+        parts.push({ text: next, line: end + 1 });
+      }
+    }
+
+    // Join, keeping a char→line map so a sentence still reports the lines it came from.
+    let joined = '';
+    const lineOf: number[] = [];
+    for (let p = 0; p < parts.length; p++) {
+      if (p > 0) {
+        joined += ' ';
+        lineOf.push(parts[p].line);
+      }
+      joined += parts[p].text;
+      for (let k = 0; k < parts[p].text.length; k++) lineOf.push(parts[p].line);
+    }
+
+    const sentences = joined.split(/(?<=[.!?])\s+(?=[A-Z"'`])/);
+    let cursor = 0;
     for (const s of sentences) {
+      const at = joined.indexOf(s, cursor);
+      const startOff = at < 0 ? cursor : at;
+      cursor = startOff + s.length;
       const t = s.trim();
       if (t.length < 8) continue;
       if (!directive(t)) continue;
-      out.push({ text: t, startLine: i + 1, endLine: i + 1, section: [...section] });
+      const endOff = Math.min(startOff + s.length - 1, lineOf.length - 1);
+      out.push({
+        text: t,
+        startLine: lineOf[startOff] ?? i + 1,
+        endLine: lineOf[Math.max(startOff, endOff)] ?? i + 1,
+        section: [...section],
+      });
     }
+    i = end;
   }
 
   return out.filter((r) => r.text.replace(/[^a-z0-9]/gi, '').length >= 6).map((r) => ({ ...r, artifact })) as RawRule[];

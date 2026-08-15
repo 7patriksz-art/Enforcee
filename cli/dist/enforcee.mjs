@@ -23,6 +23,96 @@ function ruleId(normalized) {
   return createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 12);
 }
 var IMPERATIVE = /\b(must|must not|mustn't|never|always|don't|do not|shall|should|should not|shouldn't|avoid|ensure|require[ds]?|required|prefer|use|only|no |not allowed|forbidden|refrain|limit|keep|write|respond|reply|answer|output|format|include|omit|exclude|cite|start|end|begin|finish)\b/i;
+var IMPERATIVE_START = new RegExp(
+  "^(?:please\\s+)?(" + [
+    "run",
+    "check",
+    "verify",
+    "validate",
+    "confirm",
+    "assert",
+    "add",
+    "remove",
+    "delete",
+    "rename",
+    "move",
+    "copy",
+    "replace",
+    "update",
+    "commit",
+    "push",
+    "merge",
+    "rebase",
+    "revert",
+    "build",
+    "compile",
+    "install",
+    "upgrade",
+    "pin",
+    "bump",
+    "call",
+    "invoke",
+    "return",
+    "throw",
+    "raise",
+    "catch",
+    "handle",
+    "wrap",
+    "escape",
+    "quote",
+    "sanitise",
+    "sanitize",
+    "normalise",
+    "normalize",
+    "document",
+    "annotate",
+    "comment",
+    "explain",
+    "describe",
+    "create",
+    "define",
+    "declare",
+    "implement",
+    "extract",
+    "inline",
+    "refactor",
+    "import",
+    "export",
+    "expose",
+    "store",
+    "save",
+    "load",
+    "fetch",
+    "send",
+    "reject",
+    "accept",
+    "treat",
+    "mark",
+    "tag",
+    "split",
+    "sort",
+    "apply",
+    "follow",
+    "match",
+    "stop",
+    "skip",
+    "print",
+    "emit",
+    "close",
+    "open",
+    "set",
+    "clear",
+    "reset",
+    "leave",
+    "put",
+    "place",
+    "read"
+  ].join("|") + ")\\b",
+  "i"
+);
+function directive(text) {
+  return IMPERATIVE.test(text) || IMPERATIVE_START.test(text.trim());
+}
 var UNENFORCEABLE = /^(be (helpful|nice|good|smart|careful|thoughtful|concise)|use (good |common )?(judgment|sense)|do your best|act professionally|be professional|think step by step|be accurate|write well|make it good)\b/i;
 var CONDITIONAL = /^(when|whenever|if|for|while|during|unless|in case of|on)\b[^,.;]{2,80}[,.;]/i;
 var NOT_A_RULE = [
@@ -48,6 +138,16 @@ function couldBeRule(text) {
     if (significant.length >= 2 && capitalised >= Math.ceil(significant.length * 0.75)) return false;
   }
   return true;
+}
+function endsProse(line) {
+  const t = line.trim();
+  return t === "" || /^```/.test(t) || /^#{1,6}\s/.test(t) || /^\s*(?:[-*+]|\d+[.)])\s+/.test(line) || /^([-*_])\1{2,}\s*$/.test(t);
+}
+function proseKind(line) {
+  const t = line.trim();
+  if (t.startsWith("|")) return "table";
+  if (t.startsWith(">")) return "quote";
+  return "plain";
 }
 function skippedLines(text) {
   const skipped = [];
@@ -77,23 +177,56 @@ function splitRules(text, artifact = "ruleset", skipped = []) {
     const item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
     if (item) {
       let body = item[1].trim();
-      let end = i;
-      while (end + 1 < lines.length && lines[end + 1].trim() !== "" && !/^\s*(?:[-*+]|\d+[.)])\s+/.test(lines[end + 1]) && !/^#{1,6}\s/.test(lines[end + 1].trim()) && /^\s{2,}/.test(lines[end + 1])) {
-        end++;
-        body += " " + lines[end].trim();
+      let end2 = i;
+      while (end2 + 1 < lines.length && lines[end2 + 1].trim() !== "" && !/^\s*(?:[-*+]|\d+[.)])\s+/.test(lines[end2 + 1]) && !/^#{1,6}\s/.test(lines[end2 + 1].trim()) && /^\s{2,}/.test(lines[end2 + 1])) {
+        end2++;
+        body += " " + lines[end2].trim();
       }
-      if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end + 1, section: [...section] });
+      if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end2 + 1, section: [...section] });
       else skipped.push({ text: body, line: i + 1 });
-      i = end;
+      i = end2;
       continue;
     }
-    const sentences = trimmed.split(/(?<=[.!?])\s+(?=[A-Z"'`])/);
+    const kind = proseKind(line);
+    const strip2 = (l) => kind === "quote" ? l.trim().replace(/^>\s?/, "").trim() : l.trim();
+    const parts = [{ text: strip2(line), line: i + 1 }];
+    let end = i;
+    if (kind !== "table") {
+      while (end + 1 < lines.length && !endsProse(lines[end + 1]) && proseKind(lines[end + 1]) === kind) {
+        const next = strip2(lines[end + 1]);
+        if (next === "") break;
+        end++;
+        parts.push({ text: next, line: end + 1 });
+      }
+    }
+    let joined = "";
+    const lineOf = [];
+    for (let p = 0; p < parts.length; p++) {
+      if (p > 0) {
+        joined += " ";
+        lineOf.push(parts[p].line);
+      }
+      joined += parts[p].text;
+      for (let k = 0; k < parts[p].text.length; k++) lineOf.push(parts[p].line);
+    }
+    const sentences = joined.split(/(?<=[.!?])\s+(?=[A-Z"'`])/);
+    let cursor = 0;
     for (const s of sentences) {
+      const at = joined.indexOf(s, cursor);
+      const startOff = at < 0 ? cursor : at;
+      cursor = startOff + s.length;
       const t = s.trim();
       if (t.length < 8) continue;
-      if (!IMPERATIVE.test(t)) continue;
-      out.push({ text: t, startLine: i + 1, endLine: i + 1, section: [...section] });
+      if (!directive(t)) continue;
+      const endOff = Math.min(startOff + s.length - 1, lineOf.length - 1);
+      out.push({
+        text: t,
+        startLine: lineOf[startOff] ?? i + 1,
+        endLine: lineOf[Math.max(startOff, endOff)] ?? i + 1,
+        section: [...section]
+      });
     }
+    i = end;
   }
   return out.filter((r) => r.text.replace(/[^a-z0-9]/gi, "").length >= 6).map((r) => ({ ...r, artifact }));
 }
@@ -826,7 +959,9 @@ function runCheck(rule, output) {
       return res(rule, "VIOLATED", `Required heading "${c.heading}" is missing.`, [], true);
     }
     case "citation_required": {
-      const CITATION = "\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+|`?[\\w./-]+\\.[a-z]{1,5}:\\d+(?::\\d+)?`?|\\b(?:section|clause|para(?:graph)?|art(?:icle)?|rule|policy|appendix|table|figure|page)\\s+\\d+(?:\\.\\d+)*\\b|\\[\\d{1,3}\\]|\\b(?:doi|arXiv):\\s?\\S{4,}";
+      const FILE2 = "`?[\\w./-]+\\.[a-z]{1,5}`?";
+      const LINE = "lines?\\s+\\d+(?:\\s*[-\u2013\u2014]\\s*\\d+)?";
+      const CITATION = `\\[[^\\]]{1,80}\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s)\\]]+|${FILE2}:\\d+(?::\\d+)?|${FILE2}[,]?\\s+(?:at\\s+|on\\s+)?${LINE}|\\b${LINE}\\s+(?:of|in)\\s+${FILE2}|${FILE2}#L\\d+(?:-L?\\d+)?|\\b(?:section|clause|para(?:graph)?|art(?:icle)?|rule|policy|appendix|table|figure|page)\\s+\\d+(?:\\.\\d+)*\\b|\\[\\d{1,3}\\]|\\b(?:doi|arXiv):\\s?\\S{4,}`;
       const links = regexSpans(output, CITATION, "gi", 5, true) ?? [];
       return links.length ? res(rule, "FOLLOWED", `${links.length} citation(s) found.`, links, true) : res(rule, "VIOLATED", "No citations found in the output \u2014 no link, file:line reference, section number or footnote marker.", [], true);
     }
