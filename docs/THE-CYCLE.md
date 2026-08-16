@@ -6,6 +6,10 @@ Patrik, 2026-08-16: *"turn this searching, researching, learning, enforcing, mon
 verifying workflow of enforcee into a cycle or have it always do it again with different paths,
 so it won't just run once... all the tasks shall aim to improve this."*
 
+And, correcting my first reading of it: *"under cycle I meant on the actual agent running
+tasks have it try different paths and methods to avoid stucking."* — the cycle is about an
+agent not getting stuck, not about rotating what it looks at. Section 2 is rewritten for that.
+
 And: *"Longer work which gets green on the first run is way more valuable than run it once,
 gets red, and you can start over."*
 
@@ -31,34 +35,59 @@ it is doing a different job.
 
 ---
 
-## 2. Rotate the path. Never run the same job twice.
+## 2. When you hit a wall, take a different route. Never stop.
 
-A job that does the same thing every night stops finding anything on night two. So each run
-picks its focus from a rotation, and **states which one it took and why**.
+**Corrected 2026-08-16.** This section first said "rotate the subject area each night". That
+was a misreading. Patrik: *"under cycle I meant on the actual agent running tasks have it try
+different paths and methods to avoid stucking."*
 
-Deterministic, so coverage is guaranteed rather than hoped for:
+He means **persistence within a run**, not variety across runs. A job that stops at the first
+refusal has failed, however tidily it reports the refusal.
 
-```
-PATH = (days since 2026-08-16) mod 10
-```
+The charter already names this as the CONTINUE layer: *"A blocked action is not a stop. It is
+a different approach, tried."* Here is what that means mechanically.
 
-| # | path | what it means |
+### The escalation ladder
+
+On any blocked step, work down this list. Do not stop until it is exhausted.
+
+| # | move | example from this project |
 |---|---|---|
-| 0 | **parser** | `src/lib/rules/parse.ts`, real rulesets, false accusations |
-| 1 | **guard** | policy compilation, bypasses, fail-open, hook payloads |
-| 2 | **checks** | deterministic checks, the judge, the evidence gate |
-| 3 | **obstacles** | patterns, false-positive rate, unverified remedies |
-| 4 | **website** | claims vs behaviour — every promise the site makes |
-| 5 | **onboarding** | first sixty seconds; install, licence, first audit |
-| 6 | **CI & release** | the pipeline, the platforms, what publishes |
-| 7 | **docs** | any doc asserting a mechanism, checked against the repo |
-| 8 | **security** | authz, secrets, injection, cost |
-| 9 | **transcripts** | what real sessions show that no test does |
+| 1 | **Consult what is already known.** `enforcee obstacles`, the charter, the logs. | 4 pushes died on `could not read Username` with the remedy in our own charter. |
+| 2 | **Same route, different mechanics.** | `git push` refused → push to an explicit URL. |
+| 3 | **Bypass the layer that refused.** | Every "the sandbox blocks this" so far was the *proxy*. `env -u https_proxy` unlocked pushes and the GitHub API. |
+| 4 | **Different transport, same goal.** | `api.supabase.com` blocked at egress → run the same call from a GitHub runner. |
+| 5 | **Different tool entirely.** | `~/.claude` ungrantable → a hook inside the user's own Claude Code reaches it. |
+| 6 | **Change the goal's shape.** | Templates could not be pasted from a phone → push them by API instead. |
+| 7 | **Remove the dependency.** | Three image formats broke in email → draw the mark in HTML; nothing left to fetch. |
+| 8 | **Only now, ask.** And ask for the fix with the longest half-life. | |
 
-If the chosen path is genuinely dry, say so in one sentence **and take the next one in the
-rotation** — do not stop, and do not silently substitute a path you like better.
+**Record which rung you reached.** A step that succeeded on rung 5 is an obstacle worth
+storing: next time it starts at rung 5.
 
----
+### Never repeat a failure identically
+
+Retrying the same command unchanged is not persistence, it is a loop. If an approach fails
+twice the same way, the third attempt must differ in **kind** — a different tool, transport or
+goal shape — not in spacing or phrasing.
+
+### What "stuck" actually looks like
+
+Not an error. Errors are progress. Stuck is:
+
+- the same command run three times with the same result
+- a report that describes a blockage without having tried anything against it
+- asking the user for something you have not verified is even usable — a Supabase token was
+  nearly requested for an API this sandbox cannot reach at all
+- **ending a run with the work in the same state it started**
+
+### Coverage is a separate concern
+
+Breadth still matters, so vary the subject too — parser, guard, checks, obstacles, website,
+onboarding, CI & release, docs, security, transcripts. But that is about not re-treading
+ground, and it is the weaker of the two ideas. **If a run has to choose, finishing the thing
+in front of it beats sampling something new.** Half-finished work is what forces a pivot, and
+pivoting is the thing this product exists to stop.
 
 ## 3. Green on the first run beats fast and red
 

@@ -11497,6 +11497,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence set")} <key>                    install a licence on this machine
+  ${C.bold("enforcee status")}                              is it installed, and what has it actually done?
   ${C.bold("enforcee licence")}                             show the licence this machine is using
 
   ${C.dim("--judge")}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
@@ -11782,6 +11783,92 @@ async function main() {
     }
     console.log("");
     console.log(C.grey("  enforcee accept <id> \xB7 enforcee decline <id> \xB7 nothing here is ever deleted."));
+    console.log("");
+    return;
+  }
+  if (cmd === "status") {
+    const dir = join5(process.cwd(), ".enforcee");
+    const has = (f) => existsSync5(join5(dir, f));
+    const read1 = (f) => has(f) ? readFileSync3(join5(dir, f), "utf8") : null;
+    const settingsPath = join5(process.cwd(), ".claude", "settings.json");
+    let hooks = [];
+    if (existsSync5(settingsPath)) {
+      try {
+        hooks = Object.keys(JSON.parse(readFileSync3(settingsPath, "utf8")).hooks ?? {});
+      } catch {
+        hooks = [];
+      }
+    }
+    const policyRaw = read1("policy.json");
+    let deny = 0;
+    let warn = 0;
+    let rulesetHash = "";
+    if (policyRaw) {
+      try {
+        const pol = JSON.parse(policyRaw);
+        deny = pol.deny?.length ?? 0;
+        warn = pol.warn?.length ?? 0;
+        rulesetHash = pol.rulesetHash ?? "";
+      } catch {
+      }
+    }
+    const ledger = (read1("ledger.jsonl") ?? "").split("\n").filter(Boolean);
+    const byDecision = /* @__PURE__ */ new Map();
+    let last = "";
+    for (const line of ledger) {
+      try {
+        const r = JSON.parse(line);
+        byDecision.set(r.decision ?? "?", (byDecision.get(r.decision ?? "?") ?? 0) + 1);
+        if (r.at) last = r.at;
+      } catch {
+      }
+    }
+    let obstacles = [];
+    const obsRaw = read1("obstacles.json");
+    if (obsRaw) {
+      try {
+        const parsed = JSON.parse(obsRaw);
+        obstacles = Array.isArray(parsed) ? parsed : parsed.obstacles ?? [];
+      } catch {
+      }
+    }
+    const unresolved = obstacles.filter((o) => o.hits >= 2 && !o.resolution).length;
+    const lic = checkLocalLicence();
+    if (json) {
+      return console.log(
+        JSON.stringify(
+          {
+            installed: hooks.length > 0 && !!policyRaw,
+            hooks,
+            policy: policyRaw ? { deny, warn, rulesetHash } : null,
+            licence: { valid: lic.ok, reason: lic.ok ? void 0 : lic.reason },
+            ledger: { entries: ledger.length, byDecision: Object.fromEntries(byDecision), last },
+            obstacles: { known: obstacles.length, unresolved }
+          },
+          null,
+          2
+        )
+      );
+    }
+    const tick = (ok) => ok ? C.green("  ok  ") : C.red(" none ");
+    console.log("");
+    console.log(`  ${C.bold("Enforcee")} ${C.dim(VERSION2)}  ${C.grey(process.cwd())}`);
+    console.log("");
+    console.log(`${tick(hooks.length > 0)} hooks       ${hooks.length ? hooks.join(", ") : C.grey("not registered \u2014 .claude/settings.json has none")}`);
+    console.log(`${tick(!!policyRaw)} policy      ${policyRaw ? `${deny} blocking, ${warn} warning  ${C.grey(rulesetHash.slice(0, 12))}` : C.grey("not compiled \u2014 run `npm run dogfood` or `enforcee guard <rules>`")}`);
+    console.log(`${tick(lic.ok)} licence     ${lic.ok ? "valid" : C.grey(lic.reason ?? "none \u2014 enforcement is OFF, auditing still works")}`);
+    console.log("");
+    if (ledger.length === 0) {
+      console.log(`${C.red(" none ")} ledger      ${C.grey("NO DECISIONS RECORDED \u2014 the guard has never run in this project.")}`);
+      console.log(`        ${C.grey("Everything above is configuration. None of it has been exercised.")}`);
+    } else {
+      const parts = [...byDecision.entries()].map(([k, v]) => `${v} ${k.toLowerCase()}`).join(", ");
+      console.log(`${C.green("  ok  ")} ledger      ${ledger.length} decisions \u2014 ${parts}`);
+      console.log(`        ${C.grey(`last: ${last}`)}`);
+    }
+    console.log(
+      obstacles.length ? `${C.green("  ok  ")} learned     ${obstacles.length} obstacles${unresolved ? `, ${C.yellow(`${unresolved} with no proven remedy`)}` : ""}` : `${C.grey(" none ")} learned     ${C.grey("nothing yet \u2014 the guard refreshes this in the background")}`
+    );
     console.log("");
     return;
   }

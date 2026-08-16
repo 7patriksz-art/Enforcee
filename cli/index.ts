@@ -65,7 +65,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee obstacles')} <dir-or-transcript…>     what already blocked you here, from what actually failed
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key>                    install a licence on this machine
-  ${C.bold('enforcee licence')}                             show the licence this machine is using
+  ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
   ${C.dim('--json')}         emit the receipt as JSON instead of a table
@@ -462,6 +462,121 @@ async function main(): Promise<void> {
   // recognised failures were a signature ALREADY SEEN in the same history. One hundred
   // percent. Four pushes died on `could not read Username` while the remedy sat in our own
   // charter. Nobody has to notice any of that for it to become a fact.
+  // ── status: the answer to "where can I see what it is doing?" ────────────
+  //
+  // Patrik, 2026-08-16: "Is enforcee truly installed here? Where can I access it and see
+  // its job?"
+  //
+  // There was no answer. Enforcee wrote a policy, a ledger, a licence and an obstacle store
+  // into `.enforcee/`, and offered no way to look at any of it. A tool whose entire pitch is
+  // "you cannot see whether your rules are working" shipped with exactly that problem.
+  //
+  // Deliberately reports ABSENCE as loudly as presence. "No ledger entries" is the most
+  // important thing this can tell you — it means the guard has never actually run, which
+  // looks identical to everything being fine.
+  if (cmd === 'status') {
+    const dir = join(process.cwd(), '.enforcee');
+    const has = (f: string) => existsSync(join(dir, f));
+    const read1 = (f: string) => (has(f) ? readFileSync(join(dir, f), 'utf8') : null);
+
+    const settingsPath = join(process.cwd(), '.claude', 'settings.json');
+    let hooks: string[] = [];
+    if (existsSync(settingsPath)) {
+      try {
+        hooks = Object.keys((JSON.parse(readFileSync(settingsPath, 'utf8')) as { hooks?: object }).hooks ?? {});
+      } catch {
+        hooks = [];
+      }
+    }
+
+    const policyRaw = read1('policy.json');
+    let deny = 0;
+    let warn = 0;
+    let rulesetHash = '';
+    if (policyRaw) {
+      try {
+        const pol = JSON.parse(policyRaw) as { deny?: unknown[]; warn?: unknown[]; rulesetHash?: string };
+        deny = pol.deny?.length ?? 0;
+        warn = pol.warn?.length ?? 0;
+        rulesetHash = pol.rulesetHash ?? '';
+      } catch {
+        /* a corrupt policy is reported below by its absence of counts */
+      }
+    }
+
+    const ledger = (read1('ledger.jsonl') ?? '').split('\n').filter(Boolean);
+    const byDecision = new Map<string, number>();
+    let last = '';
+    for (const line of ledger) {
+      try {
+        const r = JSON.parse(line) as { decision?: string; at?: string };
+        byDecision.set(r.decision ?? '?', (byDecision.get(r.decision ?? '?') ?? 0) + 1);
+        if (r.at) last = r.at;
+      } catch {
+        /* skip */
+      }
+    }
+
+    let obstacles: Obstacle[] = [];
+    const obsRaw = read1('obstacles.json');
+    if (obsRaw) {
+      try {
+        const parsed = JSON.parse(obsRaw) as { obstacles?: Obstacle[] } | Obstacle[];
+        obstacles = Array.isArray(parsed) ? parsed : (parsed.obstacles ?? []);
+      } catch {
+        /* skip */
+      }
+    }
+    const unresolved = obstacles.filter((o) => o.hits >= 2 && !o.resolution).length;
+
+    const lic = checkLocalLicence();
+
+    if (json) {
+      return console.log(
+        JSON.stringify(
+          {
+            installed: hooks.length > 0 && !!policyRaw,
+            hooks,
+            policy: policyRaw ? { deny, warn, rulesetHash } : null,
+            licence: { valid: lic.ok, reason: lic.ok ? undefined : lic.reason },
+            ledger: { entries: ledger.length, byDecision: Object.fromEntries(byDecision), last },
+            obstacles: { known: obstacles.length, unresolved },
+          },
+          null,
+          2
+        )
+      );
+    }
+
+    const tick = (ok: boolean) => (ok ? C.green('  ok  ') : C.red(' none '));
+    console.log('');
+    console.log(`  ${C.bold('Enforcee')} ${C.dim(VERSION)}  ${C.grey(process.cwd())}`);
+    console.log('');
+    console.log(`${tick(hooks.length > 0)} hooks       ${hooks.length ? hooks.join(', ') : C.grey('not registered — .claude/settings.json has none')}`);
+    console.log(`${tick(!!policyRaw)} policy      ${policyRaw ? `${deny} blocking, ${warn} warning  ${C.grey(rulesetHash.slice(0, 12))}` : C.grey('not compiled — run `npm run dogfood` or `enforcee guard <rules>`')}`);
+    console.log(`${tick(lic.ok)} licence     ${lic.ok ? 'valid' : C.grey(lic.reason ?? 'none — enforcement is OFF, auditing still works')}`);
+    console.log('');
+
+    // The load-bearing line. An empty ledger is indistinguishable from a healthy one unless
+    // it is said out loud, and it means the guard has never run.
+    if (ledger.length === 0) {
+      console.log(`${C.red(' none ')} ledger      ${C.grey('NO DECISIONS RECORDED — the guard has never run in this project.')}`);
+      console.log(`        ${C.grey('Everything above is configuration. None of it has been exercised.')}`);
+    } else {
+      const parts = [...byDecision.entries()].map(([k, v]) => `${v} ${k.toLowerCase()}`).join(', ');
+      console.log(`${C.green('  ok  ')} ledger      ${ledger.length} decisions — ${parts}`);
+      console.log(`        ${C.grey(`last: ${last}`)}`);
+    }
+
+    console.log(
+      obstacles.length
+        ? `${C.green('  ok  ')} learned     ${obstacles.length} obstacles${unresolved ? `, ${C.yellow(`${unresolved} with no proven remedy`)}` : ''}`
+        : `${C.grey(' none ')} learned     ${C.grey('nothing yet — the guard refreshes this in the background')}`
+    );
+    console.log('');
+    return;
+  }
+
   if (cmd === 'obstacles') {
     if (!args[1]) {
       console.error(C.red('usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]'));
