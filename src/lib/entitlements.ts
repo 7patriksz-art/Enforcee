@@ -20,7 +20,13 @@ import { getServiceSupabase, getUser } from './supabase/server';
  * window rather than cutting them off the hour a card expires. We would rather over-serve
  * someone whose payment failed than punish them for it.
  */
-const ENTITLING_STATUSES = new Set(['active', 'trialing', 'past_due']);
+/**
+ * Exported ONLY so `tests/invariants.test.ts` can assert membership on the real set rather
+ * than grep for the word. D-021b's control used to be `expect(<every entitlements file,
+ * comments and all>).toMatch(/past_due/)`, which the paragraph above satisfies on its own:
+ * `past_due` was deleted from this set and all 862 tests stayed green.
+ */
+export const ENTITLING_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
 export interface Access {
   plan: PlanId;

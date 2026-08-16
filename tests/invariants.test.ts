@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
+import { ENTITLING_STATUSES } from '../src/lib/entitlements';
+import { PLANS } from '../src/lib/plans';
 
 /**
  * The anti-contradiction control.
@@ -97,18 +99,34 @@ describe('D-021 · no free trials', () => {
 
   it('trialing and past_due still entitle', () => {
     // The other half of D-021, and the one a cleanup pass would quietly drop as dead code.
-    const ent = ALL.filter((f) => /entitlements|subscription/i.test(f) && f.endsWith('.ts'))
-      .map((f) => readFileSync(f, 'utf8'))
-      .join('\n');
-    expect(ent).toMatch(/trialing/);
-    expect(ent).toMatch(/past_due/);
+    //
+    // This used to grep every entitlements/subscription file — comments included — for the
+    // words. The doc comment directly above ENTITLING_STATUSES explains why `past_due` is
+    // there, so it satisfied the assertion by itself. On 2026-08-16 `past_due` was deleted
+    // from the set, cutting a real subscriber off the hour their card failed, and all 862
+    // tests stayed green. The control now reads the set the code actually branches on.
+    expect(ENTITLING_STATUSES.has('active')).toBe(true);
+    expect(ENTITLING_STATUSES.has('trialing'), 'a hand-made Stripe subscription reports trialing').toBe(true);
+    expect(ENTITLING_STATUSES.has('past_due'), "D-021b: dunning must not cut a payer off the hour a card expires").toBe(true);
+    // Coverage guard: a set that entitles everything would satisfy the three lines above.
+    expect(ENTITLING_STATUSES.has('canceled')).toBe(false);
+    expect(ENTITLING_STATUSES.has('incomplete_expired')).toBe(false);
   });
 });
 
 describe('auditing stays free and unmetered', () => {
   it('the free plan says unlimited audits', () => {
-    const plans = read('src/lib/plans.ts');
-    expect(/unlimited/i.test(plans)).toBe(true);
+    // This used to be `/unlimited/i.test(<the whole of plans.ts>)`, which the Founder plan's
+    // "Unlimited projects" satisfied on its own. On 2026-08-16 the free plan's own line was
+    // changed to "500 audits a month" — metering the free tier, a reversal of the invariant
+    // this row exists for — and all 862 tests stayed green. It now reads the free plan.
+    const free = PLANS.find((p) => p.id === 'free');
+    expect(free, 'there is no free plan any more').toBeTruthy();
+    const unlocks = free!.unlocks.join(' | ');
+    expect(unlocks, `free unlocks: ${unlocks}`).toMatch(/unlimited audits/i);
+    // And no numeric cap on auditing anywhere in the free tier's own copy.
+    const copy = [unlocks, free!.walls?.join(' | ') ?? '', free!.pitch].join(' | ');
+    expect(/\b\d[\d,]*\s*audits?\b/i.test(copy), `free tier names an audit quota: ${copy}`).toBe(false);
   });
 
   it('no page offers to sell an audit quota', () => {
@@ -164,7 +182,19 @@ describe('D-007 · guard design rules that must not be relaxed', () => {
   });
 
   it('has a top-level catch, so an internal error still speaks JSON', () => {
-    expect(/catch/.test(guard)).toBe(true);
+    // `/catch/.test(guard)` was green against a guard whose top-level try/catch had been
+    // deleted outright — the file holds seventeen other catches and two comments containing
+    // the word. Watched on 2026-08-16: removed the wrapper, left valid JS, control passed.
+    //
+    // The property is structural: the LAST call to main() is inside a try whose catch writes
+    // JSON and exits 0. That is what stops an internal error producing empty stdout, which
+    // Claude Code reads as a non-blocking error — a silent fail-open with no ledger row.
+    const tail = guard.slice(guard.lastIndexOf('main()'));
+    expect(tail, 'main() is no longer wrapped in a top-level catch').toMatch(
+      /\}\s*catch\s*\(/
+    );
+    expect(tail, 'the top-level catch no longer writes JSON to stdout').toMatch(/process\.stdout\.write/);
+    expect(tail, 'the top-level catch no longer exits 0').toMatch(/process\.exit\(0\)/);
   });
 
   it('splits rm -rf by target rather than blocking it outright', () => {
@@ -233,8 +263,14 @@ describe('H-1 · every verdict carries its method', () => {
   });
 
   it('UNVERIFIABLE is still a reachable verdict', () => {
-    const types = read('src/lib/types.ts');
-    expect(types).toContain('UNVERIFIABLE');
+    // Comments stripped, and the union member asserted rather than the bare word: two doc
+    // comments in this file mention UNVERIFIABLE by name, so `toContain('UNVERIFIABLE')`
+    // stayed green on 2026-08-16 with the member deleted from the Verdict union entirely.
+    // `tsc` did catch that one — but this row is supposed to, and did not.
+    const types = code(read('src/lib/types.ts'));
+    expect(types, 'UNVERIFIABLE is no longer a member of the Verdict union').toMatch(
+      /['"`]UNVERIFIABLE['"`]/
+    );
   });
 });
 
