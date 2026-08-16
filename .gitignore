@@ -29,4 +29,11 @@ theme-audit/
 # A committed policy would be a second copy of the ruleset and would drift from it (E-1),
 # and a committed licence would be a secret in a public repo.
 .enforcee/
-scripts/.dogfood.bundle.mjs
+
+# esbuild output for the dev scripts. Under a `dist/` directory on purpose: the invariant
+# scanner walks the working tree rather than git, and skips any directory named `dist`.
+# A stale bundle in scripts/ failed E-6 on 2026-08-16 with the OLD text of an instruction
+# that had already been fixed in source — a generated artefact reporting as a shipped
+# surface. Test order was the only thing hiding it: ci.yml happens to run `npm test`
+# before `npm run dogfood`.
+scripts/dist/

@@ -15,7 +15,8 @@
     "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist",
     "selfcheck": "node cli/dist/enforcee.mjs health CLAUDE.md && node cli/dist/enforcee.mjs preflight CLAUDE.md",
     "verify:ui": "node scripts/verify-ui.mjs",
-    "dogfood": "esbuild scripts/dogfood.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/.dogfood.bundle.mjs --log-level=warning && node scripts/.dogfood.bundle.mjs",
+    "licence:repo": "esbuild scripts/issue-repo-licence.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/dist/issue-repo-licence.mjs --log-level=warning && node scripts/dist/issue-repo-licence.mjs",
+    "dogfood": "esbuild scripts/dogfood.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/dist/dogfood.mjs --log-level=warning && node scripts/dist/dogfood.mjs",
     "email:check": "node scripts/push-email-templates.mjs --check",
     "email:push": "node scripts/push-email-templates.mjs"
   },
@@ -35,6 +36,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "esbuild": "^0.21.5",
     "playwright": "^1.62.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",

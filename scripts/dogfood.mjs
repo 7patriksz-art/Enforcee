@@ -42,13 +42,34 @@
  * when either is implausibly low — so a parser regression that quietly empties the policy
  * turns the dogfood step red instead of installing a guard that guards nothing.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseRuleset } from '../src/lib/rules/parse.ts';
 import { proposeDenyRules, compilePolicy, toDenyRule } from '../src/lib/enforce/policy.ts';
+import { checkLocalLicence as checkLicence } from '../src/lib/licence-local.ts';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+/**
+ * The package root, found by walking up for package.json rather than by counting `..`.
+ *
+ * These scripts run BUNDLED — esbuild writes them to `scripts/dist/`, so `import.meta.url`
+ * is two levels down, not one. The first version hardcoded `join(here, '..')`, which was
+ * correct while the bundle sat in `scripts/` and silently wrong the moment it moved:
+ * `dogfood` went looking for `scripts/CLAUDE.md` and died, and the licence script quietly
+ * stopped finding `.env.local`. Counting `..` encodes the output directory into the source.
+ */
+function packageRoot(from) {
+  let dir = from;
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(join(dir, 'package.json'))) return dir;
+    const up = dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  throw new Error(`Could not find package.json above ${from} — run this through its npm script.`);
+}
+
+const ROOT = packageRoot(dirname(fileURLToPath(import.meta.url)));
 const RULES = join(ROOT, 'CLAUDE.md');
 
 /**
@@ -120,8 +141,32 @@ if (total < MIN_POLICY) {
 mkdirSync(join(ROOT, '.enforcee'), { recursive: true });
 writeFileSync(join(ROOT, '.enforcee', 'policy.json'), JSON.stringify(policy, null, 2));
 console.log(`Wrote .enforcee/policy.json — ${deny.length + extraDeny.length} blocking, ${warn.length} warning.`);
-console.log(
-  process.env.ENFORCEE_LICENCE
-    ? 'ENFORCEE_LICENCE is set — enforcement is ON for sessions in this repo.'
-    : 'No ENFORCEE_LICENCE — load evidence and the ledger record; enforcement stays OFF and says so.'
-);
+/**
+ * Report the licence, and how long it has left.
+ *
+ * The repo licence is capped at 45 days by D-022, exactly like a customer's — we do not mint
+ * ourselves a longer one, because the expiry date is the only control an offline licence has
+ * and special-casing ourselves out of it would mean never exercising the path our customers
+ * live on. So it WILL expire, on purpose, and the failure mode to design against is that
+ * enforcement quietly switches off one morning and nobody notices for a month.
+ *
+ * Hence: every run prints the state and the days remaining, and the last week is loud.
+ */
+const check = checkLicence();
+if (!check.ok) {
+  console.log(
+    check.reason === 'missing'
+      ? 'No licence — load evidence and the ledger record; enforcement stays OFF and says so.\n' +
+          '  To turn it on: node scripts/issue-repo-licence.mjs (needs ENFORCEE_LICENCE_PRIVATE_KEY).'
+      : `Licence present but NOT USABLE (${check.reason}) — enforcement is OFF. ` +
+          `Re-issue with: node scripts/issue-repo-licence.mjs`
+  );
+} else {
+  const days = Math.floor((check.payload.exp * 1000 - Date.now()) / 86_400_000);
+  const line = `Licensed to ${check.payload.sub} · ${check.payload.plan} · ${days} day${days === 1 ? '' : 's'} left — enforcement is ON.`;
+  if (days <= 7) {
+    console.log(`${line}\n  EXPIRING: re-issue with \`node scripts/issue-repo-licence.mjs\` before it lapses,\n  or enforcement switches off here without anything failing.`);
+  } else {
+    console.log(line);
+  }
+}
