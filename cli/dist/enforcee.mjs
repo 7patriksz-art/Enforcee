@@ -11070,7 +11070,11 @@ var SECRET_SHAPES = [
   [/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-<redacted>"],
   [/\bvcp_[A-Za-z0-9]{16,}/g, "vcp_<redacted>"],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "<jwt-redacted>"],
-  // A credential embedded in a URL: https://user:secret@host
+  // A credential in a URL's userinfo section — the "name:password@" that precedes a host.
+  // Deliberately NOT written out as an example here: comments survive into the bundle, and
+  // `npm run pack:cli` scans the shipped file for anything endpoint-shaped so nobody can
+  // slip a network call into the free CLI. A URL-shaped comment trips that control, and the
+  // right response is to keep the control sharp rather than add an exception for prose.
   [/(https?:\/\/)[^\s:@/]+:[^\s@/]+@/g, "$1<credentials-redacted>@"],
   [/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, "$1<redacted>"]
 ];
