@@ -11467,7 +11467,7 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
-var VERSION2 = true ? "0.8.5" : "0.0.0-dev";
+var VERSION2 = true ? "0.9.0" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
