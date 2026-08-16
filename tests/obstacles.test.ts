@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractObstacles, mergeObstacles, toBrief, obstacleId } from '@/lib/prevent/obstacles';
+import { extractObstacles, mergeObstacles, toBrief, obstacleId, redact } from '@/lib/prevent/obstacles';
 
 /**
  * Obstacles are the half of learning that needs no user.
@@ -127,5 +127,44 @@ describe('the brief is short enough to actually be read', () => {
     // that gets skimmed. Nothing to say must look like nothing.
     expect(toBrief(extractObstacles(['a one-off: command not found']))).toBe('');
     expect(toBrief([])).toBe('');
+  });
+});
+
+describe('a shared obstacle file leaks no secret', () => {
+  // Evidence is a verbatim slice of a FAILURE, and failures are exactly where credentials
+  // surface: an auth header echoed back, a token in a remote URL, a key in a rejected body.
+  // `.enforcee/obstacles.json` is meant to be pasted into an issue or handed over for support
+  // — Patrik is about to run this over his own machine's history and send me the result. A
+  // token surviving that trip is a secret leaked BY the tool that exists to make things safer.
+  //
+  // Charter: never commit a secret, a token or a licence key.
+  const CASES: [string, RegExp][] = [
+    // The real shape, taken from this project's own push failures: git quotes the URL, and
+    // the URL carries the token when pushing to an explicit remote. Written without the
+    // quotes first, this case matched no pattern at all and asserted nothing — a test that
+    // could not fail. The `expect(out.length).toBeGreaterThan(0)` guard below is what caught it.
+    ["fatal: could not read Username for 'https://x-access-token:github_pat_11ABCDEFGHIJKLMNOPQRSTUV@github.com'", /github_pat_11AB/],
+    ['401 {"error":"bad token sbp_abcdefghijklmnopqrstuvwxyz"}', /sbp_abcdef/],
+    ['401 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0', /eyJhbGciOiJ/],
+    ["fatal: could not read Username for 'https://user:hunter2supersecret@github.com'", /hunter2supersecret/],
+    ['401 Unauthorized — Authorization: Bearer sk-proj-abcdefghijklmnopqrstuv', /sk-proj-abcdef/],
+  ];
+
+  for (const [raw, leak] of CASES) {
+    it(`redacts: ${raw.slice(0, 42)}…`, () => {
+      const out = extractObstacles([raw]);
+      expect(out.length, 'the case did not even match a pattern — it proves nothing').toBeGreaterThan(0);
+      expect(out[0].evidence, 'a secret survived into stored evidence').not.toMatch(leak);
+    });
+  }
+
+  it('still keeps enough of the failure to be recognisable', () => {
+    // Redaction that eats the whole message makes the evidence useless, which is the obvious
+    // way to pass the tests above while destroying the feature.
+    const out = extractObstacles([
+      "fatal: could not read Username for 'https://x-access-token:github_pat_11ABCDEFGHIJKLMNOP@github.com'",
+    ]);
+    expect(out[0].evidence).toMatch(/could not read Username/);
+    expect(out[0].evidence).toMatch(/github\.com/);
   });
 });

@@ -141,9 +141,40 @@ export function obstacleId(signature: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Collapse whitespace and clip, so evidence is quotable without being a wall of text. */
+/**
+ * Secret shapes that must never survive into a stored obstacle.
+ *
+ * Evidence is a verbatim slice of a failure, and failures are exactly where credentials show
+ * up — an auth header echoed back, a token in a remote URL, a key in a rejected request body.
+ * `.enforcee/obstacles.json` is a file people will paste into an issue or hand to us for
+ * support, so a token surviving here is a token leaked by the tool that exists to make things
+ * safer.
+ *
+ * Charter: never commit a secret, a token or a licence key. This is that rule applied to the
+ * one place on the path where secrets are most likely and least expected.
+ */
+const SECRET_SHAPES: [RegExp, string][] = [
+  [/gh[pousr]_[A-Za-z0-9]{16,}/g, 'github_pat_<redacted>'],
+  [/github_pat_[A-Za-z0-9_]{20,}/g, 'github_pat_<redacted>'],
+  [/\bsbp_[A-Za-z0-9]{16,}/g, 'sbp_<redacted>'],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, 'sk-<redacted>'],
+  [/\bvcp_[A-Za-z0-9]{16,}/g, 'vcp_<redacted>'],
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '<jwt-redacted>'],
+  // A credential embedded in a URL: https://user:secret@host
+  [/(https?:\/\/)[^\s:@/]+:[^\s@/]+@/g, '$1<credentials-redacted>@'],
+  [/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, '$1<redacted>'],
+];
+
+/** Strip anything secret-shaped. Applied before storage, never after. */
+export function redact(s: string): string {
+  let out = s;
+  for (const [re, to] of SECRET_SHAPES) out = out.replace(re, to);
+  return out;
+}
+
+/** Collapse whitespace, redact, and clip — evidence quotable without being a wall of text. */
 function snippet(s: string, n = 160): string {
-  return s.replace(/\s+/g, ' ').trim().slice(0, n);
+  return redact(s.replace(/\s+/g, ' ').trim()).slice(0, n);
 }
 
 /**

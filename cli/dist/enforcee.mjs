@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // cli/index.ts
-import { readFileSync as readFileSync3, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, existsSync as existsSync5, copyFileSync, chmodSync as chmodSync2 } from "node:fs";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, existsSync as existsSync5, copyFileSync, chmodSync as chmodSync2, statSync as statSync3, readdirSync as readdirSync2 } from "node:fs";
 import { join as join5, dirname as dirname2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11035,8 +11035,24 @@ function obstacleId(signature) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
+var SECRET_SHAPES = [
+  [/gh[pousr]_[A-Za-z0-9]{16,}/g, "github_pat_<redacted>"],
+  [/github_pat_[A-Za-z0-9_]{20,}/g, "github_pat_<redacted>"],
+  [/\bsbp_[A-Za-z0-9]{16,}/g, "sbp_<redacted>"],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-<redacted>"],
+  [/\bvcp_[A-Za-z0-9]{16,}/g, "vcp_<redacted>"],
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "<jwt-redacted>"],
+  // A credential embedded in a URL: https://user:secret@host
+  [/(https?:\/\/)[^\s:@/]+:[^\s@/]+@/g, "$1<credentials-redacted>@"],
+  [/(Authorization:\s*(?:Bearer|Basic)\s+)\S+/gi, "$1<redacted>"]
+];
+function redact(s) {
+  let out = s;
+  for (const [re, to] of SECRET_SHAPES) out = out.replace(re, to);
+  return out;
+}
 function snippet(s, n = 160) {
-  return s.replace(/\s+/g, " ").trim().slice(0, n);
+  return redact(s.replace(/\s+/g, " ").trim()).slice(0, n);
 }
 function extractObstacles(toolResults) {
   const found = /* @__PURE__ */ new Map();
@@ -11433,7 +11449,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee learned")}                             what has been learned, and what you decided
   ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
-  ${C.bold("enforcee obstacles")} <transcript.jsonl\u2026>      what already blocked you here, from what actually failed
+  ${C.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence set")} <key>                    install a licence on this machine
   ${C.bold("enforcee licence")}                             show the licence this machine is using
@@ -11729,9 +11745,36 @@ async function main() {
       console.error(C.red("usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]"));
       process.exit(2);
     }
-    const files = args.slice(1).filter((a) => !a.startsWith("-"));
+    const files = [];
+    const walk = (p, depth = 0) => {
+      if (depth > 4) return;
+      let st;
+      try {
+        st = statSync3(p);
+      } catch {
+        return;
+      }
+      if (st.isFile()) {
+        if (p.endsWith(".jsonl")) files.push(p);
+        return;
+      }
+      if (!st.isDirectory()) return;
+      for (const e of readdirSync2(p)) walk(join5(p, e), depth + 1);
+    };
+    for (const a of args.slice(1).filter((x) => !x.startsWith("-"))) {
+      if (!existsSync5(a)) {
+        console.error(C.red(`Not found: ${a}`));
+        process.exit(2);
+      }
+      walk(a);
+    }
+    if (files.length === 0) {
+      console.error(C.red("  No .jsonl transcripts found under that path. Nothing was analysed."));
+      console.error(C.grey("  Sessions usually live in ~/.claude/projects (%USERPROFILE%\\.claude\\projects on Windows)."));
+      process.exit(2);
+    }
     let results = [];
-    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(read(f))));
+    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8"))));
     if (results.length === 0) {
       console.error(C.red(`  No tool results in ${files.length} file(s). Nothing was analysed.`));
       console.error(C.grey("  That is not the same as finding no obstacles."));

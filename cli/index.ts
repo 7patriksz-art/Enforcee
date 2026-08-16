@@ -5,7 +5,7 @@
  * gesture, it is the product: about 80% of a real ruleset is decided by code, so the
  * useful half genuinely does not need a model or an account.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAudit } from '../src/lib/audit';
@@ -62,7 +62,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee learned')}                             what has been learned, and what you decided
   ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
-  ${C.bold('enforcee obstacles')} <transcript.jsonl…>      what already blocked you here, from what actually failed
+  ${C.bold('enforcee obstacles')} <dir-or-transcript…>     what already blocked you here, from what actually failed
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key>                    install a licence on this machine
   ${C.bold('enforcee licence')}                             show the licence this machine is using
@@ -467,9 +467,44 @@ async function main(): Promise<void> {
       console.error(C.red('usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]'));
       process.exit(2);
     }
-    const files = args.slice(1).filter((a) => !a.startsWith('-'));
+    // Accepts DIRECTORIES as well as files, and walks them for *.jsonl.
+    //
+    // Not a convenience. The transcripts live at ~/.claude/projects/<encoded-path>/*.jsonl,
+    // nested one level deeper for subagents, and the only way to name them with files alone is
+    // a shell glob — which on Windows PowerShell does not expand at all, so the command a
+    // Windows user is given simply does not work. Patrik is on Windows. A tool whose
+    // instructions fail on the user's actual platform is the manual-labour problem, not a
+    // smaller version of it.
+    const files: string[] = [];
+    const walk = (p: string, depth = 0): void => {
+      if (depth > 4) return;
+      let st;
+      try {
+        st = statSync(p);
+      } catch {
+        return;
+      }
+      if (st.isFile()) {
+        if (p.endsWith('.jsonl')) files.push(p);
+        return;
+      }
+      if (!st.isDirectory()) return;
+      for (const e of readdirSync(p)) walk(join(p, e), depth + 1);
+    };
+    for (const a of args.slice(1).filter((x) => !x.startsWith('-'))) {
+      if (!existsSync(a)) {
+        console.error(C.red(`Not found: ${a}`));
+        process.exit(2);
+      }
+      walk(a);
+    }
+    if (files.length === 0) {
+      console.error(C.red('  No .jsonl transcripts found under that path. Nothing was analysed.'));
+      console.error(C.grey('  Sessions usually live in ~/.claude/projects (%USERPROFILE%\\.claude\\projects on Windows).'));
+      process.exit(2);
+    }
     let results: string[] = [];
-    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(read(f))));
+    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(readFileSync(f, 'utf8'))));
 
     // Never let a check silently cover nothing: zero tool results means the transcripts were
     // unreadable, which is a different answer from "nothing ever blocked you".
