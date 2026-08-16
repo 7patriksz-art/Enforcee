@@ -395,6 +395,15 @@ function classify(text) {
     const heading = (headingReq[1] ?? headingReq[2] ?? "").replace(/\s+(?:at|in|on|before|after|for|when|at the|in the)\b.*$/i, "").trim();
     if (heading.length >= 2) return { kind: "heading_required", heading };
   }
+  const namedFirst = /\b(?:with|include[sd]?|add|ends? with|containing|contains?)\s+(?:an?|the)?\s*["'`“]?((?:[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*){0,3})|summary|conclusion|references|sources|caveats|limitations|next steps|examples)["'`”]?\s+(?:section|heading)\b/i.exec(
+    t
+  );
+  if (!negative2 && namedFirst) {
+    const heading = (namedFirst[1] ?? "").trim();
+    if (heading.length >= 3 && !/^(a|an|the|it|this|that|each|every|any|new|long|short)$/i.test(heading)) {
+      return { kind: "heading_required", heading };
+    }
+  }
   if (!negative2 && isCitationRule(t)) return { kind: "citation_required" };
   const ACTION_VERB = /\b(run|execute|invoke|deploy|publish|commit|push|escalate|notify|approve|verify|obtain|submit|install|restart|migrate|retain|archive|revoke|rotate|back ?up|sign off|hand off|assign|route)\b/i;
   const ABOUT_TEXT = /\b(include|includes|contain|contains|mention|mentions|say|says|write|writes|start with|end with|use the word|word|phrase|spell|spelled|capitali[sz]e|output|respond|reply|format)\b|\b(?:call|calls|called|calling|refer to|describe|describes|label|labels|name)\s+(?:it|them|that|this|a|an|the|any|every|each)\b/i;

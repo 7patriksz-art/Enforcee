@@ -45,6 +45,26 @@ else
   npm run typecheck
   npx vitest run --silent
   npm run pack:cli >/dev/null
+
+  # THE COMMITTED BUNDLE MUST MATCH THE SOURCE IT WAS BUILT FROM.
+  #
+  # `cli/dist/enforcee.mjs` is a build artefact that is also committed, so source and bundle
+  # are two copies of one thing and can diverge. On 2026-08-16 they did: a parser fix was
+  # committed with a stale bundle, so the tests — which import the SOURCE — were all green
+  # while anyone running the shipped bundle from that commit got the old behaviour.
+  #
+  # Invisible to every other check, because the tests never touch the bundle. Twelfth
+  # instance of the duplicated-source class on this project (E-1).
+  #
+  # pack:cli has just rebuilt it. If that changed the file, the commit is carrying a stale
+  # bundle and must not be pushed.
+  if ! git diff --quiet -- cli/dist/enforcee.mjs; then
+    echo "" >&2
+    echo "STALE BUNDLE: cli/dist/enforcee.mjs changed when rebuilt." >&2
+    echo "The commit you are pushing has source and bundle out of step — tests import the" >&2
+    echo "source, so they cannot see this. Run:  git add cli/dist/enforcee.mjs && git commit --amend --no-edit" >&2
+    exit 1
+  fi
 fi
 : "${PAT:?PAT is not set. Export it for this command only; never write it to a file.}"
 

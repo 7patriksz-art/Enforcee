@@ -44,6 +44,24 @@ jobs:
       # not on the tag weeks later.
       - run: npm run pack:cli
 
+      # The committed bundle must match the source. `cli/dist/enforcee.mjs` is a build
+      # artefact that is ALSO committed, so the two can drift — and on 2026-08-16 they did:
+      # a parser fix shipped with a stale bundle, tests green throughout, because every test
+      # imports the source and none of them touch the bundle. Anyone running the shipped
+      # binary from that commit got the old behaviour.
+      #
+      # `pack:cli` above has just rebuilt it, so a dirty tree here means the commit carries
+      # a bundle that does not correspond to its own source. Ubuntu only: one platform is
+      # enough to establish the fact, and esbuild output can differ trivially across OSes.
+      - name: The committed CLI bundle is not stale
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if ! git diff --quiet -- cli/dist/enforcee.mjs; then
+            echo "::error::cli/dist/enforcee.mjs is stale — rebuilt output differs from the commit."
+            git diff --stat -- cli/dist/enforcee.mjs
+            exit 1
+          fi
+
       - run: npm run build
 
       # ── The two controls we built after the two worst incidents, and then ran nowhere ──
