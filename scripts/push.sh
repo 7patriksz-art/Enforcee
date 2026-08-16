@@ -24,6 +24,28 @@
 #   PAT=github_pat_... ./scripts/push.sh [branch]
 set -euo pipefail
 BRANCH="${1:-main}"
+
+# ── Do not push something that cannot build ──────────────────────────────────
+#
+# CI was red on all three platforms for FIVE consecutive commits and nobody noticed. The
+# cause was a comment containing `https://user:secret@host`, which esbuild carried into the
+# bundle, where the pre-publish scanner correctly flagged an endpoint-shaped string inside a
+# binary that promises zero network calls.
+#
+# The charter already says "never assume CI passed, read it", and `docs/THE-CYCLE.md` says
+# it again — and I pushed THE-CYCLE.md itself on a red build. A rule broken while being
+# written is proof that writing it down is not the mechanism.
+#
+# So the check moves in front of the push. It is the same eight checks the release runs and
+# takes seconds. SKIP_CHECKS=1 exists for a genuine emergency and prints that it was used,
+# because a silent escape hatch becomes the default.
+if [ "${SKIP_CHECKS:-}" = "1" ]; then
+  echo "SKIP_CHECKS=1 — pushing WITHOUT typecheck/tests/pack. This is on the record." >&2
+else
+  npm run typecheck
+  npx vitest run --silent
+  npm run pack:cli >/dev/null
+fi
 : "${PAT:?PAT is not set. Export it for this command only; never write it to a file.}"
 
 REPO="$(git config --get remote.origin.url | sed -E 's#https://[^@]*@#https://#')"
