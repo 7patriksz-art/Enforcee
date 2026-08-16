@@ -933,10 +933,41 @@ function main() {
   }
 
   if (event === 'PostCompact' || event === 'SessionStart') {
-    const text = (policy?.reinject && policy.reinject.text) || '';
+    // ── The obstacles brief rides along with the rules ──────────────────────
+    //
+    // Patrik, 2026-08-16: "I was just pasting back and forth between you and PowerShell.
+    // That is what I want to eliminate."
+    //
+    // He was right, and the loop he was stuck in was: run the scan by hand, read the
+    // output, tell me what it said. Every step of that is a machine step. `enforcee
+    // obstacles` already learns what blocked this project from the sessions themselves —
+    // it just had no way to reach the model. This is that way.
+    //
+    // SessionStart and PostCompact are the two moments it matters. SessionStart because a
+    // fresh session has forgotten every wall the last one hit. PostCompact because
+    // compaction is exactly when the accumulated "we already tried that" evaporates — the
+    // failure Patrik describes as "claude stops being able to read everything as the
+    // project grows".
+    //
+    // Read at hook time rather than compiled into the policy: obstacles accumulate as
+    // sessions run, and a brief that needs a recompile to update is a brief that goes
+    // stale silently. A missing or unreadable file changes nothing — enforcement must
+    // never depend on a learned artefact being present.
+    let obstacles = '';
+    try {
+      const op = join(dirname(policyPath), 'obstacles.md');
+      if (existsSync(op)) obstacles = readFileSync(op, 'utf8').trim();
+    } catch {
+      /* a learned artefact is a bonus, never a precondition */
+    }
+
+    const rules = (policy?.reinject && policy.reinject.text) || '';
+    // Obstacles LAST: the rules are the contract, the obstacles are context for keeping it.
+    // If the 9500-char cap bites, it must eat the advice rather than the contract.
+    const text = [rules, obstacles].filter(Boolean).join('\n\n');
     if (!text) allow();
     const capped = text.slice(0, 9500);
-    log(policyPath, { ...base, decision: 'REINJECT', chars: capped.length });
+    log(policyPath, { ...base, decision: 'REINJECT', chars: capped.length, obstacles: obstacles.length });
     return emit({
       hookSpecificOutput: {
         hookEventName: event,

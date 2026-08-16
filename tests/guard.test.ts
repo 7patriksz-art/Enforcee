@@ -455,3 +455,62 @@ describe('guard: enforcement is licensed', () => {
     expect(parsed.systemMessage).toMatch(/still work/i);
   });
 });
+
+describe('the session is primed with what already blocked this project', () => {
+  /**
+   * Patrik, 2026-08-16: *"I was just pasting back and forth between you and PowerShell.
+   * That is what I want to eliminate."*
+   *
+   * The loop he was stuck in: run `enforcee obstacles` by hand, read the output, tell me
+   * what it said. Every step of that is a machine step. The scan already learned what had
+   * blocked the project — it simply had no route to the model, so a human was the transport.
+   *
+   * SessionStart and PostCompact are the two moments it matters. A fresh session has
+   * forgotten every wall the last one hit; and compaction is precisely when accumulated
+   * "we already tried that" evaporates — what he describes as *"claude stops being able to
+   * read everything as the project grows"*.
+   */
+  const BRIEF = '## Known obstacles in this project\n\n- **egress blocks api.supabase.com** — hit 9×\n  Observed to work: run it where the internet is plain.\n';
+
+  function sessionStart(): { additionalContext: string; systemMessage?: string } {
+    const { stdout } = runGuard({ hook_event_name: 'SessionStart', session_id: 's' });
+    const d = JSON.parse(stdout) as {
+      hookSpecificOutput?: { additionalContext?: string };
+      systemMessage?: string;
+    };
+    return { additionalContext: d.hookSpecificOutput?.additionalContext ?? '', systemMessage: d.systemMessage };
+  }
+
+  it('carries the obstacles brief into the session, alongside the rules', () => {
+    writeFileSync(join(project, '.enforcee', 'obstacles.md'), BRIEF);
+    const { additionalContext } = sessionStart();
+    expect(additionalContext, 'the brief never reached the model').toContain('egress blocks api.supabase.com');
+    expect(additionalContext, 'the rules were dropped to make room').toMatch(/Never|must/);
+  });
+
+  it('puts the rules first, so the cap eats advice rather than the contract', () => {
+    writeFileSync(join(project, '.enforcee', 'obstacles.md'), BRIEF);
+    const { additionalContext } = sessionStart();
+    const rulesAt = additionalContext.search(/Never|must/);
+    expect(rulesAt).toBeGreaterThanOrEqual(0);
+    expect(rulesAt, 'obstacles displaced the ruleset').toBeLessThan(additionalContext.indexOf('Known obstacles'));
+  });
+
+  it('works exactly as before when nothing has been learned yet', () => {
+    // A learned artefact is a bonus, never a precondition. Enforcement must not acquire a
+    // dependency on a file that only exists after someone has run a scan.
+    rmSync(join(project, '.enforcee', 'obstacles.md'), { force: true });
+    const { additionalContext } = sessionStart();
+    expect(additionalContext, 'the ruleset stopped being injected').toMatch(/Never|must/);
+    expect(additionalContext).not.toContain('Known obstacles');
+  });
+
+  it('survives an unreadable obstacles file rather than losing the ruleset', () => {
+    // The guard fails OPEN by design, and the worst outcome here is a crash that silently
+    // stops re-injecting rules — enforcement quietly off, with nothing said. D-007.
+    mkdirSync(join(project, '.enforcee', 'obstacles.md'), { recursive: true }); // a directory, not a file
+    const { additionalContext } = sessionStart();
+    expect(additionalContext, 'a bad artefact took the ruleset down with it').toMatch(/Never|must/);
+    rmSync(join(project, '.enforcee', 'obstacles.md'), { recursive: true, force: true });
+  });
+});
