@@ -37,3 +37,8 @@ theme-audit/
 # surface. Test order was the only thing hiding it: ci.yml happens to run `npm test`
 # before `npm run dogfood`.
 scripts/dist/
+
+# Learned state, not source. obstacles.json/md are this project's own history — regenerable
+# from the transcripts with `enforcee obstacles`, and machine-specific.
+.enforcee/obstacles.json
+.enforcee/obstacles.md

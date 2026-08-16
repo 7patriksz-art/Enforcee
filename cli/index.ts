@@ -18,6 +18,7 @@ import { checkLocalLicence, setLicence, LICENCE_PATHS } from '../src/lib/licence
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
 import { checkClaims } from '../src/lib/prevent/claims';
+import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, type Obstacle } from '../src/lib/prevent/obstacles';
 import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, existingFromRuleset } from '../src/lib/prevent/supersede';
 import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference, decide } from '../src/lib/prevent/memory';
 import { createHash } from 'node:crypto';
@@ -61,6 +62,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee learned')}                             what has been learned, and what you decided
   ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
+  ${C.bold('enforcee obstacles')} <transcript.jsonl…>      what already blocked you here, from what actually failed
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key>                    install a licence on this machine
   ${C.bold('enforcee licence')}                             show the licence this machine is using
@@ -446,6 +448,65 @@ async function main(): Promise<void> {
     console.log('');
     console.log(C.grey('  enforcee accept <id> · enforcee decline <id> · nothing here is ever deleted.'));
     console.log('');
+    return;
+  }
+
+  // ── obstacles: the half of learning that needs no user ───────────────────────────────
+  //
+  // `learn` mines what the person SAID. It needs them to have typed a preference, and
+  // Patrik's objection to that is exact: "Enforcee should learn these itself from actions and
+  // actual in-flight coding sessions, not me pointing at every error."
+  //
+  // This mines what the MACHINE HIT. Measured over two real transcripts of this project —
+  // 787 records, 406 tool results — 78 results carried a prerequisite failure and 48 of 48
+  // recognised failures were a signature ALREADY SEEN in the same history. One hundred
+  // percent. Four pushes died on `could not read Username` while the remedy sat in our own
+  // charter. Nobody has to notice any of that for it to become a fact.
+  if (cmd === 'obstacles') {
+    if (!args[1]) {
+      console.error(C.red('usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]'));
+      process.exit(2);
+    }
+    const files = args.slice(1).filter((a) => !a.startsWith('-'));
+    let results: string[] = [];
+    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(read(f))));
+
+    // Never let a check silently cover nothing: zero tool results means the transcripts were
+    // unreadable, which is a different answer from "nothing ever blocked you".
+    if (results.length === 0) {
+      console.error(C.red(`  No tool results in ${files.length} file(s). Nothing was analysed.`));
+      console.error(C.grey('  That is not the same as finding no obstacles.'));
+      process.exit(2);
+    }
+
+    const dir = join(process.cwd(), '.enforcee');
+    const store = join(dir, 'obstacles.json');
+    const prior = existsSync(store) ? (JSON.parse(readFileSync(store, 'utf8')) as Obstacle[]) : [];
+    const merged = mergeObstacles(prior, extractObstacles(results));
+    if (json) return console.log(JSON.stringify(merged, null, 2));
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(store, JSON.stringify(merged, null, 2));
+
+    console.log(C.grey(`\n  ${results.length} tool results across ${files.length} session(s)\n`));
+    if (!merged.length) {
+      console.log(C.grey('  Nothing recognised blocked this project. That is a real answer.\n'));
+      return;
+    }
+    for (const o of merged) {
+      const rep = o.hits > 1 ? C.red(`${o.hits}×`) : C.grey('1×');
+      console.log(`  ${rep.padEnd(14)} ${C.bold(o.signature)}  ${C.grey(o.kind)}`);
+      console.log(
+        o.resolution
+          ? C.grey(`                 ${o.confidence === 'observed' ? '→' : 'UNVERIFIED —'} ${o.resolution}`)
+          : C.grey('                 No remedy observed yet. A guess here would be a guess.')
+      );
+    }
+    const brief = toBrief(merged);
+    if (brief) {
+      writeFileSync(join(dir, 'obstacles.md'), brief);
+      console.log(C.grey(`\n  Brief for reinjection written to .enforcee/obstacles.md\n`));
+    }
     return;
   }
 

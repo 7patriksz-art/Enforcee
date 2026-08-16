@@ -10976,6 +10976,142 @@ function checkClaims(text, ctx) {
   };
 }
 
+// src/lib/prevent/obstacles.ts
+var PATTERNS2 = [
+  {
+    kind: "network",
+    re: /Host not in allowlist:\s*([a-z0-9.\-]+)/i,
+    signature: "egress blocks $1",
+    // No fix: this is the sandbox allowlist and the proxy bypass does NOT help. Verified
+    // 2026-08-16 against api.supabase.com — `x-deny-reason: host_not_allowed` with the proxy
+    // unset. Saying "bypass the proxy" here would be a remedy that has been proven not to work.
+    observedFix: "Not solvable in-sandbox \u2014 the proxy bypass does not help. Run it where the internet is plain (a GitHub runner, or the task on your own computer)."
+  },
+  {
+    kind: "network",
+    re: /(CONNECT tunnel failed, response 403)/i,
+    signature: "the proxy refuses CONNECT",
+    observedFix: "env -u https_proxy -u HTTPS_PROXY -u http_proxy -u HTTP_PROXY <command>"
+  },
+  {
+    kind: "credential",
+    re: /could not read Username for .(https:\/\/[a-z0-9.\-]+)/i,
+    signature: "git has no stored credential for $1",
+    observedFix: "Push to an explicit URL with the PAT, then `git fetch origin` so the tracking ref stops lying."
+  },
+  {
+    kind: "environment",
+    re: /fatal: not a git repository/i,
+    signature: "the working directory is not the repo",
+    observedFix: "The container rolled back. `cd` to the repo, then `git fetch origin && git reset --hard origin/main` \u2014 everything pushed survives."
+  },
+  {
+    kind: "tooling",
+    re: /Cannot find module .([^'"]+)/i,
+    signature: "module missing: $1"
+  },
+  {
+    kind: "tooling",
+    re: /(command not found|not found in PATH)/i,
+    signature: "a required binary is not on PATH"
+  },
+  {
+    kind: "tooling",
+    re: /npm error could not determine executable to run/i,
+    signature: "npx package exposes no runnable bin"
+  },
+  {
+    kind: "credential",
+    re: /\b(401|Unauthorized)\b/,
+    signature: "HTTP 401 \u2014 the credential was rejected",
+    observedFix: "Test the token against an authenticated endpoint before using it. A successful `git ls-remote` proves nothing: the repo is public."
+  }
+];
+function obstacleId(signature) {
+  let h = 2166136261;
+  for (let i = 0; i < signature.length; i++) {
+    h ^= signature.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+function snippet(s, n = 160) {
+  return s.replace(/\s+/g, " ").trim().slice(0, n);
+}
+function extractObstacles(toolResults) {
+  const found = /* @__PURE__ */ new Map();
+  for (const raw of toolResults) {
+    if (!raw) continue;
+    for (const p of PATTERNS2) {
+      const m = p.re.exec(raw);
+      if (!m) continue;
+      const signature = p.signature.replace("$1", (m[1] ?? "").replace(/[.,;]+$/, ""));
+      const id = obstacleId(signature);
+      const existing = found.get(id);
+      if (existing) {
+        existing.hits++;
+      } else {
+        found.set(id, {
+          id,
+          kind: p.kind,
+          signature,
+          hits: 1,
+          evidence: snippet(raw.slice(Math.max(0, m.index - 40))),
+          resolution: p.observedFix,
+          confidence: p.observedFix ? "observed" : "unverified"
+        });
+      }
+      break;
+    }
+  }
+  return [...found.values()].sort((a, b) => b.hits - a.hits || a.signature.localeCompare(b.signature));
+}
+function mergeObstacles(prior, next) {
+  const by = new Map(prior.map((o) => [o.id, { ...o }]));
+  for (const o of next) {
+    const existing = by.get(o.id);
+    if (!existing) {
+      by.set(o.id, { ...o });
+      continue;
+    }
+    existing.hits += o.hits;
+    if (o.confidence === "observed" && existing.confidence !== "observed") {
+      existing.resolution = o.resolution;
+      existing.confidence = "observed";
+    }
+  }
+  return [...by.values()].sort((a, b) => b.hits - a.hits || a.signature.localeCompare(b.signature));
+}
+function toBrief(obstacles, minHits = 2) {
+  const worth = obstacles.filter((o) => o.hits >= minHits);
+  if (!worth.length) return "";
+  const lines = ["## Known obstacles in this project", ""];
+  lines.push("Learned from what actually failed here, not from anyone writing them down.", "");
+  for (const o of worth) {
+    lines.push(`- **${o.signature}** \u2014 hit ${o.hits}\xD7`);
+    lines.push(
+      o.resolution ? `  ${o.confidence === "observed" ? "Observed to work" : "UNVERIFIED \u2014 not seen to work"}: ${o.resolution}` : "  No remedy has been observed yet. Treat a guess as a guess."
+    );
+  }
+  return lines.join("\n") + "\n";
+}
+function toolResultsFromRecords(records) {
+  const out = [];
+  for (const r of records) {
+    const c = r.message?.content;
+    if (Array.isArray(c)) {
+      for (const b of c) {
+        if (b && typeof b === "object" && b.type === "tool_result") {
+          const v = b.content;
+          out.push(typeof v === "string" ? v : JSON.stringify(v));
+        }
+      }
+    }
+    if (r.toolUseResult !== void 0) out.push(JSON.stringify(r.toolUseResult).slice(0, 4e3));
+  }
+  return out;
+}
+
 // src/lib/prevent/supersede.ts
 var STOP = /* @__PURE__ */ new Set([
   "never",
@@ -11297,6 +11433,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee learned")}                             what has been learned, and what you decided
   ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
+  ${C.bold("enforcee obstacles")} <transcript.jsonl\u2026>      what already blocked you here, from what actually failed
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence set")} <key>                    install a licence on this machine
   ${C.bold("enforcee licence")}                             show the licence this machine is using
@@ -11585,6 +11722,49 @@ async function main() {
     console.log("");
     console.log(C.grey("  enforcee accept <id> \xB7 enforcee decline <id> \xB7 nothing here is ever deleted."));
     console.log("");
+    return;
+  }
+  if (cmd === "obstacles") {
+    if (!args[1]) {
+      console.error(C.red("usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]"));
+      process.exit(2);
+    }
+    const files = args.slice(1).filter((a) => !a.startsWith("-"));
+    let results = [];
+    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(read(f))));
+    if (results.length === 0) {
+      console.error(C.red(`  No tool results in ${files.length} file(s). Nothing was analysed.`));
+      console.error(C.grey("  That is not the same as finding no obstacles."));
+      process.exit(2);
+    }
+    const dir = join5(process.cwd(), ".enforcee");
+    const store = join5(dir, "obstacles.json");
+    const prior = existsSync5(store) ? JSON.parse(readFileSync3(store, "utf8")) : [];
+    const merged = mergeObstacles(prior, extractObstacles(results));
+    if (json) return console.log(JSON.stringify(merged, null, 2));
+    mkdirSync3(dir, { recursive: true });
+    writeFileSync3(store, JSON.stringify(merged, null, 2));
+    console.log(C.grey(`
+  ${results.length} tool results across ${files.length} session(s)
+`));
+    if (!merged.length) {
+      console.log(C.grey("  Nothing recognised blocked this project. That is a real answer.\n"));
+      return;
+    }
+    for (const o of merged) {
+      const rep = o.hits > 1 ? C.red(`${o.hits}\xD7`) : C.grey("1\xD7");
+      console.log(`  ${rep.padEnd(14)} ${C.bold(o.signature)}  ${C.grey(o.kind)}`);
+      console.log(
+        o.resolution ? C.grey(`                 ${o.confidence === "observed" ? "\u2192" : "UNVERIFIED \u2014"} ${o.resolution}`) : C.grey("                 No remedy observed yet. A guess here would be a guess.")
+      );
+    }
+    const brief = toBrief(merged);
+    if (brief) {
+      writeFileSync3(join5(dir, "obstacles.md"), brief);
+      console.log(C.grey(`
+  Brief for reinjection written to .enforcee/obstacles.md
+`));
+    }
     return;
   }
   if (cmd === "session") {
