@@ -38,6 +38,46 @@ const b64url = {
   decode: (s: string) => Buffer.from(s, 'base64url'),
 };
 
+/**
+ * Normalise whatever shape the private key arrived in into PEM.
+ *
+ * `createPrivateKey` on a plain string requires PEM armour. The key in this project's Vercel
+ * environment is stored as **bare base64 DER** — `MC4CAQAwBQYDK2Vw…`, the PKCS#8 body with the
+ * `-----BEGIN PRIVATE KEY-----` lines stripped. That is a completely reasonable way to put a
+ * key in an environment variable, because it sidesteps the multi-line problem entirely, and it
+ * is what somebody actually did.
+ *
+ * Without this, `createPrivateKey` throws `ERR_OSSL_UNSUPPORTED` — so `POST /api/licence` threw
+ * a 500 for every subscriber who asked for a licence, and the first person to hit it would have
+ * been a paying customer being told nothing useful. Found 2026-08-16 by Patrik running the repo
+ * setup on his own machine; CI could never have found it, because CI has no key.
+ *
+ * Handled here, once, rather than at each call site — the route and `scripts/issue-repo-licence.mjs`
+ * both go through `issueLicence`, and two copies of this normalisation is how this project has
+ * produced ten duplicated-source bugs (INVARIANTS E-1).
+ *
+ * Accepted: PEM; PEM whose newlines arrived as literal `\n`; bare base64 DER, with or without
+ * whitespace. Anything else is passed through untouched so `createPrivateKey` raises its own
+ * error rather than this function inventing a worse one.
+ */
+export function toPrivateKeyPem(value: string): string {
+  let v = value.trim().replace(/^["']|["']$/g, '');
+  if (!v.includes('\n') && v.includes('\\n')) v = v.replace(/\\n/g, '\n');
+  v = v.replace(/\r\n/g, '\n').trim();
+
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(v)) return v;
+
+  // No armour. If what is left is pure base64, it is a DER body and PEM is that body wrapped
+  // at 64 columns between the two marker lines — nothing more.
+  const compact = v.replace(/\s+/g, '');
+  if (compact.length > 0 && compact.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+    const lines = compact.match(/.{1,64}/g) ?? [];
+    return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----\n`;
+  }
+
+  return v;
+}
+
 /** Sign a licence. Server-side only — the private key never leaves the environment. */
 export function issueLicence(
   payload: Omit<LicencePayload, 'iat' | 'v'>,
@@ -46,7 +86,7 @@ export function issueLicence(
 ): string {
   const full: LicencePayload = { ...payload, iat: issuedAt, v: 1 };
   const body = b64url.encode(Buffer.from(JSON.stringify(full), 'utf8'));
-  const sig = sign(null, Buffer.from(body, 'utf8'), createPrivateKey(privateKeyPem));
+  const sig = sign(null, Buffer.from(body, 'utf8'), createPrivateKey(toPrivateKeyPem(privateKeyPem)));
   return `${body}.${b64url.encode(sig)}`;
 }
 

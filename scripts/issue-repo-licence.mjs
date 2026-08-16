@@ -36,7 +36,7 @@
  * It expiring is therefore normal and expected. `npm run dogfood` prints the remaining days
  * on every run and warns inside the last week, so it stops loudly rather than silently.
  */
-import { issueLicence, verifyLicence } from '../src/lib/licence.ts';
+import { issueLicence, verifyLicence, toPrivateKeyPem } from '../src/lib/licence.ts';
 import { LICENCE_PUBLIC_KEY } from '../src/lib/licence-key.ts';
 import { setLicence, LICENCE_PATHS } from '../src/lib/licence-local.ts';
 import { randomUUID } from 'node:crypto';
@@ -77,7 +77,8 @@ const TTL_DAYS = 45; // D-022. Raising this is a decision, not a convenience.
  * often with literal `\n` as with real newlines. That is four ways for a copy-paste to
  * produce a key that looks right and will not sign.
  *
- * So this looks in several places, and normalises. In order:
+ * So this looks in several places; `toPrivateKeyPem` in src/lib/licence.ts does the
+ * normalising, so this script and the production route agree by construction. In order:
  *
  *   1. --key-file <path>                       an exported PEM, no shell quoting at all
  *   2. ENFORCEE_LICENCE_PRIVATE_KEY            what `vercel env run` injects
@@ -87,12 +88,6 @@ const TTL_DAYS = 45; // D-022. Raising this is a decision, not a convenience.
  *
  *   vercel env run -e production -- npm run licence:repo
  */
-function unwrap(v) {
-  let out = v.trim().replace(/^["']|["']$/g, '');
-  // Literal backslash-n, as dashboards and .env files routinely store a PEM.
-  if (!out.includes('\n') && out.includes('\\n')) out = out.replace(/\\n/g, '\n');
-  return out.replace(/\r\n/g, '\n').trim();
-}
 
 /** Minimal .env reader: KEY=value, quoted values may span lines. No dependency, no surprises. */
 function fromEnvFile(path) {
@@ -151,14 +146,19 @@ if (!found.value) {
   process.exit(1);
 }
 
-const privateKey = unwrap(found.value);
-if (!/^-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey)) {
-  console.error(`The value from ${found.from} is not a PEM private key — it does not start with`);
-  console.error('"-----BEGIN ... PRIVATE KEY-----". Nothing was signed.');
-  console.error(`It begins: ${JSON.stringify(privateKey.slice(0, 40))}`);
-  console.error('');
-  console.error('If it looks right but has literal \\n in it, this script already handles that, so');
-  console.error('the likeliest cause is a partial copy — PEMs are easy to truncate at a line break.');
+/**
+ * Shape-checked by the library, not by a second opinion here.
+ *
+ * The first version of this demanded PEM armour and refused anything else — so it rejected the
+ * key that is actually in Vercel, which is stored as bare base64 DER. `toPrivateKeyPem` is the
+ * same normaliser `issueLicence` uses, so this script and `POST /api/licence` can never
+ * disagree about what counts as a usable key.
+ */
+const privateKey = toPrivateKeyPem(found.value);
+if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey)) {
+  console.error(`The value from ${found.from} is not a private key in any shape we recognise.`);
+  console.error('Expected PEM, or the bare base64 PKCS#8 body with the -----BEGIN----- lines stripped.');
+  console.error(`It begins: ${JSON.stringify(found.value.trim().slice(0, 40))}`);
   process.exit(1);
 }
 console.log(`Key read from ${found.from}.`);
