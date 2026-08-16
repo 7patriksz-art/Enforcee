@@ -1,5 +1,8 @@
 # Tweaking the engine so it actually checks, enforces and learns
 
+**v2 — 2026-08-16.** Part 0 is closed and replaced. CHANGE 6 is new, and is Patrik's idea.
+Part 3 and Part 4 rewritten. Nothing from v1 was deleted or quietly reversed.
+
 **Written 2026-08-15, for Patrik, after his instruction:** *"in every session I'm doing now
 you keep making the same mistakes and new ones also, not checking, not enforcing, not really
 learning."*
@@ -13,35 +16,58 @@ number is reconstructed rather than observed, it says so.
 
 ---
 
-## Part 0 — The finding that reframes everything else
+## Part 0 — CLOSED. And what it revealed underneath.
 
-I checked, expecting to confirm the opposite:
+**Original finding, 2026-08-15:** Enforcee was not installed on Enforcee. No `.claude/`, no
+hook, and `grep -c 'selfcheck|verify:ui' ci.yml` → 0 — the two controls built after the two
+worst incidents on this project were wired into nothing.
+
+**Status: done.** `selfcheck` and `verify:ui` now run on every push, and the daily agent has
+since added `npm run dogfood`, which compiles our own `CLAUDE.md` into `.enforcee/policy.json`
+through the same library the shipped CLI uses, and **refuses to install when the ruleset
+parses implausibly few rules** — so a parser regression that would silently empty every
+customer's policy turns CI red instead of shipping a guard that guards nothing.
+
+That is the loop working: a finding written down on the 15th, executed by a scheduled run on
+the 16th, without anyone re-deciding it.
+
+### The finding that replaces it
+
+Patrik asked a reasonable question: now that it is installed, has it learned his preferences
+from this project's history? So I pointed `enforcee learn` at our own 413-record session
+transcript — **the first time that feature had ever been run on a real Claude Code session
+rather than on a pasted conversation.**
+
+It made 61 proposals. Among them, verbatim, offered to him as a rule *he* had asked for:
 
 ```
-.claude/                     does not exist
-.git/hooks/                  empty (samples only)
-.github/workflows/ci.yml     typecheck · test · pack:cli · build
-grep -c 'selfcheck|enforcee audit|verify:ui|guard' ci.yml   →   0
+Never = /^(and|or|the|a|an|of|in|for|with|to|&)$/i.
 ```
 
-**Enforcee is not installed on Enforcee.** Not as a hook, not in CI, not anywhere in the path
-between me writing a line and that line reaching you.
+That is a regex out of `src/lib/rules/parse.ts`. Alongside it: "Never read.", "Never runs.",
+"Never throws." — sentences from my own commit messages.
 
-Worse: the two controls built *specifically in response to the two worst incidents on this
-project* are wired into nothing.
+Two defects, stacked, and the second is the one worth remembering:
 
-| Control | Built after | Runs on push? |
-|---|---|---|
-| `npm run verify:ui` — real Chromium, both themes, **sampled pixels** | the `.invert` disaster, where 546 contrast measurements and 123 assertions stayed green while every panel painted backwards | **no** |
-| `npm run selfcheck` — `health` + `preflight` over `CLAUDE.md` | the dogfooding decision, charter §8 | **no** |
+1. **The CLI read the `.jsonl` as prose.** `userTurnsFromTranscript` already existed, already
+   did the right thing, was already exported — and was called by **nothing except its own unit
+   test.** The test passed for the entire life of the bug, because it proved a property of a
+   *function* rather than of the *product*. Meanwhile the site said, and still says,
+   *"Only your words are read — never the assistant's."* That was **false in the binary people
+   install.**
 
-Both exist. Both are excellent. Both are a thing someone has to remember, which is the exact
-category of control this product exists because models ignore.
+2. **`role: "user"` is not the same claim as "the person typed this."** Measured: 150 records
+   in that transcript carry `type:"user"` and `role:"user"`. **Three** are things Patrik typed,
+   totalling 1,344 characters. **One is 19,412 characters — the compaction summary**, the
+   assistant's own prose about its own work, re-injected wearing the user's role. After fixing
+   (1), 93% of the corpus was still me.
 
-**We are selling a hook that blocks a violation before it runs, and building the product with
-no hook.** Everything in Part 2 is downstream of that.
+Both fixed, both controls proved red. After: 1,348 characters — his three real messages — and
+*"Nothing new to offer. That is a real answer, not an empty one."*
 
----
+**A tool that invents your preferences is worse than one that finds none, because you cannot
+tell by looking.** That is the same failure this product exists to prevent, shipped inside the
+product, undetected for its entire life, with a green test sitting next to it.
 
 ## Part 1 — What actually failed, and why the check could not have caught it
 
@@ -79,7 +105,7 @@ experience you are describing, forever, no matter how careful the operator is.
 
 ---
 
-## Part 2 — Five changes to the engine
+## Part 2 — Six changes to the engine
 
 Ordered by how much of the table above each one closes. Each is both a fix for us **and** a
 product feature, because every failure above is one your customers are having too — a green
@@ -265,60 +291,114 @@ weeks, and cost six hours in one session. Same class, three scales.
 
 ---
 
-## Part 3 — Sequence
+### CHANGE 6 — `enforcee onboard`: be worth something in the first sixty seconds
 
-**Today, and it is one line.** Wire the controls we already own into the gate. `selfcheck` and
-`verify:ui` are built, tested and running nowhere. This is the highest ratio of risk removed
-to work done on the entire list:
+**Patrik's idea, 2026-08-16, and it is the best one in this document.** *"It should absolutely
+be a feature so people downloading it would get a meaningful thing from the very beginning."*
 
-```yaml
-- run: npm run selfcheck
-- run: npm run verify:ui     # ubuntu leg only — it needs Chromium
+He is right, and the reason is structural rather than marketing. Every rule-checking tool on
+the market starts **empty**: you install it, and it knows nothing until you have used it for a
+month. That is the whole reason such tools get uninstalled by Friday — the value arrives after
+the patience runs out.
+
+But a developer installing Enforcee is **not** starting from zero. They are sitting on months
+of `~/.claude/projects/**/*.jsonl`, a `CLAUDE.md` they have rewritten twice, and a git history
+full of the same bug fixed five times. All of it already on their disk. Nobody has ever read it
+back to them.
+
+```
+$ npx enforcee onboard
+
+  read 47 sessions · 1.2M tool calls · CLAUDE.md, 31 rules
+
+  RULES THAT NEVER LEFT A TRACE            8 of 31
+    Probably never reached the model at all. Ranked by how often you restated them.
+
+  RULES YOUR AGENT BROKE MOST              "always run the tests before saying it works" — 12×
+  THE THING YOU SAID SIX TIMES             not in your CLAUDE.md. Add it?
+  A CLASS OF BUG FIXED FIVE TIMES          path separators. Here is a guard for it.
+  COMPACTIONS THAT DROPPED YOUR RULES      9 — after each, violations rise
 ```
 
-**This week.** Change 2 (denominator) then Change 1 (reach), in that order — reach is the
-bigger idea, but denominator is what stops the next false green, and it is a day's work.
+Every line of that is computable **today, offline, with no model call**, from parts that
+already exist: `session` parses transcripts, `learn` extracts preferences, `audit` grades
+outputs, `health` critiques the ruleset, and rule ids are content-addressed so a rule can be
+tracked across months of rewording. **`onboard` is a composition, not new machinery.** That is
+why it is achievable and why it should be next.
 
-**Next.** Change 3 (mirror detection) into `health`. Change 4's class ledger, seeded from the
-table in Part 1 — the incidents are already written down, they just have no class column.
+It is also the honest answer to "how discoverable are we" — the demo is the user's own history,
+which no competitor can show them and no screenshot can fake.
 
-**After.** Change 5, which is the largest and the least urgent, because it is the only one
-whose failures are visible to you rather than silent.
-
-**Install the hook on this repo before any of it.** We ship a hook that blocks a forbidden
-action before it runs. Not using it here is not an oversight — it is the single loudest
-statement about whether we believe our own product.
-
----
-
-## Part 4 — What this does not fix
-
-Stated plainly, per honesty rule #4:
-
-- **Reach labels are only as good as the rule→reach resolver.** Get it wrong and a `deployed`
-  rule labelled `repo` is green again. It shifts the failure from invisible to
-  auditable-and-still-possible. That is a real improvement and it is not a guarantee.
-- **Mirror detection is a heuristic.** It will flag some legitimate literal assertions —
-  checking an exact wire format is a real thing to do. It should annoy, not block.
-- **None of this makes me not be wrong.** It makes being wrong *loud*. Every change above
-  converts a silent green into a visible UNVERIFIABLE. Expect the receipt to get worse-looking
-  and more true, and expect that to feel like a regression for about a week.
-- **Change 4 needs discipline at exactly the moment discipline is scarcest** — closing an
-  incident, when the fix works and everyone wants to move on. It is the one item here that a
-  gate can only partly enforce.
-- **The counts in Part 1 are reconstructed** from this project's logs and this session's
-  history, not read from an incident database, because there isn't one. Change 4 creates the
-  thing that would make them measured rather than assembled.
+**Two limits, stated now rather than discovered later.** Compaction eats history: this
+project's own transcript yielded 1,348 readable characters because everything earlier had been
+compacted into a summary that `learn` must now — correctly — refuse to read. And a first run
+that says *"nothing found"* must say **why**, or it reads as a broken install.
 
 ---
 
-## The one-paragraph version
+## Part 3 — Sequence
 
-Enforcee's checks can only see this repository, are written by the same process that makes the
-mistake, pass when they match nothing, close instances rather than classes, and are installed
-nowhere near the moment a mistake is made. Give every check a **reach** and forbid it from
-grading above its own; make it **report its denominator** and refuse to pass on an empty one;
-detect **mirror tests** that restate the implementation; close **classes rather than
-instances**, and measure the repeat-class rate; extend the **evidence gate** from a model's
-verdict to any claim about the outside world. Then install the hook on our own repo, because
-we are selling prevention and building without it.
+**Done since this plan was written (15th → 16th).** `selfcheck` + `verify:ui` in CI · the guard
+installed on our own repo via `npm run dogfood`, refusing to install on an implausible parse ·
+`learn` no longer mines the assistant · the wrapped-paragraph parser fix · a class of "works
+only where it was written" bugs closed three times over.
+
+**Next, in order.**
+
+1. **CHANGE 6, `enforcee onboard`.** Highest value per day of work, because it is composition
+   of parts that exist, and because it is the only item here a stranger can feel. Ship it
+   before any further engine work.
+2. **CHANGE 2, the denominator.** A day. Stops the next false green. Six incidents on this
+   project so far, one of them this week.
+3. **CHANGE 1, reach.** The biggest idea, and the one that would have caught the undeployed
+   templates, the 404 logo, the five-day trial button and `.invert`.
+4. **CHANGE 3, mirror detection**, into `health` — now with the sharpest example we own: a
+   unit test that passed for the whole life of a bug because it tested a function nothing
+   called.
+5. **CHANGE 4, the class ledger**, seeded from Part 1. The incidents are already written down;
+   they have no class column.
+6. **CHANGE 5**, last — its failures are visible to you rather than silent.
+
+**One correction to make immediately, before any of it:** the site says *"Only your words are
+read — never the assistant's."* That is true again as of `8ab80be`, and it was false for the
+whole life of the feature. Anything else on the site asserted about behaviour deserves the same
+treatment `learn` just got: **run it on a real input and watch.**
+
+---
+
+## Part 4 — What this does not fix, and what it will never be
+
+Stated plainly, per honesty rule #4. This section is longer than the plan's author would like,
+which is the point.
+
+**It is not a continuous monitor, and should not become one.** The description of Enforcee as
+something that "actively learns, checks, prevents, verifies, researches, studies, enhances,
+tracks, monitors, down to the very last bit" is a description of an *agent*, not of a
+compliance layer. Enforcee is four discrete things: a hook that runs before a tool call, three
+commands that run when invoked, a receipt, and a ledger. Everything in this plan makes those
+four sharper. **None of it makes the tool watch you.** A tool that watches everything is a tool
+nobody installs, and the ambition is worth resisting on purpose.
+
+**It cannot make a model stop being wrong.** Everything here converts a *silent* failure into a
+*loud* one. That is the entire mechanism. Expect receipts to look worse and be more true, and
+expect that to feel like a regression for a week.
+
+**"Eliminates all the frustration so you only focus on development and marketing" is not
+achievable, and promising it is how tools lose trust.** The achievable version is a number, and
+the charter already names it: **human interventions per completed unit of work.** Today, on this
+project, that number is high — this session alone needed you for a PAT, a Supabase token, four
+dashboard pastes, and a CI failure report. Drive it toward zero and the feeling follows. Promise
+the feeling and you get neither.
+
+**Reach labels are only as good as the rule→reach resolver.** Get it wrong and a `deployed`
+rule labelled `repo` is green again. It moves the failure from invisible to auditable, which is
+real and is not a guarantee.
+
+**Mirror detection is a heuristic** and will flag legitimate literal assertions. It should
+annoy, not block.
+
+**CHANGE 4 needs discipline exactly when discipline is scarcest** — at the moment an incident
+closes, the fix works, and everyone wants to move on. A gate can only partly enforce that.
+
+**And the counts in Part 1 are reconstructed**, not read from an incident database, because
+there isn't one. CHANGE 4 is what would make them measured.
