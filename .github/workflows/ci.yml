@@ -58,6 +58,16 @@ jobs:
       # the dogfooding loop, and it was running by hand or not at all.
       - run: npm run selfcheck
 
+      # Enforcee, installed on Enforcee. `76-ENGINE-PLAN` Part 0: `.claude/` did not exist, so
+      # we were selling a hook that blocks a forbidden action and building with no hook.
+      #
+      # This compiles our own CLAUDE.md into `.enforcee/policy.json` through the same library
+      # the shipped CLI uses, and REFUSES to install when the ruleset parses implausibly few
+      # rules. So a parser regression that would quietly empty every customer's policy turns
+      # this step red on the commit that caused it, instead of shipping a guard that guards
+      # nothing — which is invisible from the outside and passes every other check.
+      - run: npm run dogfood
+
       # `verify:ui` builds, serves, renders every page in both themes in real Chromium and
       # SAMPLES PAINTED PIXELS. It exists because of the `.invert` disaster: a custom class
       # collided with Tailwind's `filter: invert(100%)`, every panel painted backwards, and

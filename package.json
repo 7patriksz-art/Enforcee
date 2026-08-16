@@ -15,6 +15,7 @@
     "publish:cli": "node scripts/pack-cli.mjs --check && npm publish ./npm-dist",
     "selfcheck": "node cli/dist/enforcee.mjs health CLAUDE.md && node cli/dist/enforcee.mjs preflight CLAUDE.md",
     "verify:ui": "node scripts/verify-ui.mjs",
+    "dogfood": "esbuild scripts/dogfood.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/.dogfood.bundle.mjs --log-level=warning && node scripts/.dogfood.bundle.mjs",
     "email:check": "node scripts/push-email-templates.mjs --check",
     "email:push": "node scripts/push-email-templates.mjs"
   },

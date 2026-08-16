@@ -1,0 +1,27 @@
+{
+  "$comment": [
+    "Deny rules specific to THIS repository, merged into the generated policy by",
+    "scripts/dogfood.mjs. They are here rather than in the product's standing library because",
+    "extending that library changes behaviour for every customer, which is not a decision a",
+    "run gets to make on its own initiative.",
+    "",
+    "Found 2026-08-16, in the first ten minutes of installing our own product: `npm publish`",
+    "was denied by the standing library, but `git tag v0.9.0` was ALLOWED — and on this repo",
+    "the tag IS the release. publish.yml fires on `v*`. So the single most repeated rule in",
+    "all eleven scheduled job prompts — 'never publish a release, no v* tags' — was enforced",
+    "nowhere. It lived in prose, outside the auditable ruleset, believed by everyone.",
+    "",
+    "That is the exact failure this product exists to name, found by pointing it at ourselves."
+  ],
+  "deny": [
+    {
+      "id": "REPO-tag",
+      "rule": "Never create a release tag. A v* tag publishes to npm and cannot be taken back.",
+      "tool": "Bash",
+      "pattern": "\\bgit\\s+(?:\\S+\\s+)*?tag\\b[^\\n]*\\bv\\d",
+      "flags": "i",
+      "reason": "A v* tag triggers publish.yml and reaches strangers irreversibly. Releasing is automatic, via the release gate, or it is Patrik's.",
+      "trusted": true
+    }
+  ]
+}

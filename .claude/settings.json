@@ -1,0 +1,28 @@
+{
+  "$comment": [
+    "Enforcee, installed on Enforcee. 76-ENGINE-PLAN-2026-08-15 Part 0 opened with the",
+    "finding that reframed the rest of it: .claude/ did not exist, so we were selling a hook",
+    "that blocks a forbidden action before it runs and building the product with no hook.",
+    "",
+    "Run `npm run dogfood` once to compile CLAUDE.md into .enforcee/policy.json. That file is",
+    "generated and gitignored — never authored — so it cannot drift from the ruleset (E-1).",
+    "",
+    "Without ENFORCEE_LICENCE this records load evidence and a ledger and enforces nothing,",
+    "saying so once. That is D-007 working as designed, and watching it on our own repo is",
+    "itself the demonstration."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node guard/guard.mjs" }] }
+    ],
+    "InstructionsLoaded": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node guard/guard.mjs" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node guard/guard.mjs" }] }
+    ],
+    "PostCompact": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node guard/guard.mjs" }] }
+    ]
+  }
+}

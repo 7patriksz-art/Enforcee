@@ -46,6 +46,7 @@ hook that blocks before the fact.
 
 - Never commit a secret, a token or a licence key.
 - Never publish a version whose tests did not pass on every supported platform.
+- Never create a release tag by hand. A `v*` tag publishes to npm and cannot be taken back.
 - Never silently reverse a decision the user has made.
 - Never accuse the user of an error the tool caused.
 - Never carry hours of work uncommitted.
