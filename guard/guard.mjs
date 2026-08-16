@@ -620,12 +620,30 @@ function main() {
   // failure path in this file it prints nothing at all: no permissionDecision, no
   // systemMessage, no ledger row. Chained with a policy write, it is a permanent silent
   // fail-open. The shape is now normalised once, here, before anything reads it.
-  const isRule = (r) => r && typeof r === 'object' && typeof r.pattern === 'string';
+  //
+  // `tool` is validated here and not only `pattern`, because it is READ as a string later:
+  // toolMatches does `ruleTool.split('|')`. A hand-written `"tool": ["Bash","Write"]` — the
+  // most natural way to guess that field — threw a TypeError that the top-level catch turned
+  // into "internal error, nothing was blocked", disabling EVERY other rule in the policy on
+  // EVERY call. One malformed rule is a dropped rule; it is not a dropped policy. Dropping it
+  // here routes it into the `dropped` counter below, which names it instead.
+  const isRule = (r) =>
+    r &&
+    typeof r === 'object' &&
+    typeof r.pattern === 'string' &&
+    (r.tool === undefined || r.tool === null || typeof r.tool === 'string') &&
+    (r.flags === undefined || r.flags === null || typeof r.flags === 'string');
   const denyRules = Array.isArray(policy?.deny) ? policy.deny.filter(isRule) : [];
   const warnRules = Array.isArray(policy?.warn) ? policy.warn.filter(isRule) : [];
+  // An ARRAY is `typeof 'object'` and its `.deny` is `undefined`, so a policy.json whose top
+  // level is the rules list itself — `[{...}, {...}]`, the other natural hand-authoring guess —
+  // walked through every clause below, enforced nothing, said nothing, and then wrote an
+  // ALLOW row to the ledger for a call no rule was ever run against. A positive record of a
+  // check that did not happen is the exact failure this product exists to name.
   const badShape =
     !policy ||
     typeof policy !== 'object' ||
+    Array.isArray(policy) ||
     (policy.deny !== undefined && !Array.isArray(policy.deny)) ||
     (policy.warn !== undefined && !Array.isArray(policy.warn));
   // Entries inside a well-shaped list that are not rules are dropped rather than crashed on,
@@ -634,15 +652,36 @@ function main() {
     ? 0
     : (Array.isArray(policy.deny) ? policy.deny.length - denyRules.length : 0) +
       (Array.isArray(policy.warn) ? policy.warn.length - warnRules.length : 0);
-  if (badShape || dropped > 0) {
+  // badShape means there is nothing usable at all, so there is nothing to go on and do.
+  if (badShape) {
     emit({
-      systemMessage: badShape
-        ? 'Enforcee: policy.json is valid JSON but not a policy, so no rules are being enforced this session. ' +
-          'Recompile it with: npx enforcee guard <rules-file>'
-        : `Enforcee: ${dropped} entr${dropped === 1 ? 'y' : 'ies'} in policy.json ${dropped === 1 ? 'is' : 'are'} not a usable rule ` +
-          `and ${dropped === 1 ? 'was' : 'were'} NOT enforced on this call. Recompile with: npx enforcee guard <rules-file>`,
+      systemMessage:
+        'Enforcee: policy.json is valid JSON but not a policy, so no rules are being enforced this session. ' +
+        'Recompile it with: npx enforcee guard <rules-file>',
     });
   }
+
+  // A DROPPED ENTRY IS NOT A DROPPED POLICY, and this used to `emit()` — which exits.
+  //
+  // So one junk entry anywhere in `deny` OR `warn` returned here and never reached the rule
+  // loop: with `deny: [null, ...21 good rules]`, `rm -rf /` was ALLOWED. Executed, not
+  // reasoned about. The message made it worse rather than better, because it said "1 entry
+  // ... was NOT enforced on this call" while in fact none of the 22 were — a false statement
+  // about our own coverage, printed by the tool whose entire job is refusing to make those.
+  //
+  // The notice is now carried to whatever decision the surviving rules produce, so a policy
+  // with one bad line still enforces the other twenty and still says the bad line is off.
+  const notice =
+    dropped > 0
+      ? `Enforcee: ${dropped} entr${dropped === 1 ? 'y' : 'ies'} in policy.json ${dropped === 1 ? 'is' : 'are'} not a usable rule ` +
+        `and ${dropped === 1 ? 'was' : 'were'} NOT enforced on this call; the remaining ` +
+        `${denyRules.length + warnRules.length} were. Recompile with: npx enforcee guard <rules-file>`
+      : null;
+  /** emit(), with the dropped-entry notice folded in so it is never lost and never blocks. */
+  const emitWithNotice = (obj) =>
+    emit(notice ? { ...obj, systemMessage: [notice, obj.systemMessage].filter(Boolean).join(' ') } : obj);
+  /** allow(), except that a pending notice still has to reach the user. */
+  const allowWithNotice = () => (notice ? emit({ systemMessage: notice }) : allow());
 
   const now = new Date().toISOString();
   const base = { at: now, session: payload.session_id ?? null, event, guard: GUARD_VERSION };
@@ -773,7 +812,7 @@ function main() {
     // Same principle as the regex refusal — decline and say so, never half-check and pass.
     if (full.length > MAX_SUBJECT) {
       log(policyPath, { ...base, decision: 'DENY', ruleId: 'guard-oversized-input', tool: toolName, subject: subject.slice(0, 400) });
-      emit({
+      emitWithNotice({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
@@ -843,7 +882,7 @@ function main() {
           `user's budget. Report the block to the user and wait for instructions.`;
       }
 
-      return emit({
+      return emitWithNotice({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
@@ -861,7 +900,7 @@ function main() {
       const re = safeRe(rule.pattern, rule.flags, rule.trusted === true);
       if (!re || !hits(re)) continue;
       log(policyPath, { ...base, decision: 'WARN', ruleId: rule.id, rule: rule.rule, tool: toolName });
-      return emit({
+      return emitWithNotice({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           additionalContext: `Enforcee warning on rule ${rule.id}: ${rule.rule}. ${rule.reason ?? ''}`.trim(),
@@ -877,7 +916,7 @@ function main() {
         rules: unchecked.map((r) => r.id),
         reason: 'pattern could not be compiled or is unsafe to run',
       });
-      return emit({
+      return emitWithNotice({
         systemMessage:
           `Enforcee could not check ${unchecked.length} of your deny rule${unchecked.length === 1 ? '' : 's'} on this call ` +
           `(${unchecked.map((r) => r.id).join(', ')}): the pattern will not compile, or its shape can hang the matcher. ` +
@@ -890,7 +929,7 @@ function main() {
     // all the others. A truncated preview is enough to reconstruct what happened without
     // turning the ledger into a copy of the session.
     log(policyPath, { ...base, decision: 'ALLOW', tool: toolName, subject: subject.slice(0, 200) });
-    allow();
+    allowWithNotice();
   }
 
   if (event === 'PostCompact' || event === 'SessionStart') {
