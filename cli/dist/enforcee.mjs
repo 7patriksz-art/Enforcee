@@ -10977,6 +10977,7 @@ function checkClaims(text, ctx) {
 }
 
 // src/lib/prevent/obstacles.ts
+var PATTERNS_VERSION = 2;
 var PATTERNS2 = [
   {
     kind: "network",
@@ -11084,9 +11085,10 @@ function normaliseCapture(v) {
 function snippet(s, n = 160) {
   return redact(s.replace(/\s+/g, " ").trim()).slice(0, n);
 }
-function extractObstacles(toolResults) {
+function extractObstacles(toolResults, source = "") {
   const found = /* @__PURE__ */ new Map();
-  for (const raw of toolResults) {
+  for (let i = 0; i < toolResults.length; i++) {
+    const raw = toolResults[i];
     if (!raw) continue;
     for (const p of PATTERNS2) {
       const m = p.re.exec(raw);
@@ -11094,15 +11096,20 @@ function extractObstacles(toolResults) {
       const captured = normaliseCapture(m[1] ?? "");
       const signature = p.signature.replace("$1", captured);
       const id = obstacleId(signature);
+      const occurrence = obstacleId(`${source}|${i}|${signature}`);
       const existing = found.get(id);
       if (existing) {
-        existing.hits++;
+        if (!existing.seen.includes(occurrence)) {
+          existing.seen.push(occurrence);
+          existing.hits++;
+        }
       } else {
         found.set(id, {
           id,
           kind: p.kind,
           signature,
           hits: 1,
+          seen: [occurrence],
           evidence: snippet(raw.slice(Math.max(0, m.index - 40))),
           resolution: p.observedFix,
           confidence: p.observedFix ? "observed" : "unverified"
@@ -11121,7 +11128,10 @@ function mergeObstacles(prior, next) {
       by.set(o.id, { ...o });
       continue;
     }
-    existing.hits += o.hits;
+    for (const f of o.seen) {
+      if (!existing.seen.includes(f)) existing.seen.push(f);
+    }
+    existing.hits = existing.seen.length;
     if (o.confidence === "observed" && existing.confidence !== "observed") {
       existing.resolution = o.resolution;
       existing.confidence = "observed";
@@ -11813,11 +11823,27 @@ async function main() {
     }
     const dir = join5(process.cwd(), ".enforcee");
     const store = join5(dir, "obstacles.json");
-    const prior = existsSync5(store) ? JSON.parse(readFileSync3(store, "utf8")) : [];
-    const merged = mergeObstacles(prior, extractObstacles(results));
+    let prior = [];
+    if (existsSync5(store)) {
+      const raw = JSON.parse(readFileSync3(store, "utf8"));
+      const version = Array.isArray(raw) ? 0 : raw.version ?? 0;
+      const stored = Array.isArray(raw) ? raw : raw.obstacles ?? [];
+      if (version === PATTERNS_VERSION) prior = stored;
+      else if (stored.length) {
+        console.log(
+          C.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} \u2192 v${PATTERNS_VERSION}).`)
+        );
+        console.log(C.grey("  Their counts could not be reproduced by the current patterns, so keeping them would be reporting a number nothing can check.\n"));
+      }
+    }
+    let scanned = [];
+    for (const f of files) {
+      scanned = mergeObstacles(scanned, extractObstacles(toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8"))), f));
+    }
+    const merged = mergeObstacles(prior, scanned);
     if (json) return console.log(JSON.stringify(merged, null, 2));
     mkdirSync3(dir, { recursive: true });
-    writeFileSync3(store, JSON.stringify(merged, null, 2));
+    writeFileSync3(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged }, null, 2));
     console.log(C.grey(`
   ${results.length} tool results across ${files.length} session(s)
 `));

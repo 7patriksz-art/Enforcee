@@ -90,11 +90,14 @@ describe('counts accumulate across sessions', () => {
   it('adds hits rather than overwriting them', () => {
     // "This blocked you 12 times" is an argument. "Once, in a session you have forgotten"
     // is not. The number only means something if it survives the session ending.
-    const monday = extractObstacles(['Host not in allowlist: api.supabase.com.']);
-    const tuesday = extractObstacles([
-      'Host not in allowlist: api.supabase.com.',
-      'Host not in allowlist: api.supabase.com.',
-    ]);
+    // Distinct sources: these are two different sessions, not one file read twice. Passing
+    // no source made them indistinguishable, which is correct — and is why this test had to
+    // change when re-scans became idempotent.
+    const monday = extractObstacles(['Host not in allowlist: api.supabase.com.'], 'monday.jsonl');
+    const tuesday = extractObstacles(
+      ['Host not in allowlist: api.supabase.com.', 'Host not in allowlist: api.supabase.com.'],
+      'tuesday.jsonl'
+    );
     const merged = mergeObstacles(monday, tuesday);
     expect(merged).toHaveLength(1);
     expect(merged[0].hits).toBe(3);
@@ -253,5 +256,42 @@ describe('the first real run, as regressions', () => {
     expect(normaliseCapture('C:\\\\dev\\\\probe.js')).toBe('C:\\dev\\probe.js');
     expect(normaliseCapture('C:\\dev\\probe.js')).toBe('C:\\dev\\probe.js');
     expect(obstacleId(normaliseCapture('C:\\\\a\\\\b'))).toBe(obstacleId(normaliseCapture('C:\\a\\b')));
+  });
+});
+
+describe('re-scanning the same sessions changes nothing', () => {
+  /**
+   * Patrik ran the scan, I fixed four patterns, he re-ran it — and the top line went from
+   * "hit 762×" to "hit 1143×" over an identical set of transcripts. Nothing had happened to
+   * his project in between. The number was measuring HOW MANY TIMES THE TOOL HAD RUN and
+   * presenting it as how many times the wall had been hit.
+   *
+   * `learn` already carried exactly this discipline — "Fingerprint the OCCURRENCE, not the
+   * run. Re-reading the same file must not look like the person saying it again." I did not
+   * carry it across, so one bug shipped twice on this project in two different features.
+   * That is the duplicated-source shape (E-1) applied to a *reasoning step* rather than a
+   * value, which is the harder version to notice.
+   */
+  const SESSION = ['HTTP/2 401 Unauthorized', 'Host not in allowlist: api.supabase.com.', 'HTTP/2 401 Unauthorized'];
+
+  it('is idempotent: scanning twice equals scanning once', () => {
+    const once = extractObstacles(SESSION, 'a.jsonl');
+    const twice = mergeObstacles(once, extractObstacles(SESSION, 'a.jsonl'));
+    expect(twice.map((o) => [o.signature, o.hits])).toEqual(once.map((o) => [o.signature, o.hits]));
+  });
+
+  it('still counts a genuinely new session', () => {
+    // The other half. Making merge a no-op is the obvious way to pass the test above while
+    // destroying the point of keeping a store at all.
+    const monday = extractObstacles(SESSION, 'monday.jsonl');
+    const tuesday = extractObstacles(['HTTP/2 401 Unauthorized'], 'tuesday.jsonl');
+    const merged = mergeObstacles(monday, tuesday);
+    const four01 = merged.find((o) => o.signature.includes('401'))!;
+    expect(four01.hits, 'a new session did not register').toBe(3);
+  });
+
+  it('counts two identical failures within one session as two', () => {
+    const out = extractObstacles(SESSION, 'a.jsonl');
+    expect(out.find((o) => o.signature.includes('401'))!.hits).toBe(2);
   });
 });

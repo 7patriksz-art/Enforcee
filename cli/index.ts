@@ -18,7 +18,7 @@ import { checkLocalLicence, setLicence, LICENCE_PATHS } from '../src/lib/licence
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
 import { checkClaims } from '../src/lib/prevent/claims';
-import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, type Obstacle } from '../src/lib/prevent/obstacles';
+import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, PATTERNS_VERSION, type Obstacle } from '../src/lib/prevent/obstacles';
 import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, existingFromRuleset } from '../src/lib/prevent/supersede';
 import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference, decide } from '../src/lib/prevent/memory';
 import { createHash } from 'node:crypto';
@@ -516,12 +516,36 @@ async function main(): Promise<void> {
 
     const dir = join(process.cwd(), '.enforcee');
     const store = join(dir, 'obstacles.json');
-    const prior = existsSync(store) ? (JSON.parse(readFileSync(store, 'utf8')) as Obstacle[]) : [];
-    const merged = mergeObstacles(prior, extractObstacles(results));
+
+    // A stored obstacle is only interpretable under the patterns that produced it. When the
+    // 401 pattern was tightened, every stored "HTTP 401" count became a number nothing could
+    // reproduce — and it kept being shown as though it were current. Discard on a version
+    // change, and SAY SO: silently dropping history is how a tool becomes untrustworthy in
+    // the other direction.
+    let prior: Obstacle[] = [];
+    if (existsSync(store)) {
+      const raw = JSON.parse(readFileSync(store, 'utf8')) as { version?: number; obstacles?: Obstacle[] } | Obstacle[];
+      const version = Array.isArray(raw) ? 0 : (raw.version ?? 0);
+      const stored = Array.isArray(raw) ? raw : (raw.obstacles ?? []);
+      if (version === PATTERNS_VERSION) prior = stored;
+      else if (stored.length) {
+        console.log(
+          C.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} → v${PATTERNS_VERSION}).`)
+        );
+        console.log(C.grey('  Their counts could not be reproduced by the current patterns, so keeping them would be reporting a number nothing can check.\n'));
+      }
+    }
+
+    // Fingerprint by FILE PATH, so re-scanning the same transcripts is idempotent.
+    let scanned: Obstacle[] = [];
+    for (const f of files) {
+      scanned = mergeObstacles(scanned, extractObstacles(toolResultsFromRecords(parseJsonl(readFileSync(f, 'utf8'))), f));
+    }
+    const merged = mergeObstacles(prior, scanned);
     if (json) return console.log(JSON.stringify(merged, null, 2));
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(store, JSON.stringify(merged, null, 2));
+    writeFileSync(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged }, null, 2));
 
     console.log(C.grey(`\n  ${results.length} tool results across ${files.length} session(s)\n`));
     if (!merged.length) {

@@ -45,6 +45,17 @@
 
 export type ObstacleKind = 'credential' | 'network' | 'environment' | 'tooling';
 
+/**
+ * Bumped whenever a PATTERN changes meaning.
+ *
+ * Signatures are produced by patterns, so a stored obstacle is only interpretable under the
+ * patterns that made it. When `/\b401\b/` was tightened to require HTTP context, every stored
+ * "HTTP 401" count became a number that could never be reproduced — and it kept being
+ * displayed as though it were current. A store that survives the code that wrote it is a
+ * store that lies.
+ */
+export const PATTERNS_VERSION = 2;
+
 export interface Obstacle {
   /** Stable id over the signature — the same wall keeps the same id across sessions. */
   id: string;
@@ -53,6 +64,17 @@ export interface Obstacle {
   signature: string;
   /** How many times this project has hit it. The number that makes the case. */
   hits: number;
+  /**
+   * Fingerprints of the individual failures counted, so re-reading the same transcript is
+   * IDEMPOTENT.
+   *
+   * The first version merged blindly: `hits += o.hits`. Patrik re-ran the scan over the same
+   * sessions and the top line went from 762 to 1143 — a number that measured how many times
+   * the TOOL had run, presented as how many times the wall had been hit. `learn` already had
+   * this exact discipline ("Fingerprint the OCCURRENCE, not the run"); I did not carry it
+   * across, so the same bug shipped twice on this project in two different features.
+   */
+  seen: string[];
   /** A verbatim slice of the failure, so a human can confirm it is really this. */
   evidence: string;
   /**
@@ -226,10 +248,11 @@ function snippet(s: string, n = 160): string {
  * Takes already-extracted tool-result strings rather than raw records, so the caller owns
  * transcript shape and this stays testable with plain strings.
  */
-export function extractObstacles(toolResults: string[]): Obstacle[] {
+export function extractObstacles(toolResults: string[], source = ''): Obstacle[] {
   const found = new Map<string, Obstacle>();
 
-  for (const raw of toolResults) {
+  for (let i = 0; i < toolResults.length; i++) {
+    const raw = toolResults[i];
     if (!raw) continue;
     for (const p of PATTERNS) {
       const m = p.re.exec(raw);
@@ -241,15 +264,22 @@ export function extractObstacles(toolResults: string[]): Obstacle[] {
       const captured = normaliseCapture(m[1] ?? '');
       const signature = p.signature.replace('$1', captured);
       const id = obstacleId(signature);
+      // Identify the OCCURRENCE, not the run: which corpus, which result, which wall. Stable
+      // across re-scans of the same transcripts, distinct across genuinely new failures.
+      const occurrence = obstacleId(`${source}|${i}|${signature}`);
       const existing = found.get(id);
       if (existing) {
-        existing.hits++;
+        if (!existing.seen.includes(occurrence)) {
+          existing.seen.push(occurrence);
+          existing.hits++;
+        }
       } else {
         found.set(id, {
           id,
           kind: p.kind,
           signature,
           hits: 1,
+          seen: [occurrence],
           evidence: snippet(raw.slice(Math.max(0, m.index - 40))),
           resolution: p.observedFix,
           confidence: p.observedFix ? 'observed' : 'unverified',
@@ -279,7 +309,12 @@ export function mergeObstacles(prior: Obstacle[], next: Obstacle[]): Obstacle[] 
       by.set(o.id, { ...o });
       continue;
     }
-    existing.hits += o.hits;
+    // Union of occurrences, not a sum of counts. Re-scanning the same sessions must be a
+    // no-op; only a genuinely new failure moves the number.
+    for (const f of o.seen) {
+      if (!existing.seen.includes(f)) existing.seen.push(f);
+    }
+    existing.hits = existing.seen.length;
     // A remedy that has been OBSERVED to work outranks one that has not. Never downgrade.
     if (o.confidence === 'observed' && existing.confidence !== 'observed') {
       existing.resolution = o.resolution;
