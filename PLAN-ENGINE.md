@@ -94,7 +94,7 @@ Recurrence, counted:
 path-separator bugs .................. 5
 email logo formats that shipped broken. 3
 fabricated manuals ................... 2
-duplicated-source bugs ............... 10
+duplicated-source bugs ............... 12
 false-accusation classes ............. 11
 controls that could not have failed ... 6
 ```
@@ -105,7 +105,7 @@ experience you are describing, forever, no matter how careful the operator is.
 
 ---
 
-## Part 2 — Six changes to the engine
+## Part 2 — Seven changes to the engine
 
 Ordered by how much of the table above each one closes. Each is both a fix for us **and** a
 product feature, because every failure above is one your customers are having too — a green
@@ -235,7 +235,7 @@ exactly charter honesty rule #6, finally executable.
 **Closes row 8, and the recurrence counts. This is the "learning" Patrik says isn't happening.**
 
 Today every fixed bug gets a named regression test. That closes the **instance**. Five
-separator bugs, three logo formats and ten duplicated-source bugs say the **class** stays
+separator bugs, three logo formats and twelve duplicated-source bugs say the **class** stays
 open — and the class is what recurs.
 
 Every incident gets a `class` label and, where the class is mechanically detectable, a guard
@@ -336,6 +336,59 @@ that says *"nothing found"* must say **why**, or it reads as a broken install.
 
 ---
 
+### CHANGE 7 — OBSTACLES: the half of learning that needs no user
+
+**Patrik, 2026-08-16:** *"Enforcee should learn these itself from actions and actual in-flight
+coding sessions, not me pointing at every error."*
+
+This is the correct objection to CHANGE 6 and to `learn` generally. Both mine **what the person
+said** — so both need the person to have said it. Every rule they produce is a rule Patrik had
+to notice, phrase and type. That is the manual labour, relocated rather than removed.
+
+So measure the other channel. Over two real transcripts of this project — 787 records, 406 tool
+results:
+
+```
+78 tool results carried a prerequisite failure                        19%
+48 of 48 recognised failures had a signature ALREADY SEEN in the same history   100%
+```
+
+**One hundred percent.** Four separate pushes died on `could not read Username for
+https://github.com`, with the remedy written in our own charter throughout. Nine requests died
+on the same blocked host. Twenty-one 401s came back from credentials already shown not to work.
+
+A 403 is not an opinion. It is a labelled failure with a timestamp, already in the transcript,
+requiring nobody's attention to become a fact. **That is the signal that needs no user.**
+
+`enforcee obstacles` (shipped, `22a72b0`) reads any number of transcripts and produces:
+
+```
+21x  HTTP 401 — the credential was rejected
+ 9x  egress blocks api.supabase.com
+ 4x  git has no stored credential for https://github.com
+ 2x  the working directory is not the repo      (the container rollbacks)
+```
+
+plus `.enforcee/obstacles.md` — a brief short enough to reinject at the start of a session.
+
+Three constraints that make it honest rather than decorative:
+
+- **Signatures, not messages.** A raw error carries a path and a timestamp, so recorded
+  literally the same wall never looks like the same wall. Two failures share a signature exactly
+  when the same precaution would have prevented both.
+- **A remedy nobody has run is a guess.** This project has paid twice for guessed remedies. So
+  `resolution` is only set where this repo watched something succeed, and an unfixed obstacle
+  prints *"No remedy observed yet"* rather than a plausible sentence.
+- **One-offs are excluded, and an empty brief is empty.** No confident heading over nothing —
+  that is how a reinjected file becomes furniture.
+
+**What is still missing, and it is the interesting half.** Right now `obstacles` is a command
+someone runs. The value is in it running *before* the wall — reinjected at session start, and
+consulted by `preflight` when a rule depends on a tool, host or credential this project has
+already been blocked on. That is the join to make next, and it is small.
+
+---
+
 ## Part 3 — Sequence
 
 **Done since this plan was written (15th → 16th).** `selfcheck` + `verify:ui` in CI · the guard
@@ -345,6 +398,9 @@ only where it was written" bugs closed three times over.
 
 **Next, in order.**
 
+0. **Join OBSTACLES to preflight and to session start.** CHANGE 7 shipped as a command someone
+   runs; the value is in it running *before* the wall. Small, and it is the difference between
+   a report and a guardrail.
 1. **CHANGE 6, `enforcee onboard`.** Highest value per day of work, because it is composition
    of parts that exist, and because it is the only item here a stranger can feel. Ship it
    before any further engine work.
