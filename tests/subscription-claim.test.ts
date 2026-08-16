@@ -24,7 +24,14 @@ import { describe, it, expect } from 'vitest';
  */
 type Row = { email: string | null; userId: string | null };
 
-/** Mirrors: .is('user_id', null).ilike('email', verifiedEmail) */
+/**
+ * NOT a mirror of the production query, and the comment that said it was is the reason a
+ * live cross-account bug sat under a green suite: this says `===`, the code said `.ilike`,
+ * and the difference decided whose subscription you got. It is kept as what it always was —
+ * a statement of the *rule* — and the query itself is executed in
+ * `tests/subscription-claim-wildcards.test.ts`. A test that models production code tests the
+ * model. If a comment here ever claims to match `entitlements.ts` again, distrust it.
+ */
 function claimable(row: Row, verifiedEmail: string | null): boolean {
   if (!verifiedEmail) return false;
   if (row.userId !== null) return false;

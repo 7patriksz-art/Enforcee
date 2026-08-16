@@ -76,13 +76,33 @@ export async function getAccess(): Promise<Access> {
   //
   // Only unclaimed rows are eligible. An assigned subscription can never be reassigned by
   // this path, whatever anyone types into Stripe.
+  //
+  // Identity is decided here, in JS, by an exact comparison — never by the database's
+  // pattern matcher. This used to be `.ilike('email', user.email)`, and postgrest-js appends
+  // that value verbatim (`ilike.${pattern}`, dist/index.mjs:1603), so a *verified* address
+  // arrived at Postgres as a LIKE pattern rather than a value. `_` is legal in an email local
+  // part and is LIKE's any-character metacharacter, so signing in as `a_____@example.com`
+  // claimed every unassigned row of the shape `a?????@example.com` — in one statement, with
+  // no limit. It needed no attacker either: a customer whose own address happens to contain
+  // an underscore could take a stranger's subscription simply by signing in.
+  //
+  // Escaping the metacharacters would work too, and would rest the identity decision on three
+  // layers of escaping being right at once. An exact comparison has no such surface.
   if (!found && user.email) {
-    await db
-      .from('subscriptions')
-      .update({ user_id: user.id })
-      .is('user_id', null)
-      .ilike('email', user.email);
-    found = await byUser();
+    const verified = user.email.trim().toLowerCase();
+    // Unassigned rows only, and they are transient: a row leaves this set the moment its
+    // owner signs in. `user_id IS NULL` is asserted here and again on the update, so a row
+    // claimed by its real owner in between is not taken from them.
+    const { data: unassigned } = await db.from('subscriptions').select('id, email').is('user_id', null);
+
+    const mine = (unassigned ?? []).find(
+      (r: { email?: string | null }) => typeof r.email === 'string' && r.email.trim().toLowerCase() === verified
+    ) as { id?: string } | undefined;
+
+    if (mine?.id) {
+      await db.from('subscriptions').update({ user_id: user.id }).eq('id', mine.id).is('user_id', null);
+      found = await byUser();
+    }
   }
 
   const row = found as { plan?: string; status?: string; current_period_end?: string | null } | undefined;
