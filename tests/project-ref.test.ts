@@ -107,7 +107,25 @@ describe('the project ref resolves everywhere', () => {
       return;
     }
     const fromEnv = readFileSync(envFile, 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/i)?.[1];
-    expect(fromEnv, '.env.local has no NEXT_PUBLIC_SUPABASE_URL to compare against').toBeTruthy();
+    // A .env.local with no Supabase URL in it is the SAME case as no .env.local at all: there
+    // is nothing to compare, so there is no drift to report. This used to fail here — the
+    // check announced "these two values disagree" when what had actually happened was that one
+    // of them did not exist. A missing comparand is not a discrepancy.
+    //
+    // Reached by an ordinary action, not an exotic one: `npx vercel link` writes a .env.local
+    // containing only VERCEL_OIDC_TOKEN, and docs/SETUP-ENFORCEMENT.md instructs you to run it.
+    // Patrik hit this on 2026-08-16 within a minute of following our own setup document, on a
+    // suite that was otherwise green.
+    //
+    // The skip is LOUD, exactly as the no-file skip above is loud. A check that cannot run must
+    // say it did not run; what it must never do is either fail or pass silently.
+    if (!fromEnv) {
+      console.warn(
+        '  [skipped] .env.local exists but names no Supabase URL — drift vs the dev environment was NOT checked'
+      );
+      expect(true).toBe(true);
+      return;
+    }
     expect(readFileSync(REF_FILE, 'utf8').trim(), 'committed ref has drifted from .env.local').toBe(fromEnv);
   });
 });
