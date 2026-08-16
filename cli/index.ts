@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { runAudit } from '../src/lib/audit';
 import { parseRuleset } from '../src/lib/rules/parse';
 import { proposeDenyRules, compilePolicy, toDenyRule } from '../src/lib/enforce/policy';
-import { extractPreferences, toRulesetMarkdown } from '../src/lib/preferences';
+import { extractPreferences, toRulesetMarkdown, userTurnsFromTranscript } from '../src/lib/preferences';
 import { parseTranscript } from '../src/lib/transcript/parse';
 import { analyseCapabilities } from '../src/lib/transcript/findings';
 import { checkLocalLicence, setLicence, LICENCE_PATHS } from '../src/lib/licence-local';
@@ -75,6 +75,37 @@ so both work as a CI gate.
 ${C.dim('audit, health, learn and session need no account, no key and no network.')}
 ${C.dim('guard needs a licence, checked offline against a key compiled into this binary.')}
 `);
+}
+
+/**
+ * Is this a Claude Code session file rather than a pasted conversation?
+ *
+ * Decided on CONTENT, not on the `.jsonl` extension — a transcript saved as `session.txt` is
+ * still a transcript, and mining the assistant's half of it is the bug this exists to stop.
+ */
+function looksLikeTranscript(raw: string): boolean {
+  const first = raw.split('\n').find((l) => l.trim() !== '');
+  if (!first) return false;
+  try {
+    const o = JSON.parse(first) as Record<string, unknown>;
+    return typeof o === 'object' && o !== null && ('type' in o || 'message' in o);
+  } catch {
+    return false;
+  }
+}
+
+/** Parse JSONL, skipping unparseable lines — a truncated last line is normal in a live file. */
+function parseJsonl(raw: string): { type?: string; isCompactSummary?: boolean; isMeta?: boolean; message?: { role?: string; content?: unknown } }[] {
+  const out: { type?: string; isCompactSummary?: boolean; isMeta?: boolean; message?: { role?: string; content?: unknown } }[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.trim() === '') continue;
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
 }
 
 function read(path: string | undefined): string {
@@ -239,7 +270,42 @@ async function main(): Promise<void> {
       console.error(C.red('usage: enforcee learn <file>'));
       process.exit(2);
     }
-    const text = read(args[1]);
+    // A session transcript is JSONL, not prose. Read it as prose and every line the
+    // ASSISTANT wrote — its code, its commit messages, its regexes — is mined back as if the
+    // person had said it.
+    //
+    // Found 2026-08-16 by pointing `learn` at this project's own 413-record transcript, the
+    // first time it had ever been run on a real Claude Code session rather than a pasted
+    // conversation. It made 61 proposals, including this one, verbatim, as a rule:
+    //
+    //     Never = /^(and|or|the|a|an|of|in|for|with|to|&)$/i.
+    //
+    // which is a regex out of src/lib/rules/parse.ts.
+    //
+    // `userTurnsFromTranscript` already existed, already did exactly this, was already
+    // exported, and was called by NOTHING but its own unit test. The test passed while the
+    // shipped binary ignored the function, and the site says "Only your words are read —
+    // never the assistant's" (src/app/learn/page.tsx:94). That claim was false in the binary
+    // people install, and no test could see it, because the test proved a property of a
+    // FUNCTION rather than of the PRODUCT.
+    //
+    // Same defect as selfcheck and verify:ui running in no pipeline: a correct control wired
+    // to nothing.
+    const raw = read(args[1]);
+    const fromTranscript = looksLikeTranscript(raw);
+    const text = fromTranscript ? userTurnsFromTranscript(parseJsonl(raw)) : raw;
+    if (fromTranscript) {
+      // Never let a check silently cover nothing. An empty corpus here reads identically to
+      // "no preferences found", which is the difference between "nothing to say" and
+      // "nothing was read".
+      if (text.length === 0) {
+        console.error(C.red('  That transcript contains no human turns this build can read.'));
+        console.error(C.grey('  Nothing was analysed — which is not the same as finding nothing.'));
+        process.exit(2);
+      }
+      const pct = ((text.length / raw.length) * 100).toFixed(1);
+      console.log(C.grey(`  transcript: your turns only — ${text.length} of ${raw.length} characters (${pct}%)\n`));
+    }
     const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
     const existing = args[2] ? new Set(rulesetRules.map((r) => r.id)) : undefined;
     const found = extractPreferences(text, { existingRuleIds: existing });
