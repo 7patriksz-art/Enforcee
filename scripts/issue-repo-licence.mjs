@@ -21,7 +21,12 @@
  * do nothing.
  *
  *   export ENFORCEE_LICENCE_PRIVATE_KEY="$(cat key.pem)"   # from Vercel → Settings → Env
- *   node scripts/issue-repo-licence.mjs
+ *   node scripts/issue-repo-licence.mjs                    # subject: enforcee-on-enforcee
+ *   node scripts/issue-repo-licence.mjs --sub screenkraft  # a licence for another project
+ *
+ * `--key-file <path>` also works, which avoids the multi-line-PEM-in-an-env-var problem
+ * entirely — four platform-specific ways for that copy-paste to produce a key that looks
+ * right and will not sign.
  *
  * 45 DAYS, DELIBERATELY, AND NOT A DAY MORE
  *
@@ -67,6 +72,39 @@ function packageRoot(from) {
 const ROOT = packageRoot(dirname(fileURLToPath(import.meta.url)));
 
 const TTL_DAYS = 45; // D-022. Raising this is a decision, not a convenience.
+
+/**
+ * WHICH PROJECT this licence is for.
+ *
+ * Hardcoded to `enforcee-on-enforcee` until 2026-08-16, which made this script able to licence
+ * exactly one repository — the one it lives in. Patrik asked for a licence for ScreenKraft and
+ * there was no way to issue one, so the honest options were to reuse the Enforcee licence
+ * outside its stated purpose, or to change this.
+ *
+ * The subject is not an access control — the token carries no repo scope and any licence works
+ * anywhere. It is a LABEL, and it is the only record of what a given token was issued for. A
+ * founder licence found on a machine should be traceable to a decision, and `sub` is where
+ * that lives: `enforcee status` and `enforcee licence` both surface it.
+ *
+ * Constrained deliberately. A subject is a durable identifier that ends up in a signed token
+ * nothing can revoke, so it takes the shape of a name rather than free text.
+ */
+// Evaluated BEFORE the key lookup, deliberately. Validating it afterwards meant a typo'd
+// subject was reported only once the key was already working — so the user fixed the key,
+// re-ran, and only then learned the other argument was wrong. Fail on the cheap thing first.
+const SUBJECT = (() => {
+  const i = process.argv.indexOf('--sub');
+  if (i === -1) return 'enforcee-on-enforcee';
+  const v = (process.argv[i + 1] ?? '').trim();
+  if (!/^[a-z0-9][a-z0-9-]{2,40}$/.test(v)) {
+    console.error(`--sub "${v}" is not a usable subject.`);
+    console.error('Lowercase letters, digits and hyphens; 3-41 characters. It is baked into a');
+    console.error('signed token that cannot be revoked, so it has to be a name, not a sentence.');
+    process.exit(1);
+  }
+  return v;
+})();
+
 
 /**
  * Finding the private key, without a shell-quoting step that can go wrong.
@@ -168,7 +206,7 @@ const exp = now + TTL_DAYS * 86_400;
 
 let token;
 try {
-  token = issueLicence({ jti: randomUUID(), sub: 'enforcee-on-enforcee', plan: 'founder', exp }, privateKey);
+  token = issueLicence({ jti: randomUUID(), sub: SUBJECT, plan: 'founder', exp }, privateKey);
 } catch (e) {
   console.error(`Signing failed: ${e.message}`);
   console.error(`The value from ${found.from} is not a usable PKCS#8 Ed25519 private key.`);
