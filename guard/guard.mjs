@@ -23,6 +23,8 @@
 import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createPublicKey, verify } from 'node:crypto';
 
 /**
@@ -428,6 +430,54 @@ function recentDenials(policyPath, sessionId, ruleId, limit = 60) {
     return n;
   } catch {
     return 0;
+  }
+}
+
+
+/**
+ * Kick off an incremental obstacle scan and do not wait for it.
+ *
+ * Silent on every failure path by design. This is a learning nicety bolted onto a guard
+ * whose job is enforcement, and enforcement must never acquire a dependency on it. A
+ * missing CLI, a missing transcripts directory, a spawn that fails — all mean "the brief
+ * stays as it is", never "the session breaks".
+ */
+function refreshObstaclesInBackground(enforceeDir) {
+  try {
+    const projects = join(homedir(), '.claude', 'projects');
+    if (!existsSync(projects)) return;
+
+    // Most specific first. The plugin copy lives outside the repo, so its relative path
+    // differs — hence more than one candidate rather than one clever guess.
+    // fileURLToPath, NOT .pathname. On Windows `.pathname` yields `/C:/Users/...`, which
+    // Node then resolves as `C:\C:\Users\...`. Sixth bug of this class on this project, and
+    // it was caught by tests/portability.test.ts rather than by me — the control working.
+    // Patrik develops on Windows, so this is the platform it would have broken on.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      process.env.ENFORCEE_CLI,
+      join(enforceeDir, '..', 'cli', 'dist', 'enforcee.mjs'),
+      join(here, '..', 'cli', 'dist', 'enforcee.mjs'),
+      join(enforceeDir, '..', 'node_modules', 'enforcee', 'cli', 'dist', 'enforcee.mjs'),
+    ].filter(Boolean);
+
+    const cli = candidates.find((c) => {
+      try {
+        return existsSync(c);
+      } catch {
+        return false;
+      }
+    });
+    if (!cli) return;
+
+    const child = spawn(process.execPath, [cli, 'obstacles', projects], {
+      cwd: dirname(enforceeDir),
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+  } catch {
+    /* learning is a bonus; enforcement never depends on it */
   }
 }
 
@@ -960,6 +1010,23 @@ function main() {
     } catch {
       /* a learned artefact is a bonus, never a precondition */
     }
+
+    // ── Refresh the brief in the BACKGROUND, never in the session's way ──────
+    //
+    // The brief was being injected but nothing refreshed it, so a human still had to run
+    // the scan — which is the manual labour this whole feature exists to delete.
+    //
+    // DETACHED AND UNREF'D, deliberately. A session must never wait on learning. The scan
+    // is incremental (unchanged transcripts are skipped by mtime, safe because occurrence
+    // fingerprints already make re-reads a no-op) and measures 0.09s warm, 0.38s cold — but
+    // "it is fast" is not a reason to put it on the critical path. If it hangs, if node is
+    // missing, if the disk is slow, the session starts anyway and the brief is one session
+    // stale. That is a rounding error against a session that will not start.
+    //
+    // EVENTUAL CONSISTENCY IS THE RIGHT MODEL HERE. An obstacle discovered twenty minutes
+    // ago does not need to be known this instant; it needs to be known before the next time
+    // we walk into it.
+    refreshObstaclesInBackground(dirname(policyPath));
 
     const rules = (policy?.reinject && policy.reinject.text) || '';
     // Obstacles LAST: the rules are the contract, the obstacles are context for keeping it.

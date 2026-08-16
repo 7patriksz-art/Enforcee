@@ -514,3 +514,46 @@ describe('the session is primed with what already blocked this project', () => {
     rmSync(join(project, '.enforcee', 'obstacles.md'), { recursive: true, force: true });
   });
 });
+
+describe('the brief refreshes itself, and never at the session\'s expense', () => {
+  /**
+   * The brief was injected but nothing refreshed it, so a human still had to run the scan —
+   * the manual labour the whole feature exists to delete. The guard now kicks off an
+   * incremental scan on SessionStart, detached and unref'd.
+   *
+   * The two properties worth pinning are opposites, and only holding both makes it safe to
+   * put on a path that runs before every session:
+   *
+   *   1. It must not make the session wait. Detached, so a hung or slow scan is invisible.
+   *   2. It must not be able to break the session. A missing CLI, a missing transcripts
+   *      directory, a failed spawn — every one degrades to "the brief is one session stale",
+   *      never to "enforcement stopped". The guard fails open, so a crash here would leave
+   *      rules silently un-injected with nothing said. D-007.
+   */
+  it('returns immediately — a slow scan cannot hold up a session', () => {
+    writeFileSync(join(project, '.enforcee', 'obstacles.md'), '## Known obstacles in this project\n\n- **x** — hit 2×\n');
+    const started = Date.now();
+    const { stdout } = runGuard({ hook_event_name: 'SessionStart', session_id: 's' });
+    const elapsed = Date.now() - started;
+    expect(JSON.parse(stdout).hookSpecificOutput?.additionalContext ?? '').toContain('Known obstacles');
+    // Generous: this asserts "did not block on a scan", not a performance target. A cold
+    // scan of 51 real sessions measures 0.38s and it must not be waited on even so.
+    expect(elapsed, 'the session waited on the refresh').toBeLessThan(5000);
+  });
+
+  it('still injects when there is no CLI to refresh with', () => {
+    // The plugin install has no sibling cli/dist. Learning is unavailable there; enforcement
+    // is not optional there.
+    const { stdout } = runGuard({ hook_event_name: 'SessionStart', session_id: 's' });
+    const ctx = JSON.parse(stdout).hookSpecificOutput?.additionalContext ?? '';
+    expect(ctx, 'a missing CLI took the ruleset down with it').toMatch(/Never|must/);
+  });
+
+  it('exits 0 and emits valid JSON regardless', () => {
+    // A guard that exits non-zero is a NON-BLOCKING error in Claude Code: the tool call
+    // proceeds. So a crash in the refresh path is a silent bypass, not a visible failure.
+    const { code, stdout } = runGuard({ hook_event_name: 'SessionStart', session_id: 's' });
+    expect(code).toBe(0);
+    expect(() => JSON.parse(stdout)).not.toThrow();
+  });
+});

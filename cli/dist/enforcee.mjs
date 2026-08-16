@@ -11814,39 +11814,59 @@ async function main() {
       console.error(C.grey("  Sessions usually live in ~/.claude/projects (%USERPROFILE%\\.claude\\projects on Windows)."));
       process.exit(2);
     }
-    let results = [];
-    for (const f of files) results = results.concat(toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8"))));
-    if (results.length === 0) {
-      console.error(C.red(`  No tool results in ${files.length} file(s). Nothing was analysed.`));
-      console.error(C.grey("  That is not the same as finding no obstacles."));
-      process.exit(2);
-    }
+    let results = 0;
     const dir = join5(process.cwd(), ".enforcee");
     const store = join5(dir, "obstacles.json");
     let prior = [];
+    let priorFiles = {};
     if (existsSync5(store)) {
       const raw = JSON.parse(readFileSync3(store, "utf8"));
       const version = Array.isArray(raw) ? 0 : raw.version ?? 0;
       const stored = Array.isArray(raw) ? raw : raw.obstacles ?? [];
-      if (version === PATTERNS_VERSION) prior = stored;
-      else if (stored.length) {
+      if (version === PATTERNS_VERSION) {
+        prior = stored;
+        priorFiles = Array.isArray(raw) ? {} : raw.files ?? {};
+      } else if (stored.length) {
         console.log(
           C.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} \u2192 v${PATTERNS_VERSION}).`)
         );
         console.log(C.grey("  Their counts could not be reproduced by the current patterns, so keeping them would be reporting a number nothing can check.\n"));
       }
     }
+    const seenFiles = priorFiles;
+    const fresh = files.filter((f) => {
+      try {
+        return statSync3(f).mtimeMs !== seenFiles[f];
+      } catch {
+        return true;
+      }
+    });
+    const skipped = files.length - fresh.length;
     let scanned = [];
-    for (const f of files) {
-      scanned = mergeObstacles(scanned, extractObstacles(toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8"))), f));
+    for (const f of fresh) {
+      const tr = toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8")));
+      results += tr.length;
+      scanned = mergeObstacles(scanned, extractObstacles(tr, f));
+      try {
+        seenFiles[f] = statSync3(f).mtimeMs;
+      } catch {
+      }
+    }
+    if (fresh.length > 0 && results === 0) {
+      console.error(C.red(`  No tool results in ${fresh.length} file(s). Nothing was analysed.`));
+      console.error(C.grey("  That is not the same as finding no obstacles."));
+      process.exit(2);
     }
     const merged = mergeObstacles(prior, scanned);
     if (json) return console.log(JSON.stringify(merged, null, 2));
     mkdirSync3(dir, { recursive: true });
-    writeFileSync3(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged }, null, 2));
-    console.log(C.grey(`
-  ${results.length} tool results across ${files.length} session(s)
-`));
+    writeFileSync3(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles }, null, 2));
+    console.log(
+      C.grey(
+        `
+  ${results} tool results across ${fresh.length} session(s)` + (skipped ? `, ${skipped} unchanged and skipped` : "") + "\n"
+      )
+    );
     if (!merged.length) {
       console.log(C.grey("  Nothing recognised blocked this project. That is a real answer.\n"));
       return;
