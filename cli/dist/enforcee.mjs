@@ -11505,7 +11505,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
-  ${C.bold("enforcee licence set")} <key>                    install a licence on this machine
+  ${C.bold("enforcee licence set")} <key> [--project]        install a licence (machine-wide, or this repo)
   ${C.bold("enforcee status")}                              is it installed, and what has it actually done?
   ${C.bold("enforcee licence")}                             show the licence this machine is using
 
@@ -12005,7 +12005,8 @@ async function main() {
   if (cmd === "licence" || cmd === "license") {
     if (args[1] === "set") {
       const token = args.slice(2).join(" ");
-      const res2 = setLicence(token);
+      const scope = flags.has("--project") ? join5(process.cwd(), LICENCE_PATHS.project) : LICENCE_PATHS.home;
+      const res2 = setLicence(token, { path: scope });
       console.log("");
       if (!res2.ok) {
         console.log(`  ${C.red("\u2715")} ${res2.reason}`);
@@ -12014,6 +12015,11 @@ async function main() {
         process.exit(3);
       }
       console.log(`  ${C.green("\u2713")} Licence installed \u2014 ${C.bold(res2.path)}`);
+      console.log(
+        C.grey(
+          flags.has("--project") ? "  Scope: this project only. Other repos on this machine are unaffected." : "  Scope: this machine \u2014 every project. Use --project to licence just this repo."
+        )
+      );
       if (res2.check.ok) {
         console.log(
           C.grey(`  ${licenceMessage(res2.check)} \xB7 expires ${new Date(res2.check.payload.exp * 1e3).toISOString().slice(0, 10)}`)

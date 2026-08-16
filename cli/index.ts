@@ -64,7 +64,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold('enforcee obstacles')} <dir-or-transcript…>     what already blocked you here, from what actually failed
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
-  ${C.bold('enforcee licence set')} <key>                    install a licence on this machine
+  ${C.bold('enforcee licence set')} <key> [--project]        install a licence (machine-wide, or this repo)
   ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
@@ -754,7 +754,24 @@ async function main(): Promise<void> {
     // rather than a cosmetic one.
     if (args[1] === 'set') {
       const token = args.slice(2).join(' ');
-      const res = setLicence(token);
+
+      /**
+       * `--project` installs into THIS repo instead of the home directory.
+       *
+       * `--sub` was added on 2026-08-16 so a licence could be issued FOR a named project.
+       * Installing one for a named project was then still impossible: `setLicence` wrote to
+       * `~/.enforcee/licence` and nothing else, so a licence issued for `screenkraft` landed
+       * machine-wide and applied to every repo on the box — the opposite of what naming it
+       * meant. Getting it into one project required hand-writing the file, which no user
+       * would know to do; I did it with `printf` and that is the tell.
+       *
+       * `findLicence` already prefers the project file over the home one, so this needed a
+       * flag rather than new resolution logic.
+       */
+      const scope = flags.has('--project')
+        ? join(process.cwd(), LICENCE_PATHS.project)
+        : LICENCE_PATHS.home;
+      const res = setLicence(token, { path: scope });
       console.log('');
       if (!res.ok) {
         console.log(`  ${C.red('✕')} ${res.reason}`);
@@ -763,6 +780,15 @@ async function main(): Promise<void> {
         process.exit(3);
       }
       console.log(`  ${C.green('✓')} Licence installed — ${C.bold(res.path)}`);
+      // Say which SCOPE was chosen, not just which path. A path alone does not tell you
+      // whether the next repo you open is licensed too, and that is the actual question.
+      console.log(
+        C.grey(
+          flags.has('--project')
+            ? '  Scope: this project only. Other repos on this machine are unaffected.'
+            : '  Scope: this machine — every project. Use --project to licence just this repo.'
+        )
+      );
       if (res.check.ok) {
         console.log(
           C.grey(`  ${licenceMessage(res.check)} · expires ${new Date(res.check.payload.exp * 1000).toISOString().slice(0, 10)}`)
