@@ -540,6 +540,40 @@ export function classify(text: string): CheckSpec {
     if (heading.length >= 2) return { kind: 'heading_required', heading };
   }
 
+  /**
+   * The way people ACTUALLY write this rule: the name comes BEFORE the word.
+   *
+   *     "Always end with a summary section."
+   *     "Every answer must include a Summary heading."
+   *
+   * The pattern above only matches `section|heading … titled|called|named X`, which is the
+   * formal phrasing almost nobody uses. Found 2026-08-16 by installing our own freshly
+   * published 0.9.0 from npm as a stranger would, and auditing a two-rule CLAUDE.md: an
+   * answer containing a literal `## Summary` came back UNVERIFIABLE for "always end with a
+   * summary section".
+   *
+   * That is the worst shape a miss can take. The rule is trivially checkable, the output
+   * plainly satisfies it, and the product answers "we could not tell" — which reads as the
+   * engine being weak rather than the parser being narrow. It also pushes a free,
+   * deterministic verdict onto the judged layer, lowering the share decided by code, which
+   * is the number the whole pitch rests on.
+   *
+   * Deliberately narrow: the name must be capitalised or a known section word, so "include a
+   * long section" and "add a heading" — which name nothing — stay judged rather than
+   * compiling into a hunt for a heading literally called "long" or "a". That is the
+   * unsatisfiable-rule failure recorded directly above.
+   */
+  const namedFirst =
+    /\b(?:with|include[sd]?|add|ends? with|containing|contains?)\s+(?:an?|the)?\s*["'`“]?((?:[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*){0,3})|summary|conclusion|references|sources|caveats|limitations|next steps|examples)["'`”]?\s+(?:section|heading)\b/i.exec(
+      t
+    );
+  if (!negative && namedFirst) {
+    const heading = (namedFirst[1] ?? '').trim();
+    if (heading.length >= 3 && !/^(a|an|the|it|this|that|each|every|any|new|long|short)$/i.test(heading)) {
+      return { kind: 'heading_required', heading };
+    }
+  }
+
   if (!negative && isCitationRule(t)) return { kind: 'citation_required' };
 
   // A rule about DOING something is not a rule about the text containing something.
