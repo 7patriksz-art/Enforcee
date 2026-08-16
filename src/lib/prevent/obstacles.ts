@@ -109,9 +109,26 @@ export const PATTERNS: Pattern[] = [
     observedFix: 'The container rolled back. `cd` to the repo, then `git fetch origin && git reset --hard origin/main` — everything pushed survives.',
   },
   {
+    // Only a BARE PACKAGE NAME is a prerequisite — something that should have been installed.
+    // `Cannot find module './lib/scoring.js'` is TypeScript complaining about the project's
+    // own source, and `Cannot find module 'C:\\Users\\...\\scratchpad\\check.mts'` is a
+    // scratch file from one session that will never exist again. Both are events, not walls.
+    //
+    // Patrik's run produced 20 of the 28 obstacles as one-per-path noise of exactly that kind,
+    // burying the two lines that mattered. An obstacle ledger that lists every transient is a
+    // log, and nobody re-reads a log — which is the entire failure this file exists to fix.
     kind: 'tooling',
-    re: /Cannot find module .([^'"]+)/i,
-    signature: 'module missing: $1',
+    re: /Cannot find module ['"]((?:@[\w.\-]+\/)?[\w.\-]+)['"]/,
+    signature: 'package not installed: $1',
+  },
+  {
+    // Name the binary. "a required binary is not on PATH — hit 56x" is a true statement that
+    // tells you nothing and cannot be acted on. The real output was `shot: command not found`,
+    // `render.ts: command not found`, `BeatScene: command not found` — three different
+    // problems collapsed into one useless line.
+    kind: 'tooling',
+    re: /(?:^|[\s/])([\w.\-]+): command not found/m,
+    signature: 'binary not on PATH: $1',
   },
   {
     kind: 'tooling',
@@ -124,8 +141,18 @@ export const PATTERNS: Pattern[] = [
     signature: 'npx package exposes no runnable bin',
   },
   {
+    // MUST require HTTP context. The first shipped version was `/\b(401|Unauthorized)\b/`,
+    // which matches the bare number 401 anywhere in any output. Measured on 4,277 real tool
+    // results: 56 matches, 20 genuinely HTTP-shaped — a 64% FALSE POSITIVE RATE. On Patrik's
+    // own machine it inflated one line to "hit 762x", and the evidence behind the top hit was
+    // the phrase "anon insert 401" inside a prose sentence about telemetry.
+    //
+    // Among the things it accused of being a rejected credential: our own test case
+    // `it('still recognises a genuine 401 as a credential problem')`, and the printed output
+    // of the measurement that justified building this file. A false-accusation generator, in
+    // the product whose headline is zero false accusations.
     kind: 'credential',
-    re: /\b(401|Unauthorized)\b/,
+    re: /(?:HTTP[/ ]?[\d.]*\s*401\b|"?status"?[:\s]+401\b|\b401\s+(?:Unauthorized|Client Error)|code"?[:\s]+401\b|->\s*401\b|\bUnauthorized\b)/i,
     signature: 'HTTP 401 — the credential was rejected',
     observedFix: 'Test the token against an authenticated endpoint before using it. A successful `git ls-remote` proves nothing: the repo is public.',
   },
@@ -172,6 +199,22 @@ export function redact(s: string): string {
   return out;
 }
 
+/**
+ * Normalise a captured value before it becomes a signature.
+ *
+ * A tool result that arrived as JSON has its backslashes doubled, so the same Windows path
+ * hashes to two different obstacles. Patrik's first real run listed eight such pairs — the
+ * "same wall collapses to one signature" property failing on the first real input.
+ *
+ * Exported and tested directly because, since `Cannot find module` was narrowed to bare
+ * package names, no current pattern captures a value that can contain a backslash. Testing
+ * it through `extractObstacles` would pass for the wrong reason — both inputs are now simply
+ * ignored — which proves nothing about the normaliser.
+ */
+export function normaliseCapture(v: string): string {
+  return v.replace(/\\{2,}/g, '\\').replace(/[.,;]+$/, '').trim();
+}
+
 /** Collapse whitespace, redact, and clip — evidence quotable without being a wall of text. */
 function snippet(s: string, n = 160): string {
   return redact(s.replace(/\s+/g, ' ').trim()).slice(0, n);
@@ -191,7 +234,12 @@ export function extractObstacles(toolResults: string[]): Obstacle[] {
     for (const p of PATTERNS) {
       const m = p.re.exec(raw);
       if (!m) continue;
-      const signature = p.signature.replace('$1', (m[1] ?? '').replace(/[.,;]+$/, ''));
+      // NORMALISE BEFORE HASHING. A tool result that arrived as JSON has its backslashes
+      // doubled, so `C:\\dev\\sk_probe.js` and `C:\\\\dev\\\\sk_probe.js` are the same file and
+      // hashed to two different obstacles. Patrik's run listed eight such pairs — the
+      // "same wall collapses to one signature" property, failing on the first real input.
+      const captured = normaliseCapture(m[1] ?? '');
+      const signature = p.signature.replace('$1', captured);
       const id = obstacleId(signature);
       const existing = found.get(id);
       if (existing) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractObstacles, mergeObstacles, toBrief, obstacleId, redact } from '@/lib/prevent/obstacles';
+import { extractObstacles, mergeObstacles, toBrief, obstacleId, redact, normaliseCapture } from '@/lib/prevent/obstacles';
 
 /**
  * Obstacles are the half of learning that needs no user.
@@ -69,7 +69,7 @@ describe('a blocked host is not a bad credential', () => {
 
 describe('a remedy nobody has run is never presented as the answer', () => {
   it('marks an unresolved obstacle unverified and says so in the brief', () => {
-    const out = extractObstacles(["Error: Cannot find module '/home/claude/enforcee/dist/cli.js'"]);
+    const out = extractObstacles(['npm error could not determine executable to run']);
     expect(out[0].confidence).toBe('unverified');
     expect(out[0].resolution).toBeUndefined();
     const brief = toBrief([{ ...out[0], hits: 3 }]);
@@ -144,10 +144,10 @@ describe('a shared obstacle file leaks no secret', () => {
     // quotes first, this case matched no pattern at all and asserted nothing — a test that
     // could not fail. The `expect(out.length).toBeGreaterThan(0)` guard below is what caught it.
     ["fatal: could not read Username for 'https://x-access-token:github_pat_11ABCDEFGHIJKLMNOPQRSTUV@github.com'", /github_pat_11AB/],
-    ['401 {"error":"bad token sbp_abcdefghijklmnopqrstuvwxyz"}', /sbp_abcdef/],
-    ['401 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0', /eyJhbGciOiJ/],
+    ['HTTP/2 401 {"error":"bad token sbp_abcdefghijklmnopqrstuvwxyz"}', /sbp_abcdef/],
+    ['401 Unauthorized — Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0', /eyJhbGciOiJ/],
     ["fatal: could not read Username for 'https://user:hunter2supersecret@github.com'", /hunter2supersecret/],
-    ['401 Unauthorized — Authorization: Bearer sk-proj-abcdefghijklmnopqrstuv', /sk-proj-abcdef/],
+    ['HTTP/1.1 401 — Authorization: Bearer sk-proj-abcdefghijklmnopqrstuv', /sk-proj-abcdef/],
   ];
 
   for (const [raw, leak] of CASES) {
@@ -166,5 +166,92 @@ describe('a shared obstacle file leaks no secret', () => {
     ]);
     expect(out[0].evidence).toMatch(/could not read Username/);
     expect(out[0].evidence).toMatch(/github\.com/);
+  });
+});
+
+/**
+ * ── What the first real run got wrong ────────────────────────────────────────
+ *
+ * Every test above passed while `enforcee obstacles` produced, on Patrik's own machine, a
+ * top finding of "HTTP 401 — the credential was rejected — hit 762×" whose evidence was the
+ * phrase "anon insert 401" inside a prose sentence about telemetry.
+ *
+ * Measured afterwards on 4,277 real tool results: the shipped pattern `/\b(401|Unauthorized)\b/`
+ * matched 56 results, of which 20 were genuinely HTTP-shaped. **A 64% false positive rate.**
+ * Among the things it accused of being a rejected credential: our own test case
+ * `it('still recognises a genuine 401 as a credential problem')`, and the printed output of
+ * the measurement that justified building the file.
+ *
+ * That is a false-accusation generator inside the product whose headline is zero false
+ * accusations — and it shipped because every test used a realistic fixture, and realistic
+ * fixtures are the ones the pattern gets right. The tests below are the unrealistic ones.
+ */
+describe('the first real run, as regressions', () => {
+  it('does not call a bare number 401 a rejected credential', () => {
+    const noise = [
+      'anon insert 401). Collection is OFF until UX_TELEMETRY_ENABLED=1',
+      "it('still recognises a genuine 401 as a credential problem', () => {",
+      'TOOL RESULTS 406\n  auth/permission (401/403) 32',
+      'shot at 401 frames, rendered in 401ms',
+    ];
+    for (const n of noise) {
+      const hit = extractObstacles([n]).find((o) => o.signature.includes('401'));
+      expect(hit, `false accusation from: ${n.slice(0, 48)}`).toBeUndefined();
+    }
+  });
+
+  it('still catches a real 401 in every shape it actually arrives in', () => {
+    // The other half. Tightening a pattern until it accuses nobody is the obvious way to
+    // pass the test above while deleting the feature.
+    for (const real of [
+      'HTTP/2 401',
+      '{"status":401,"message":"Bad credentials"}',
+      '401 Unauthorized',
+      'GET /user -> 401',
+      'Unauthorized: token expired',
+    ]) {
+      const hit = extractObstacles([real]).find((o) => o.kind === 'credential');
+      expect(hit, `missed a real credential failure: ${real}`).toBeDefined();
+    }
+  });
+
+  it('names the binary instead of reporting that something is missing', () => {
+    // "a required binary is not on PATH — hit 56×" is true and unusable. The real output was
+    // three different missing commands collapsed into one line.
+    const out = extractObstacles([
+      '/usr/bin/bash: line 1: shot: command not found',
+      '/usr/bin/bash: line 1: render.ts: command not found',
+    ]);
+    expect(out.map((o) => o.signature).sort()).toEqual([
+      'binary not on PATH: render.ts',
+      'binary not on PATH: shot',
+    ]);
+  });
+
+  it('treats only a bare package name as a missing prerequisite', () => {
+    const out = extractObstacles([
+      "Error: Cannot find module '@supabase/supabase-js'",
+      "error TS2307: Cannot find module './lib/scoring.js'",
+      "Error: Cannot find module 'C:\\Users\\7patr\\AppData\\Local\\Temp\\scratchpad\\check.mts'",
+    ]);
+    // A relative import and a temp scratch file are events, not walls — they will never
+    // exist again. 20 of the 28 obstacles in Patrik's first run were that noise, burying
+    // the two lines that mattered.
+    expect(out.map((o) => o.signature)).toEqual(['package not installed: @supabase/supabase-js']);
+  });
+
+  it('normalises doubled backslashes in a captured value', () => {
+    // Patrik's run filed `C:\\dev\\probe.js` and `C:\\\\dev\\\\probe.js` as two obstacles —
+    // a tool result that arrived as JSON has its backslashes doubled. The normaliser fixes it.
+    //
+    // BUT: restricting `Cannot find module` to bare package names removed the only pattern
+    // whose capture could contain a backslash, so on today's pattern set this normaliser has
+    // NOTHING to normalise. It is kept because the next path-capturing pattern will need it,
+    // and it is tested at the unit it actually guards rather than through a fixture that
+    // cannot distinguish it — a green end-to-end test here would prove only that both inputs
+    // are now ignored, which is not the property claimed.
+    expect(normaliseCapture('C:\\\\dev\\\\probe.js')).toBe('C:\\dev\\probe.js');
+    expect(normaliseCapture('C:\\dev\\probe.js')).toBe('C:\\dev\\probe.js');
+    expect(obstacleId(normaliseCapture('C:\\\\a\\\\b'))).toBe(obstacleId(normaliseCapture('C:\\a\\b')));
   });
 });

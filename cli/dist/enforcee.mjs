@@ -11006,9 +11006,26 @@ var PATTERNS2 = [
     observedFix: "The container rolled back. `cd` to the repo, then `git fetch origin && git reset --hard origin/main` \u2014 everything pushed survives."
   },
   {
+    // Only a BARE PACKAGE NAME is a prerequisite — something that should have been installed.
+    // `Cannot find module './lib/scoring.js'` is TypeScript complaining about the project's
+    // own source, and `Cannot find module 'C:\\Users\\...\\scratchpad\\check.mts'` is a
+    // scratch file from one session that will never exist again. Both are events, not walls.
+    //
+    // Patrik's run produced 20 of the 28 obstacles as one-per-path noise of exactly that kind,
+    // burying the two lines that mattered. An obstacle ledger that lists every transient is a
+    // log, and nobody re-reads a log — which is the entire failure this file exists to fix.
     kind: "tooling",
-    re: /Cannot find module .([^'"]+)/i,
-    signature: "module missing: $1"
+    re: /Cannot find module ['"]((?:@[\w.\-]+\/)?[\w.\-]+)['"]/,
+    signature: "package not installed: $1"
+  },
+  {
+    // Name the binary. "a required binary is not on PATH — hit 56x" is a true statement that
+    // tells you nothing and cannot be acted on. The real output was `shot: command not found`,
+    // `render.ts: command not found`, `BeatScene: command not found` — three different
+    // problems collapsed into one useless line.
+    kind: "tooling",
+    re: /(?:^|[\s/])([\w.\-]+): command not found/m,
+    signature: "binary not on PATH: $1"
   },
   {
     kind: "tooling",
@@ -11021,8 +11038,18 @@ var PATTERNS2 = [
     signature: "npx package exposes no runnable bin"
   },
   {
+    // MUST require HTTP context. The first shipped version was `/\b(401|Unauthorized)\b/`,
+    // which matches the bare number 401 anywhere in any output. Measured on 4,277 real tool
+    // results: 56 matches, 20 genuinely HTTP-shaped — a 64% FALSE POSITIVE RATE. On Patrik's
+    // own machine it inflated one line to "hit 762x", and the evidence behind the top hit was
+    // the phrase "anon insert 401" inside a prose sentence about telemetry.
+    //
+    // Among the things it accused of being a rejected credential: our own test case
+    // `it('still recognises a genuine 401 as a credential problem')`, and the printed output
+    // of the measurement that justified building this file. A false-accusation generator, in
+    // the product whose headline is zero false accusations.
     kind: "credential",
-    re: /\b(401|Unauthorized)\b/,
+    re: /(?:HTTP[/ ]?[\d.]*\s*401\b|"?status"?[:\s]+401\b|\b401\s+(?:Unauthorized|Client Error)|code"?[:\s]+401\b|->\s*401\b|\bUnauthorized\b)/i,
     signature: "HTTP 401 \u2014 the credential was rejected",
     observedFix: "Test the token against an authenticated endpoint before using it. A successful `git ls-remote` proves nothing: the repo is public."
   }
@@ -11051,6 +11078,9 @@ function redact(s) {
   for (const [re, to] of SECRET_SHAPES) out = out.replace(re, to);
   return out;
 }
+function normaliseCapture(v) {
+  return v.replace(/\\{2,}/g, "\\").replace(/[.,;]+$/, "").trim();
+}
 function snippet(s, n = 160) {
   return redact(s.replace(/\s+/g, " ").trim()).slice(0, n);
 }
@@ -11061,7 +11091,8 @@ function extractObstacles(toolResults) {
     for (const p of PATTERNS2) {
       const m = p.re.exec(raw);
       if (!m) continue;
-      const signature = p.signature.replace("$1", (m[1] ?? "").replace(/[.,;]+$/, ""));
+      const captured = normaliseCapture(m[1] ?? "");
+      const signature = p.signature.replace("$1", captured);
       const id = obstacleId(signature);
       const existing = found.get(id);
       if (existing) {
