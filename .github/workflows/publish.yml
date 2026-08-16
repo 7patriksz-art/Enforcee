@@ -17,6 +17,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  # Called by auto-release.yml once its gate passes. A tag pushed with the default
+  # GITHUB_TOKEN does not trigger a workflow — GitHub suppresses that to stop recursion — so
+  # the gate calls this one directly instead of tagging and hoping. One publish path either
+  # way: the credential, the three-OS pre-publish gate and the pack checks all stay here.
+  workflow_call:
 
 jobs:
   # THE RELEASE GATE RUNS ON EVERY SUPPORTED PLATFORM, NOT JUST THE CHEAP ONE.

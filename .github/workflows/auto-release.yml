@@ -1,0 +1,155 @@
+name: Auto-release gate
+
+# Releasing, decided by conditions rather than by a person remembering.
+#
+# Patrik, 2026-08-16: the line should run without him. Publishing is the one step where a
+# wrong automated decision reaches strangers and cannot be taken back — npm will not let a
+# version be republished — so this does not simply publish on a schedule. It evaluates a gate
+# every day, publishes when every condition holds, and **opens an issue naming the exact
+# condition that failed** when one does not. "Otherwise it asks" is a channel that needs no
+# credential from him and no session to be watching.
+#
+# This runs inside GitHub Actions, so it needs nothing from the sandbox. It is the one part of
+# the pipeline that was always automatable: the blocked step is the sandbox pushing TO GitHub,
+# not GitHub acting on itself.
+#
+# WHY IT DOES NOT JUST PUSH A TAG AND LET publish.yml FIRE
+# A tag pushed with the default GITHUB_TOKEN does not trigger another workflow — GitHub
+# suppresses that to stop recursion. So the tag would be created and nothing would publish,
+# silently, which is the failure shape this project keeps paying for. Instead it calls
+# publish.yml directly as a reusable workflow, so there is still exactly one publish path.
+
+on:
+  schedule:
+    # 10:00 UTC — after the daily improvement (06:00) and self-audit (08:00) runs, so the gate
+    # sees a day that has already been reviewed rather than one still in progress.
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+      version: ${{ steps.decide.outputs.version }}
+      why: ${{ steps.decide.outputs.why }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # the gate compares against the last v* tag
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fail() { echo "why=$1" >> "$GITHUB_OUTPUT"; echo "go=no" >> "$GITHUB_OUTPUT"; echo "GATE CLOSED: $1"; exit 0; }
+
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "package.json is at $VERSION"
+
+          # 1 · Is there anything to release? The version bump is the intent signal: something
+          #     deliberately decided this was a release, rather than the clock deciding.
+          PUBLISHED=$(npm view enforcee version 2>/dev/null || echo "none")
+          echo "npm has $PUBLISHED"
+          [ "$VERSION" != "$PUBLISHED" ] || fail "nothing to release — package.json and npm are both at $VERSION"
+
+          # 2 · Is it described? A release nobody can describe is a release nobody should get.
+          test -f RELEASES.md || fail "RELEASES.md does not exist, so this release has no notes"
+          grep -qE "^##+ +v?${VERSION//./\\.}\b" RELEASES.md \
+            || fail "RELEASES.md has no section for $VERSION — write what changed before it ships"
+
+          # 3 · Did an invariant move? INVARIANTS.md changing is exactly the case that must not
+          #     ship on a timer. A deliberate reversal is legitimate; an automatic one is not.
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ] && ! git diff --quiet "$LAST_TAG" HEAD -- INVARIANTS.md; then
+            fail "INVARIANTS.md changed since $LAST_TAG — a decision moved, so a human releases this one"
+          fi
+
+          # 4 · Cooling off. A commit minutes old has not been through the daily self-audit.
+          AGE=$(( $(date -u +%s) - $(git log -1 --format=%ct HEAD) ))
+          [ "$AGE" -ge 43200 ] || fail "head commit is $((AGE/3600))h old; the gate wants 12h so the audit runs have seen it"
+
+          # 5 · Was CI green on ALL THREE platforms for exactly this commit? Read, never assumed
+          #     — nine releases once claimed all-tests-pass on a Linux-only suite. This is the
+          #     3-OS matrix result itself, so the gate does not re-run and re-duplicate it.
+          SHA=$(git rev-parse HEAD)
+          CONCLUSIONS=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=$SHA&status=completed" \
+            --jq '[.workflow_runs[] | select(.name=="CI") | .conclusion] | unique | join(",")')
+          echo "CI conclusions for $SHA: [${CONCLUSIONS:-none}]"
+          [ "$CONCLUSIONS" = "success" ] || fail "CI for $SHA is [${CONCLUSIONS:-not found}], not a clean success on every platform"
+
+          # 6 · Does our own ruleset still compile into a guard? If the parser regressed, the
+          #     product is broken in the way that is hardest to see from the outside.
+          npm run dogfood || fail "npm run dogfood failed — CLAUDE.md no longer compiles into a policy"
+
+          echo "go=yes" >> "$GITHUB_OUTPUT"
+          echo "why=all conditions met" >> "$GITHUB_OUTPUT"
+
+      # The ask channel. No credential, no watching session, no notification that can be
+      # missed — a titled issue that stays open until the condition is dealt with. Reopened
+      # rather than duplicated, so a gate closed for a week is one thread and not seven.
+      - name: Say why it did not ship
+        if: steps.decide.outputs.go != 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Auto-release gate closed: ${{ steps.decide.outputs.version }}"
+          BODY="The gate ran and did not publish.
+
+          **Condition that failed:** ${{ steps.decide.outputs.why }}
+
+          Nothing is wrong on its own — most days this is simply \`nothing to release\`. It is
+          worth reading when the same reason appears for several days running.
+
+          The gate re-runs daily at 10:00 UTC, or on demand from the Actions tab."
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state all --json number,title \
+            --jq ".[] | select(.title==\"$TITLE\") | .number" | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY" >/dev/null
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label "release-gate" >/dev/null || \
+            gh issue create --title "$TITLE" --body "$BODY" >/dev/null
+          fi
+
+  tag:
+    needs: gate
+    if: needs.gate.outputs.go == 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tag the release for the record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The bot's own identity, not a person's. tests/contact-address.test.ts caught the
+          # first draft of this hardcoding the contact address here (E-5: it lives in exactly
+          # one place). A tag object carries a tagger, not a commit author, so Vercel's
+          # author rule does not apply — and attributing an automated tag to a human would
+          # misstate who decided to release.
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag -a "v${{ needs.gate.outputs.version }}" -m "Automated release, gate passed"
+          git push origin "v${{ needs.gate.outputs.version }}"
+
+  # ONE publish path, called rather than copied. publish.yml owns the credential, the 3-OS
+  # pre-publish gate and the pack checks; duplicating any of that here would be an eleventh
+  # duplicated-source bug on a project that has already had ten (INVARIANTS E-1).
+  publish:
+    needs: [gate, tag]
+    if: needs.gate.outputs.go == 'yes'
+    uses: ./.github/workflows/publish.yml
+    secrets: inherit
