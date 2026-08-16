@@ -147,8 +147,14 @@ export async function buildValueReport(plan: PlanId): Promise<ValueReport | null
  * once in a month is being charged for insurance they may not need, and the honest thing
  * is to say so and show them the door. Some will leave. The ones who stay will trust every
  * other number on the page, which is worth more.
+ *
+ * Exported ONLY so tests/value.test.ts can call this function instead of a copy of it. It
+ * used to keep its own `judge()` and assert against that, so the branch below could have
+ * been deleted entirely — the whole 862-test suite was run with this replaced by an
+ * unconditional 'earning-it' and stayed green. Charter honesty rule 6: a control that could
+ * not have failed is not a control.
  */
-function judge(plan: PlanId, audits: number, caught: number): Verdict {
+export function judge(plan: PlanId, audits: number, caught: number): Verdict {
   if (plan === 'free') return { kind: 'free' };
   if (audits < MIN_AUDITS) return { kind: 'too-early', audits, needed: MIN_AUDITS };
   if (caught === 0) return { kind: 'quiet', audits, days: WINDOW_DAYS };

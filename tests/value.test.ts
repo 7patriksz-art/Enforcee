@@ -11,41 +11,38 @@ import { fileURLToPath } from 'node:url';
  * has to exist and has to point at the cancel link, or none of the other numbers on the
  * page are believable either.
  *
- * Mirrors judge() in src/lib/value.ts.
+ * Calls the REAL judge() from src/lib/value.ts.
+ *
+ * This file used to define its own copy and test that. The daily run on 2026-08-16 replaced
+ * the production judge() with an unconditional 'earning-it' — the precise commercial
+ * dishonesty the comment above says the `quiet` branch exists to prevent — and ran the whole
+ * suite: 862 passed, 47 files, nothing caught it. Watched, not argued.
  */
-type PlanId = 'free' | 'builder' | 'founder';
-const MIN_AUDITS = 5;
-
-function judge(plan: PlanId, audits: number, caught: number) {
-  if (plan === 'free') return 'free';
-  if (audits < MIN_AUDITS) return 'too-early';
-  if (caught === 0) return 'quiet';
-  return 'earning-it';
-}
+import { judge } from '../src/lib/value';
 
 describe('value verdict', () => {
   it('tells a paying subscriber who caught nothing that it caught nothing', () => {
-    expect(judge('builder', 40, 0)).toBe('quiet');
-    expect(judge('founder', 200, 0)).toBe('quiet');
+    expect(judge('builder', 40, 0).kind).toBe('quiet');
+    expect(judge('founder', 200, 0).kind).toBe('quiet');
   });
 
   it('refuses to conclude anything from a small sample', () => {
-    expect(judge('builder', 4, 0)).toBe('too-early');
+    expect(judge('builder', 4, 0).kind).toBe('too-early');
     // Even with a catch — one violation in three audits is not a track record.
-    expect(judge('builder', 3, 1)).toBe('too-early');
+    expect(judge('builder', 3, 1).kind).toBe('too-early');
   });
 
   it('claims value only when it actually caught something, over a real sample', () => {
-    expect(judge('builder', 5, 1)).toBe('earning-it');
+    expect(judge('builder', 5, 1).kind).toBe('earning-it');
   });
 
   it('never asks a free user to justify a spend they are not making', () => {
-    expect(judge('free', 0, 0)).toBe('free');
-    expect(judge('free', 500, 0)).toBe('free');
+    expect(judge('free', 0, 0).kind).toBe('free');
+    expect(judge('free', 500, 0).kind).toBe('free');
   });
 
   it('is not gameable by volume alone — more audits with no catches stays quiet', () => {
-    for (const n of [5, 50, 500]) expect(judge('builder', n, 0)).toBe('quiet');
+    for (const n of [5, 50, 500]) expect(judge('builder', n, 0).kind).toBe('quiet');
   });
 });
 
