@@ -97,7 +97,7 @@ describe('the gate refuses a commit carrying a credential', () => {
     for (const [label, sample] of [
       ['Anthropic', 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0'],
       ['Supabase', 'sbp_' + 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0'],
-      ['private key', '-----BEGIN PRIVATE KEY-----'],
+      ['private key', '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCz9Xk2mQ' + 'a'.repeat(40)],
       ['url credential', 'https://user:hunter2hunter2@internal.example.com/x'],
     ] as [string, string][]) {
       const { code } = runGate(`+${sample}\n`);
@@ -350,5 +350,57 @@ describe('the gate is actually wired into the only path that pushes', () => {
     expect(gateAt, 'the secret gate is inside the SKIP_CHECKS branch and can be skipped').toBeGreaterThan(
       closingFi
     );
+  });
+});
+
+describe('the gate is silent on every file this repository actually tracks', () => {
+  /**
+   * THE STRONGEST ANTI-CRY-WOLF PROPERTY, and it needs no git history at all — identical on a
+   * full clone, a depth-1 checkout and a scheduled container.
+   *
+   * The end-to-end assertion above scans `HEAD~3..HEAD`: three diffs, whatever happens to be
+   * in them. That is the right shape for "does the gate work the way push.sh runs it", and it
+   * says nothing about the other 200 files. Scanning the tree once, on a clone with no parent
+   * commit, is what surfaced three files the gate WOULD have refused:
+   *
+   *   · src/lib/licence.ts and tests/licence-key-shapes.test.ts — `-----BEGIN PRIVATE KEY-----`,
+   *     because they parse PEM. A header with no key material after it is not a secret.
+   *   · READ-MY-SESSIONS.md — `https://user:password@host`, documenting the shape.
+   *
+   * Both patterns were tightened rather than the exempt list widened: an exemption hides a
+   * whole file forever, a tighter pattern only stops lying. Stated limit, in the source: a
+   * purely alphabetic real password now slips layer 2. Layer 1 is the guarantee.
+   *
+   * TRACKED FILES ONLY. A first draft walked the directory and flagged `.env.local`, which
+   * does hold a live key, is gitignored, and can therefore never appear in a diff — a false
+   * accusation against a correctly-configured repo, produced by the check whose whole premise
+   * is that it does not make them. `git ls-files` is exactly the set that can reach a commit.
+   */
+  it('does not fire on a single tracked file', () => {
+    const files = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean);
+    expect(files.length, 'git ls-files returned nothing — this would report the repo clean forever').toBeGreaterThan(80);
+
+    const offenders: string[] = [];
+    let scanned = 0;
+    for (const f of files) {
+      let body: string;
+      try {
+        body = readFileSync(join(ROOT, ...f.split('/')), 'utf8');
+      } catch {
+        continue; // unreadable or binary; the gate reads a text diff, so this matches its reach
+      }
+      if (body.includes('\u0000')) continue;
+      scanned += body.length;
+      for (const h of findInDiff(`+++ b/${f}\n${body}`, undefined)) offenders.push(`${f}: ${h.what}`);
+    }
+    expect(scanned, 'nothing was actually read').toBeGreaterThan(100_000);
+    expect(
+      offenders,
+      'the gate fires on a clean checkout of this repository. It would refuse every push, and a ' +
+        'gate that cries wolf is switched off inside a day — worse than no gate, because it is ' +
+        'believed while it is on.'
+    ).toEqual([]);
   });
 });

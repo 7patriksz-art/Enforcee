@@ -73,12 +73,25 @@ export const CREDENTIAL_SHAPES: Shape[] = [
   },
   {
     name: 'PEM private key block',
-    re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/g,
+    // The HEADER ALONE IS NOT A SECRET. `src/lib/licence.ts` parses PEM and therefore contains
+    // `-----BEGIN PRIVATE KEY-----` three times, as does its test; flagging those made the gate
+    // fire on a clean tree, which is the cry-wolf failure that gets a gate switched off. A real
+    // leak has key material after the header, so that is what this requires.
+    re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\r\n\s]+[A-Za-z0-9+/=]{40,}/g,
   },
   {
     name: 'credential in a URL',
     // https://user:secret@host — the shape that put a real endpoint into the bundle once.
-    re: /https?:\/\/[^/\s:@]+:[^/\s:@]{8,}@[^/\s]+/g,
+    //
+    // The password must LOOK LIKE A SECRET, not like the word "password". Docs on this repo
+    // explain the shape with `https://user:password@host`, and flagging that made the gate
+    // fire on a clean tree. Requiring 12+ characters including a digit keeps every real case
+    // recorded here — `x-access-token:github_pat_…`, `hunter2hunter2` — and drops the prose.
+    //
+    // STATED PLAINLY: this is best-effort and a purely alphabetic real password slips it.
+    // Layer 1, the exact match on $PAT, is the guarantee; this layer is defence in depth, and
+    // a layer that cries wolf gets the whole gate switched off, which costs more than it saves.
+    re: /https?:\/\/[^/\s:@]+:(?=[^/\s:@]*\d)[^/\s:@]{12,}@[^/\s]+/g,
   },
 ];
 
@@ -165,9 +178,28 @@ export function outgoingDiff(range?: string, cwd?: string): string {
   const resolved =
     range ||
     `origin/${execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', cwd }).trim()}..HEAD`;
-  return execFileSync('git', ['log', '-p', '--no-color', resolved], {
-    encoding: 'utf8',
-    cwd,
-    maxBuffer: 256 * 1024 * 1024,
-  });
+  try {
+    return execFileSync('git', ['log', '-p', '--no-color', resolved], {
+      encoding: 'utf8',
+      cwd,
+      maxBuffer: 256 * 1024 * 1024,
+    });
+  } catch (e) {
+    // A SHALLOW CLONE is the likely cause and the fix is one command, so say so rather than
+    // making the reader work it out. `git clone --depth 1` and GitHub Actions' default
+    // checkout both produce a history where `origin/main..HEAD` cannot be resolved. Failing
+    // closed is right — a gate that cannot see the commits must not report them clean — but
+    // failing closed WITHOUT the remedy is how a scheduled run burns its budget.
+    const shallow =
+      execFileSync('git', ['rev-parse', '--is-shallow-repository'], { encoding: 'utf8', cwd }).trim() === 'true';
+    const err = e as { message?: string };
+    throw new Error(
+      `${err.message ?? String(e)}\n\n` +
+        (shallow
+          ? 'This is a SHALLOW clone, so the range has no ancestor to resolve. Run:\n' +
+            '  git fetch --unshallow origin\n' +
+            'or pass an explicit range the checkout does contain, e.g. HEAD.'
+          : 'The range could not be resolved. Pass one explicitly, e.g. origin/main..HEAD.')
+    );
+  }
 }

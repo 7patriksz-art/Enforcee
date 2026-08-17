@@ -234,6 +234,19 @@ const SABOTAGES = [
     run: 'tests/secret-gate.test.ts',
     expect: /the CI checkout is shallow again|CI checks out full history/,
   },
+  {
+    name: 'pem-header-alone-is-a-secret',
+    why:
+      'loosening the PEM rule back to a bare header makes the gate fire on src/lib/licence.ts ' +
+      'and its test, which parse PEM — it would refuse every push from a clone with no parent, ' +
+      'which is the cry-wolf failure that gets a gate switched off',
+    file: 'src/lib/secret-gate.ts',
+    find: "re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\\r\\n\\s]+[A-Za-z0-9+/=]{40,}/g,",
+    replace: "re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/g,",
+    occurrences: 1,
+    run: 'tests/secret-gate.test.ts',
+    expect: /does not fire on a single tracked file|silent on every file/,
+  },
 ];
 
 const filter = process.argv[2];
