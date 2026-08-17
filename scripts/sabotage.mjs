@@ -247,6 +247,45 @@ const SABOTAGES = [
     run: 'tests/secret-gate.test.ts',
     expect: /does not fire on a single tracked file|silent on every file/,
   },
+  {
+    name: 'rce-guard-runs-code-from-the-working-tree',
+    why:
+      'the exact silent RCE shipped in enforcee@0.9.0: the guard resolved the CLI it spawns ' +
+      'from <project>/cli/dist/enforcee.mjs, so any repository a SUBSCRIBER cloned could get ' +
+      'its own file executed at SessionStart, before a single deny rule ran',
+    file: 'guard/guard.mjs',
+    find: `    const packageRoot = resolve(here, '..');
+    const candidates = [
+      join(packageRoot, 'dist', 'enforcee.mjs'), // published package layout
+      join(packageRoot, 'cli', 'dist', 'enforcee.mjs'), // source tree and plugin layout
+    ];
+
+    /** Inside the installed package, and not reached by climbing out of it. */
+    const containedInPackage = (p) => {
+      const rel = relative(packageRoot, resolve(p));
+      return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+    };
+
+    const override = process.env.ENFORCEE_CLI;
+    const cli =
+      override && existsSync(override)
+        ? override
+        : candidates.find((c) => {
+            try {
+              // Containment is defence in depth: the list above is already package-relative,
+              // so this can only fire if a future edit reintroduces a project-relative entry.
+              // It is asserted by a test rather than trusted.
+              return containedInPackage(c) && existsSync(c);
+            } catch {
+              return false;
+            }
+          });
+    if (!cli) return;`,
+    replace: "    const candidates = [\n      process.env.ENFORCEE_CLI,\n      join(enforceeDir, '..', 'cli', 'dist', 'enforcee.mjs'),\n      join(here, '..', 'cli', 'dist', 'enforcee.mjs'),\n      join(enforceeDir, '..', 'node_modules', 'enforcee', 'cli', 'dist', 'enforcee.mjs'),\n    ].filter(Boolean);\n\n    const cli = candidates.find((c) => {\n      try {\n        return existsSync(c);\n      } catch {\n        return false;\n      }\n    });\n    if (!cli) return;",
+    occurrences: 1,
+    run: 'tests/guard-cli-resolution.test.ts',
+    expect: /does NOT execute|executed a file out of the working tree/,
+  },
 ];
 
 const filter = process.argv[2];

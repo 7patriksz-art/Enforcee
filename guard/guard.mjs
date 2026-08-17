@@ -340,7 +340,7 @@ function alreadyLogged(policyPath, session, filePath, loadReason) {
   //
   // This file holds one small entry per session and is exact regardless of how much else
   // happened. Bounded by pruning old sessions, not by forgetting recent ones.
-  const key = `${filePath} ${loadReason}`;
+  const key = `${filePath}\u0000${loadReason}`;
   const path = join(dirname(policyPath), 'loaded.json');
   let state = { sessions: [] };
   try {
@@ -453,21 +453,62 @@ function refreshObstaclesInBackground(enforceeDir) {
     // Node then resolves as `C:\C:\Users\...`. Sixth bug of this class on this project, and
     // it was caught by tests/portability.test.ts rather than by me — the control working.
     // Patrik develops on Windows, so this is the platform it would have broken on.
+    // NEVER RESOLVE THE CLI FROM THE USER'S WORKING TREE. This list used to begin:
+    //
+    //     join(enforceeDir, '..', 'cli', 'dist', 'enforcee.mjs')          // <project>/cli/…
+    //     join(enforceeDir, '..', 'node_modules', 'enforcee', 'cli', …)   // <project>/node_modules/…
+    //
+    // `enforceeDir` is `<project>/.enforcee`, so both are paths INSIDE whatever repository the
+    // user has open — content nobody has vetted. Clone a repository that ships a file at
+    // `cli/dist/enforcee.mjs`, start a session, and the guard ran it: with the user's own node,
+    // detached and unref'd, `stdio: 'ignore'`, BEFORE a single deny rule was evaluated, writing
+    // no ledger row and printing nothing. Proven against the published `enforcee@0.9.0` tarball
+    // with a working proof-of-concept, not reasoned about (claude/53-SECURITY-AUDIT-2026-08-17).
+    //
+    // Two things made it worse than an ordinary path bug.
+    //
+    // IT COULD ONLY LAND ON SUBSCRIBERS. Enforcement is licensed and `emit()` exits at the
+    // licence gate first, so an unlicensed guard never reached this line. The one population
+    // reachable was the one that paid for a tool whose entire claim is that it stops an agent
+    // doing something dangerous in their repository.
+    //
+    // AND THE HONEST PATH DID NOT EXIST. In the published package `guard.mjs` sits at
+    // `<pkg>/guard/` and the CLI at `<pkg>/dist/enforcee.mjs` — `pack-cli.mjs` moves it — so
+    // `../cli/dist/enforcee.mjs` resolved to nothing there. The only candidate that COULD
+    // resolve in a real install was the attacker-controlled one. That is invisible from the
+    // source tree, where `../cli/dist/` does exist; it is only visible in the artefact.
+    //
+    // So every candidate is now relative to THIS FILE, which ships inside the package, and a
+    // containment check below refuses anything that escapes the package root anyway.
+    // `ENFORCEE_CLI` stays: an environment variable is a deliberate act by the operator, not
+    // content carried by a cloned repository, and dev workflows depend on it.
     const here = dirname(fileURLToPath(import.meta.url));
+    const packageRoot = resolve(here, '..');
     const candidates = [
-      process.env.ENFORCEE_CLI,
-      join(enforceeDir, '..', 'cli', 'dist', 'enforcee.mjs'),
-      join(here, '..', 'cli', 'dist', 'enforcee.mjs'),
-      join(enforceeDir, '..', 'node_modules', 'enforcee', 'cli', 'dist', 'enforcee.mjs'),
-    ].filter(Boolean);
+      join(packageRoot, 'dist', 'enforcee.mjs'), // published package layout
+      join(packageRoot, 'cli', 'dist', 'enforcee.mjs'), // source tree and plugin layout
+    ];
 
-    const cli = candidates.find((c) => {
-      try {
-        return existsSync(c);
-      } catch {
-        return false;
-      }
-    });
+    /** Inside the installed package, and not reached by climbing out of it. */
+    const containedInPackage = (p) => {
+      const rel = relative(packageRoot, resolve(p));
+      return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+    };
+
+    const override = process.env.ENFORCEE_CLI;
+    const cli =
+      override && existsSync(override)
+        ? override
+        : candidates.find((c) => {
+            try {
+              // Containment is defence in depth: the list above is already package-relative,
+              // so this can only fire if a future edit reintroduces a project-relative entry.
+              // It is asserted by a test rather than trusted.
+              return containedInPackage(c) && existsSync(c);
+            } catch {
+              return false;
+            }
+          });
     if (!cli) return;
 
     const child = spawn(process.execPath, [cli, 'obstacles', projects], {
