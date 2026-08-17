@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSync } from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,38 +169,66 @@ describe('the gate stays silent on this repository as it actually is', () => {
     // missing, and keep exit 2 distinct from exit 1 in the message. Failing loudly here is
     // deliberate — CLAUDE.md, "never let a check silently cover nothing". Skipping when the
     // history is absent would make this test pass in the one place it has never run.
-    const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
-    const DEPTH = 3;
-    expect(
-      git('rev-parse', '--is-shallow-repository'),
-      'this checkout is shallow, so the gate cannot be run over real history here — the CI checkout needs fetch-depth: 0'
-    ).toBe('false');
-    expect(
-      Number(git('rev-list', '--count', 'HEAD')),
-      `fewer than ${DEPTH + 1} commits are reachable, so HEAD~${DEPTH} does not resolve`
-    ).toBeGreaterThan(DEPTH);
+    // THE FIX FOR THAT FIX. The version above demanded the AMBIENT checkout be non-shallow,
+    // which turned a property of this test into a constraint on every workflow that ever runs
+    // `npm test`. `fetch-depth: 0` was added to ci.yml and not to publish.yml, so on 2026-08-17
+    // the security release for a live RCE was blocked by this assertion on all three platforms
+    // while ci.yml was green on the same commit. Same class as the bug it was fixing: a
+    // requirement satisfied in one place and not the other.
+    //
+    // So the dependency is removed rather than demanded (rung 7, docs/THE-CYCLE.md §2). The
+    // test BUILDS the history it needs in a temp repo. It runs at any checkout depth, on any
+    // workflow, and it is strictly stronger than what it replaces: the clean case AND the
+    // dirty case both go through the real `git log -p` path, so a gate that could not see a
+    // planted credential in real commit history fails here.
+    const tmp = mkdtempSync(join(tmpdir(), 'enforcee-gate-hist-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: tmp, encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'test@enforcee.local');
+    git('config', 'user.name', 'gate test');
+    git('config', 'commit.gpgsign', 'false');
 
-    const range = `HEAD~${DEPTH}..HEAD`;
-    const { code, out } = (() => {
+    for (const [name, body] of [
+      ['a.md', '# nothing secret here\n'],
+      ['b.ts', 'export const x = 1;\n'],
+      ['c.json', '{"ok":true}\n'],
+    ]) {
+      writeFileSync(join(tmp, name), body);
+      git('add', name);
+      git('commit', '-q', '-m', `add ${name}`);
+    }
+    expect(Number(git('rev-list', '--count', 'HEAD')), 'the fixture history was not built').toBe(3);
+
+    const runOn = (range: string) => {
       try {
-        const o = execFileSync(process.execPath, [GATE, range], {
-          cwd: ROOT,
-          encoding: 'utf8',
-          env: { ...process.env, PAT: '' },
-        });
-        return { code: 0, out: o };
+        return { code: 0, out: execFileSync(process.execPath, [GATE, range], { cwd: tmp, encoding: 'utf8', env: { ...process.env, PAT: '' } }) };
       } catch (e) {
         const h = harvest(e);
         return { code: h.code ?? -1, out: h.output };
       }
-    })();
+    };
+
+    // 1 · Clean history over a real range must come back clean, and must say how much it read.
+    const range = 'HEAD~2..HEAD';
+    const { code, out } = runOn(range);
     expect(
       code,
       code === 2
         ? `the gate could not RUN over ${range}. This is not a credential and not a clean result:\n${out}`
-        : `the last ${DEPTH} commits of this repo trip the gate:\n${out}`
+        : `clean fixture history tripped the gate:\n${out}`
     ).toBe(0);
+
+    // 2 · And a credential committed into that same history must be caught. Without this the
+    //     test above passes for a gate that finds nothing at all.
+    writeFileSync(join(tmp, 'leak.env'), `TOKEN=${REAL_SHAPED_PAT}\n`);
+    git('add', 'leak.env');
+    git('commit', '-q', '-m', 'oops');
+    const dirty = runOn('HEAD~1..HEAD');
+    expect(dirty.code, `a committed credential was NOT caught in real git history:\n${dirty.out}`).toBe(1);
+    expect(dirty.out).toMatch(/GitHub fine-grained PAT/);
+    expect(dirty.out, 'the offending file was not attributed').toMatch(/leak\.env/);
+
+    rmSync(tmp, { recursive: true, force: true });
     expect(out, 'the gate reported clean without saying how much it read').toMatch(/chars scanned/);
   });
 
@@ -317,18 +345,24 @@ describe('the gate is actually wired into the only path that pushes', () => {
     );
   });
 
-  it('CI checks out full history, so the end-to-end gate scan has commits to read', () => {
-    // The other half of the all-platforms red. The one assertion that runs the gate over real
-    // commits needs `HEAD~3` to resolve, and `actions/checkout` defaults to depth 1. That test
-    // now fails loudly rather than skipping when the checkout is shallow — this one names the
-    // line that has to stay, so deleting it is caught here rather than as a confusing gate
-    // failure in CI.
+  it('the suite still runs in CI at all', () => {
+    // WAS: "CI checks out full history, so the end-to-end gate scan has commits to read",
+    // asserting ci.yml keeps `fetch-depth: 0`. That requirement is gone — the end-to-end scan
+    // now builds its own history in a temp repo — and keeping the assertion was actively
+    // harmful: it pinned a workaround in place, and the underlying demand blocked the 0.9.1
+    // security release on all three platforms because `fetch-depth: 0` had been added to
+    // ci.yml and not to publish.yml.
+    //
+    // What is worth keeping is the part that was never about depth: CI must actually run the
+    // suite. A control pointed at a workflow that no longer runs the tests is pointed at
+    // nothing.
     const ci = readAsLf(join(ROOT, '.github', 'workflows', 'ci.yml'));
-    expect(ci, 'ci.yml no longer runs the suite, so this control is pointed at nothing').toMatch(
+    expect(ci, 'ci.yml no longer runs the suite, so every control here is pointed at nothing').toMatch(
       /^\s*- run: npm test\s*$/m
     );
-    expect(ci, 'the CI checkout is shallow again — the end-to-end gate scan cannot run').toMatch(
-      /uses: actions\/checkout@v\d+\s*\n\s*with:\s*\n\s*fetch-depth: 0/
+    const publish = readAsLf(join(ROOT, '.github', 'workflows', 'publish.yml'));
+    expect(publish, 'publish.yml no longer runs the suite before shipping to npm').toMatch(
+      /^\s*- run: npm test\s*$/m
     );
   });
 

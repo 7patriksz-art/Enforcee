@@ -222,21 +222,6 @@ const SABOTAGES = [
     expect: /a CRLF checkout hides the end of the SKIP_CHECKS branch|reads push.sh as content/,
   },
   {
-    name: 'shallow-ci-checkout',
-    why:
-      'the other half of that red, on all three platforms: actions/checkout defaults to ' +
-      'fetch-depth 1, so `HEAD~3..HEAD` is not a revision in CI, the gate exits 2 — correctly, ' +
-      'it could not read what it was asked to scan — and the test rendered that as the commits ' +
-      'tripping the gate. A full clone locally means push.sh runs 980 green tests over a ' +
-      'control that has never once executed where it matters',
-    file: '.github/workflows/ci.yml',
-    find: '      - uses: actions/checkout@v6\n        with:\n          fetch-depth: 0\n',
-    replace: '      - uses: actions/checkout@v6\n',
-    occurrences: 1,
-    run: 'tests/secret-gate.test.ts',
-    expect: /the CI checkout is shallow again|CI checks out full history/,
-  },
-  {
     name: 'pem-header-alone-is-a-secret',
     why:
       'loosening the PEM rule back to a bare header makes the gate fire on src/lib/licence.ts ' +
@@ -331,6 +316,21 @@ const SABOTAGES = [
     occurrences: 1,
     run: 'tests/release-gate.test.ts',
     expect: /measures cooling-off from the version bump|measured on HEAD again/,
+  },
+  {
+    name: 'test-demands-deep-checkout',
+    why:
+      'a test asserting the ambient checkout is non-shallow turns its own need into a ' +
+      'constraint on every workflow running the suite. It blocked the 0.9.1 security release ' +
+      'on all three platforms while ci.yml was green on the same commit',
+    file: 'tests/secret-gate.test.ts',
+    find: "    const tmp = mkdtempSync(join(tmpdir(), 'enforcee-gate-hist-'));",
+    replace:
+      "    expect(execFileSync('git', ['rev-parse', '--is-shallow-repository'], { cwd: ROOT, encoding: 'utf8' }).trim()).toBe('false');\n" +
+      "    const tmp = mkdtempSync(join(tmpdir(), 'enforcee-gate-hist-'));",
+    occurrences: 1,
+    run: 'tests/portability.test.ts',
+    expect: /demands the ambient checkout have git history|build the history the test needs/,
   },
 ];
 

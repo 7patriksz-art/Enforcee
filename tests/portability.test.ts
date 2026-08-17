@@ -292,6 +292,32 @@ describe('paths are not assumed to be POSIX', () => {
     ).toEqual([]);
   });
 
+  it('no test demands the ambient checkout have git history', () => {
+    // A test may not turn its own needs into a requirement on every workflow that runs the
+    // suite. tests/secret-gate.test.ts asserted `git rev-parse --is-shallow-repository` was
+    // 'false'; `fetch-depth: 0` was then added to ci.yml and NOT to publish.yml, so on
+    // 2026-08-17 the security release for a live remote-code-execution path was blocked on all
+    // three platforms by this assertion, while ci.yml was green on the same commit.
+    //
+    // Same class as the bug it was written to fix: a requirement satisfied in one place and
+    // not the other. A test that needs history must BUILD it — `git init` in a temp directory
+    // costs milliseconds and runs at any checkout depth (rung 7: remove the dependency).
+    const offenders: string[] = [];
+    for (const f of files) {
+      if (f.split(/[\\/]/)[0] !== 'tests') continue;
+      if (EXEMPT_FILES.includes(f)) continue; // this file has to quote the pattern it bans
+      for (const [i, line] of readFileSync(join(ROOT, f), 'utf8').split('\n').entries()) {
+        if (/^\s*(\/\/|\*)/.test(line)) continue;
+        if (/is-shallow-repository|--unshallow|fetch-depth/.test(line)) offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+      }
+    }
+    expect(
+      offenders,
+      'build the history the test needs in a temp repo instead of requiring the checkout to ' +
+        'provide it. Demanding fetch-depth: 0 blocked a security release once already.'
+    ).toEqual([]);
+  });
+
   it('never tests for an absolute path with startsWith("/")', () => {
     const offenders: string[] = [];
     for (const f of files) {
