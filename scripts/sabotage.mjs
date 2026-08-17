@@ -155,6 +155,32 @@ const SABOTAGES = [
     run: 'tests/discoverability.test.ts',
     expect: /lists no gated page/,
   },
+  {
+    name: 'doc-scan-stops-at-the-top-level',
+    why:
+      'the project-docs half of doc-claims: a walker that does not descend reports a clean ' +
+      'result from a directory it only half read — the same shape as the contrast parser that ' +
+      'matched zero rules twice while every assertion passed over the empty object',
+    file: 'scripts/doc-claims.mjs',
+    find: 'if (entry.isDirectory()) markdownFiles(root, rel, out);',
+    replace: 'if (entry.isDirectory()) continue;',
+    occurrences: 1,
+    run: 'tests/doc-claims.test.ts',
+    expect: /walks a directory that is not the repository/,
+  },
+  {
+    name: 'doc-scan-invents-a-subcommand',
+    why:
+      'reading the SECOND word after `enforcee` turns `enforcee audit CLAUDE.md` into a claim ' +
+      'that a subcommand named CLAUDE exists — a false accusation manufactured by the checker ' +
+      'built to stop false claims. An earlier draft of this file did exactly that.',
+    file: 'scripts/doc-claims.mjs',
+    find: "const ENFORCEE_INSTRUCTION = /(?:`|\\$ |npx )(?:npx )?enforcee ([a-z][a-z-]*)/g;",
+    replace: "const ENFORCEE_INSTRUCTION = /(?:`|\\$ |npx )(?:npx )?enforcee (?:[a-z-]+ )?([A-Za-z][A-Za-z.-]*)/g;",
+    occurrences: 1,
+    run: 'tests/doc-claims.test.ts',
+    expect: /does not manufacture a claim out of an argument|was read as a subcommand named CLAUDE/,
+  },
 ];
 
 const filter = process.argv[2];
