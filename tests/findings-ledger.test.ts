@@ -1,7 +1,8 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { rmSync, existsSync, writeFileSync } from 'node:fs';
+import { rmSync, existsSync, writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 /**
  * The findings ledger is what makes "close the day" a possible instruction.
@@ -21,16 +22,56 @@ import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'findings.mjs');
-const LEDGER = join(ROOT, 'FINDINGS.jsonl');
+
+/**
+ * A TEMP ledger, never the real one.
+ *
+ * The first version of this file pointed at `FINDINGS.jsonl` in the repo root and deleted it
+ * in `afterAll`. Running the suite therefore wiped the day's findings, and the damage would
+ * have appeared at 12:00 as "the ledger is empty" — which the CLOSER treats as a broken
+ * assembly line. A test would have been blamed on the pipeline, on a different day, by a
+ * different run, with nothing linking the two.
+ *
+ * The guard below is the real fix: the path is asserted to be outside the repo before a
+ * single test runs, so this can never quietly point at production again.
+ */
+const LEDGER = join(mkdtempSync(join(tmpdir(), 'enforcee-findings-')), 'FINDINGS.jsonl');
 
 function run(args: string[]): { out: string; code: number } {
   try {
-    return { out: execFileSync('node', [SCRIPT, ...args], { cwd: ROOT, encoding: 'utf8' }), code: 0 };
+    // ENFORCEE_FINDINGS_FILE points the script at the temp ledger. Without it these tests
+    // write to — and delete — the repo's real FINDINGS.jsonl, which is exactly what happened.
+    return {
+      out: execFileSync('node', [SCRIPT, ...args], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ENFORCEE_FINDINGS_FILE: LEDGER },
+      }),
+      code: 0,
+    };
   } catch (e) {
     const err = e as { status?: number; stdout?: string; stderr?: string };
     return { out: `${err.stdout ?? ''}${err.stderr ?? ''}`, code: err.status ?? -1 };
   }
 }
+
+describe('this test file cannot touch the real ledger', () => {
+  it('writes only outside the repository', () => {
+    // Asserted BEFORE anything else runs. Without it, a future edit that points LEDGER back
+    // at the repo root would delete the day's findings and nothing would notice until the
+    // CLOSER reported a broken assembly line at 12:00.
+    expect(LEDGER.startsWith(ROOT), `the test ledger is inside the repo: ${LEDGER}`).toBe(false);
+    expect(LEDGER).toContain('enforcee-findings-');
+  });
+
+  it('leaves the real ledger alone even when it exists', () => {
+    const real = join(ROOT, 'FINDINGS.jsonl');
+    const before = existsSync(real) ? readFileSync(real, 'utf8') : null;
+    run(['add', '--source', 'test', '--claim', 'a finding written during tests']);
+    const after = existsSync(real) ? readFileSync(real, 'utf8') : null;
+    expect(after, 'the test suite modified the real findings ledger').toBe(before);
+  });
+});
 
 beforeEach(() => rmSync(LEDGER, { force: true }));
 afterAll(() => rmSync(LEDGER, { force: true }));
