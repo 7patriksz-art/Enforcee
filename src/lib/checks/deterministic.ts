@@ -1,4 +1,5 @@
-import type { EvidenceSpan, LengthScope, Rule, RuleResult } from '../types';
+import type { EvidenceSpan, LengthScope, Rule, RuleResult, CheckKind } from '../types';
+import { unseenSurface, regionScope, hasCode } from '../rules/parse';
 import { boundInput, checkRegexSafety, safeCompile } from './safe-regex';
 
 export const DETERMINISTIC_VERSION = 'det@1.0.0';
@@ -363,6 +364,54 @@ function res(
  */
 export function runDeterministic(rule: Rule, output: string): RuleResult | null {
   const result = runCheck(rule, output);
+
+  // REACH. A rule about a surface this audit was never shown cannot be graded from the one
+  // output file it was given — in EITHER direction. "Never use emojis in commit messages"
+  // reported VIOLATED against an emoji in prose, badged proven-by-code, which is a false
+  // accusation in the free tier that is the whole shop window. The mirror error matters just
+  // as much: reporting FOLLOWED because the output happens to contain no emoji says nothing
+  // about anyone's commit messages, and a clean bill of health nobody earned is the quieter
+  // half of the same lie.
+  //
+  // Engine plan CHANGE 1. The concept already existed as lengthScope() === 'elsewhere' and
+  // was wired to length rules alone; every other rule kind graded surfaces it cannot see.
+  // The same error one scope smaller: a rule about code comments, checked against an answer
+  // that contains no code. The region could legitimately be inside the output — that is why
+  // it is not in unseenSurface() — so the OUTPUT decides. No code, no evidence.
+  //
+  // ONLY FOR RULES THAT FORBID SOMETHING INSIDE THE REGION. "Always include a code block in
+  // your answer" also names a region, but there the region IS the requirement — an answer
+  // with no code block violates it, and absence is the evidence rather than the lack of it.
+  // The first version of this gate did not distinguish the two and turned that genuine
+  // violation into UNVERIFIABLE: a silencer, which is the worse direction to fail in because
+  // it fails quietly and in our favour. Caught by tests/false-accusation-2.test.ts.
+  const FORBIDDING: string[] = ['no_emoji', 'no_em_dash', 'forbidden_literal', 'forbidden_regex'];
+  const region = regionScope(rule.text);
+  if (result && region && FORBIDDING.includes(rule.check.kind) && !hasCode(output) && result.verdict !== 'NOT_APPLICABLE') {
+    return {
+      ...result,
+      verdict: 'UNVERIFIABLE',
+      engaged: false,
+      evidence: [],
+      rationale:
+        `This rule is about ${region}, and this output contains no code. Text outside code is ` +
+        `not evidence about ${region}, so it is left open rather than graded.`,
+    };
+  }
+
+  const surface = unseenSurface(rule.text);
+  if (result && surface && result.verdict !== 'NOT_APPLICABLE') {
+    return {
+      ...result,
+      verdict: 'UNVERIFIABLE',
+      engaged: false,
+      evidence: [],
+      rationale:
+        `This rule is about ${surface}, which is not in what was audited — only the output file was. ` +
+        `Nothing here is evidence either way, so it is left open rather than graded. ` +
+        `To check it, audit the ${surface} themselves.`,
+    };
+  }
 
   // A CONDITIONAL rule cannot be violated by absence, because absence is also what "the
   // condition never came up" looks like. "Use a markdown table when comparing options"

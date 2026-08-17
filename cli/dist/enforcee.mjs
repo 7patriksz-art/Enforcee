@@ -260,6 +260,13 @@ var LANGUAGES = {
   romanian: "ro",
   slovak: "sk"
 };
+function regionScope(text) {
+  const m = /\b(code comments?|inline comments?|docstrings?|code blocks?|code fences?|commit body)\b/i.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
+function hasCode(output) {
+  return /^[ \t]*(?:```|~~~)/m.test(output) || /^(?: {4}|\t)\S/m.test(output);
+}
 function lengthScope(lower) {
   if (/\b(commit message|commit messages|pr title|pull request title|branch name|file ?name|subject line|title|headline|slug|alt text|filename)\b/i.test(lower)) {
     return "elsewhere";
@@ -847,6 +854,27 @@ function res(rule, verdict, rationale, evidence, engaged) {
 }
 function runDeterministic(rule, output) {
   const result = runCheck(rule, output);
+  const FORBIDDING = ["no_emoji", "no_em_dash", "forbidden_literal", "forbidden_regex"];
+  const region = regionScope(rule.text);
+  if (result && region && FORBIDDING.includes(rule.check.kind) && !hasCode(output) && result.verdict !== "NOT_APPLICABLE") {
+    return {
+      ...result,
+      verdict: "UNVERIFIABLE",
+      engaged: false,
+      evidence: [],
+      rationale: `This rule is about ${region}, and this output contains no code. Text outside code is not evidence about ${region}, so it is left open rather than graded.`
+    };
+  }
+  const surface = null;
+  if (result && surface && result.verdict !== "NOT_APPLICABLE") {
+    return {
+      ...result,
+      verdict: "UNVERIFIABLE",
+      engaged: false,
+      evidence: [],
+      rationale: `This rule is about ${surface}, which is not in what was audited \u2014 only the output file was. Nothing here is evidence either way, so it is left open rather than graded. To check it, audit the ${surface} themselves.`
+    };
+  }
   if (result && result.verdict === "VIOLATED" && rule.trigger && result.evidence.length === 0) {
     return {
       ...result,

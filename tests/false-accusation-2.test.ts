@@ -123,7 +123,34 @@ describe('a conditional rule is not violated by the condition never arising', ()
   });
 
   it('but a forbidden thing that actually appears is still a violation', () => {
-    expect(verdict('Never use emoji when writing commit messages.', 'Done 🎉').verdict).toBe('VIOLATED');
+    // Scoped to the OUTPUT, so an emoji that appears is genuinely a violation.
+    expect(verdict('Never use emoji in your answer.', 'Done 🎉').verdict).toBe('VIOLATED');
+  });
+
+  it('EXPECTATION CHANGED 2026-08-17: a rule about commit messages is not graded from an answer', () => {
+    // This case used to assert VIOLATED for:
+    //
+    //     verdict('Never use emoji when writing commit messages.', 'Done 🎉')  ->  VIOLATED
+    //
+    // and that expectation was wrong, so it is changed here in the open rather than quietly.
+    // The intent behind it was sound — a forbidden thing that ACTUALLY APPEARS should not be
+    // excused as "the condition never arose" — but it treated "when writing commit messages"
+    // as a trigger that had fired, when nothing had established that this text is a commit
+    // message at all.
+    //
+    // Found on 2026-08-17 by installing the packed tarball into a clean project. Against one
+    // paragraph of prose, `enforcee audit` reported VIOLATED for "Never use emojis in commit
+    // messages", badged proven by code. That is a false accusation in the free audit that is
+    // the entire shop window, from a product whose one promise is that it does not make them.
+    //
+    // `audit` is handed a single file with no declared type. It cannot know whether that file
+    // is an answer, a commit message or a README, so grading a commit-message rule against it
+    // is a guess — and UNVERIFIABLE is the bucket that exists for exactly this. "Done 🎉" is
+    // plausibly a commit message, which is the point: plausible is not known.
+    //
+    // The real fix is to let the user say what they are auditing (`--as commit-message`), at
+    // which point the rule becomes checkable and this should be VIOLATED again. Filed.
+    expect(verdict('Never use emoji when writing commit messages.', 'Done 🎉').verdict).toBe('UNVERIFIABLE');
   });
 });
 

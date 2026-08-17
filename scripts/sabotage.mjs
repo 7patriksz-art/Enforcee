@@ -332,6 +332,44 @@ const SABOTAGES = [
     run: 'tests/portability.test.ts',
     expect: /demands the ambient checkout have git history|build the history the test needs/,
   },
+  {
+    name: 'reach-grades-an-unseen-surface',
+    why:
+      'the false accusation found by installing the real tarball: "Never use emojis in commit ' +
+      'messages" reported VIOLATED against an emoji in prose, badged proven-by-code, in the ' +
+      'free audit that is the whole shop window',
+    file: 'src/lib/checks/deterministic.ts',
+    find: "  const surface = unseenSurface(rule.text);",
+    replace: "  const surface = null;",
+    occurrences: 1,
+    run: 'tests/reach.test.ts',
+    expect: /commit messages|never graded from the output/,
+  },
+  {
+    name: 'reach-silences-a-real-violation',
+    why:
+      'over-correcting is the other failure: a gate that returns UNVERIFIABLE even when the ' +
+      'code IS present silences real violations, and it fails quietly and in our favour',
+    file: 'src/lib/checks/deterministic.ts',
+    find: "  if (result && region && FORBIDDING.includes(rule.check.kind) && !hasCode(output) && result.verdict !== 'NOT_APPLICABLE') {",
+    replace: "  if (result && region && FORBIDDING.includes(rule.check.kind) && result.verdict !== 'NOT_APPLICABLE') {",
+    occurrences: 1,
+    run: 'tests/reach.test.ts',
+    expect: /STILL CATCHES the real violation|let through/,
+  },
+  {
+    name: 'artefact-audit-accuses-prose',
+    why:
+      'the false accusation as a user meets it: the SHIPPED bytes reporting VIOLATED for a ' +
+      'commit-message rule against a paragraph of prose. Asserted on npm-dist, not src/, ' +
+      'because the RCE proved the artefact and the tree are different products',
+    file: 'src/lib/checks/deterministic.ts',
+    find: "  const surface = unseenSurface(rule.text);",
+    replace: "  const surface = null;",
+    occurrences: 1,
+    run: 'tests/artefact-e2e.test.ts',
+    expect: /accuses prose of a commit-message violation|does NOT accuse prose/,
+  },
 ];
 
 const filter = process.argv[2];

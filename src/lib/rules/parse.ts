@@ -342,6 +342,60 @@ const LANGUAGES: Record<string, string> = {
  * words — each, every, per, any, no ... longer than — are the whole signal, and they are
  * unambiguous enough to read mechanically.
  */
+/**
+ * The artefact a rule is ABOUT, when that artefact is not the thing being audited.
+ *
+ * REACH — engine plan CHANGE 1: *"a check may not grade a rule whose subject lives beyond
+ * what it can see."* An audit is handed one output file. A rule about commit messages, branch
+ * names or PR descriptions is a rule about something else entirely, and the output is silent
+ * evidence about it in both directions.
+ *
+ * Found on 2026-08-17 by installing the packed artefact into a clean project and auditing
+ * three rules against one paragraph of prose:
+ *
+ *     VIOLATED  Never use emojis in commit messages.     "🎉"
+ *     VIOLATED  Never use emojis in code comments.       "🎉"
+ *     VIOLATED  Never use emojis.                        "🎉"
+ *
+ * Only the third is true. The other two are FALSE ACCUSATIONS, badged "proven by code", in
+ * the free tier that is the entire shop window — and the product's one promise is that it
+ * does not do this. The concept already existed as `lengthScope() === 'elsewhere'` but was
+ * wired to length rules alone, so every other rule kind graded a surface it cannot see.
+ *
+ * Deliberately conservative. Bare "title" and "headline" are NOT here, though `lengthScope`
+ * includes them: "always include a title" is usually about the output, and a rule that
+ * silences a real violation is worse than one that never fires. Length rules keep the wider
+ * list because "under 8 words" is a measurement that is meaningless off its own surface.
+ */
+export function unseenSurface(text: string): string | null {
+  const m =
+    /\b(commit messages?|commit subject|pull request (?:title|description|body)|pr (?:title|description|body)|branch names?|file ?names?|filenames?|email subject|subject lines?|alt text|url slugs?|slugs?)\b/i.exec(
+      text
+    );
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * A rule scoped to a REGION INSIDE the output rather than to another artefact.
+ *
+ * "Never use emojis in code comments" is not about a different file — the code could be right
+ * there in the answer. But if the output contains no code at all, an emoji in prose is not
+ * evidence about code comments, and reporting VIOLATED is the same false accusation as the
+ * commit-message case with a different shape.
+ *
+ * Returns the region name when the rule names one. The caller decides, from the output,
+ * whether that region is present.
+ */
+export function regionScope(text: string): string | null {
+  const m = /\b(code comments?|inline comments?|docstrings?|code blocks?|code fences?|commit body)\b/i.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Does this output contain any fenced code at all? */
+export function hasCode(output: string): boolean {
+  return /^[ \t]*(?:```|~~~)/m.test(output) || /^(?: {4}|\t)\S/m.test(output);
+}
+
 export function lengthScope(lower: string): LengthScope {
   // A limit on something that is not the answer cannot be measured against the answer.
   if (/\b(commit message|commit messages|pr title|pull request title|branch name|file ?name|subject line|title|headline|slug|alt text|filename)\b/i.test(lower)) {
