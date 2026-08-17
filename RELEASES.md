@@ -22,6 +22,29 @@ gate** and shipped a release with no notes at all. Found 2026-08-16 while writin
 notes, by a duplicate heading appearing in the file. A sample that can be mistaken for the
 thing it is a sample of is not a sample.
 
+## v0.9.1
+
+**Security. Upgrade if you use the guard.** `enforcee@0.9.0` would run code out of the
+repository you had open.
+
+The SessionStart and PostCompact hooks refresh the obstacle corpus in the background, and the
+CLI they spawned was resolved from a list starting with `<your project>/cli/dist/enforcee.mjs`
+— a path inside whatever repository you had checked out. Clone a repository that ships a file
+at that path, start a session, and it ran: with your node, detached, silently, before any deny
+rule was evaluated.
+
+- It could only affect **licensed** users. The guard exits at the licence check before reaching
+  that line, so unlicensed installs were never exposed.
+- Nothing to do beyond upgrading. The guard now resolves the CLI only from inside its own
+  installed package, and refuses anything resolving outside it.
+- **The background refresh never actually worked in a real install** — the honest candidate
+  pointed at `cli/dist/`, which does not exist in the published package, so the only path that
+  could resolve was the hostile one. Fixed too, so obstacle context reaches your sessions for
+  the first time.
+
+If you ran 0.9.0 with a licence present and opened an untrusted repository, treat that as an
+execution of unknown code and check what that repository contained.
+
 ## v0.9.0
 
 Two new commands, one behaviour change, and four fixes to things that were quietly wrong.
