@@ -161,7 +161,7 @@ const SABOTAGES = [
       'the project-docs half of doc-claims: a walker that does not descend reports a clean ' +
       'result from a directory it only half read — the same shape as the contrast parser that ' +
       'matched zero rules twice while every assertion passed over the empty object',
-    file: 'scripts/doc-claims.mjs',
+    file: 'src/lib/doc-claims.ts',
     find: 'if (entry.isDirectory()) markdownFiles(root, rel, out);',
     replace: 'if (entry.isDirectory()) continue;',
     occurrences: 1,
@@ -174,7 +174,7 @@ const SABOTAGES = [
       'reading the SECOND word after `enforcee` turns `enforcee audit CLAUDE.md` into a claim ' +
       'that a subcommand named CLAUDE exists — a false accusation manufactured by the checker ' +
       'built to stop false claims. An earlier draft of this file did exactly that.',
-    file: 'scripts/doc-claims.mjs',
+    file: 'src/lib/doc-claims.ts',
     find: "const ENFORCEE_INSTRUCTION = /(?:`|\\$ |npx )(?:npx )?enforcee ([a-z][a-z-]*)/g;",
     replace: "const ENFORCEE_INSTRUCTION = /(?:`|\\$ |npx )(?:npx )?enforcee (?:[a-z-]+ )?([A-Za-z][A-Za-z.-]*)/g;",
     occurrences: 1,

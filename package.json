@@ -20,7 +20,7 @@
     "dogfood": "esbuild scripts/dogfood.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/dist/dogfood.mjs --log-level=warning && node scripts/dist/dogfood.mjs",
     "email:check": "node scripts/push-email-templates.mjs --check",
     "email:push": "node scripts/push-email-templates.mjs",
-    "doc-claims": "node scripts/doc-claims.mjs"
+    "doc-claims": "esbuild scripts/doc-claims.mjs --bundle --platform=node --target=node20 --format=esm --outfile=scripts/dist/doc-claims.mjs --log-level=warning && node scripts/dist/doc-claims.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",

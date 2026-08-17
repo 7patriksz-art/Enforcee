@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { markdownFiles, repoMechanisms, rules, scan } from '../scripts/doc-claims.mjs';
+import { markdownFiles, repoMechanisms, rules, scan } from '@/lib/doc-claims';
 
 /**
  * A document that names a mechanism must be naming one that exists.
@@ -33,13 +33,18 @@ import { markdownFiles, repoMechanisms, rules, scan } from '../scripts/doc-claim
  * `tests/doc-claims.test.ts`, `scripts/sabotage.mjs`, `tests/spawn-honesty.test.ts`,
  * `tests/helpers/spawn.ts`, `src/lib/onboard.ts` and `tests/licence-route-expiry.test.ts`.
  *
- * So the rules moved into `scripts/doc-claims.mjs`, which this file imports and which a
- * scheduled run points at the dumped project docs:
+ * So the rules moved into `src/lib/doc-claims.ts`, which this file imports and which
+ * `scripts/doc-claims.mjs` bundles into a CLI a scheduled run points at the dumped docs:
  *
  *     npm run doc-claims -- <dir of dumped project docs> --min 100
  *
  * One copy of the rules, two places they run. The last section below is the control on the
  * checker itself — rule 9, "a checker needs a control before the thing it checks does".
+ *
+ * The rules briefly lived in `scripts/doc-claims.mjs` with a `.d.mts` sidecar, imported here
+ * directly. That was green on ubuntu and macos and threw `SyntaxError: Invalid or unexpected
+ * token` at THIS import on windows-latest — the only test importing from scripts/, and the
+ * only .d.mts in the tree. tests/portability.test.ts now bans both shapes.
  */
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));

@@ -225,6 +225,73 @@ describe('paths are not assumed to be POSIX', () => {
     // paid deliberately, in two named places, not spread across the tree.
   });
 
+  it('no test imports a module out of scripts/, however it is typed', () => {
+    // THE EIGHTH WINDOWS-ONLY BREAK, and the first one no existing rule could have seen.
+    // tests/doc-claims.test.ts imported `../scripts/doc-claims.mjs`, a plain-ESM module with
+    // a hand-written `scripts/doc-claims.d.mts` sidecar for its types. Green on ubuntu, green
+    // on macos, and on windows-latest it threw at the import itself:
+    //
+    //     SyntaxError: Invalid or unexpected token   ❯ tests/doc-claims.test.ts:6:31
+    //
+    // It was the ONLY test in the repo importing from scripts/ and that sidecar was the ONLY
+    // .d.mts in the tree. Every other test imports plain TypeScript out of src/, and every
+    // other test is green on Windows. The rules moved to src/lib/doc-claims.ts and the script
+    // became a thin bundled CLI over them — the pattern licence:repo and dogfood already use.
+    //
+    // scripts/ is CLI glue: it is bundled by esbuild before it runs and never type-resolved
+    // by vitest. src/ is the shipped source. A test reaching into scripts/ crosses that line,
+    // and the failure it buys is not visible on the platform most of this work is done on.
+    const offenders: string[] = [];
+    for (const f of files) {
+      if (f.split(/[\\/]/)[0] !== 'tests') continue; // tests/ only — same idiom as the scan check above
+      for (const [i, line] of readFileSync(join(ROOT, f), 'utf8').split('\n').entries()) {
+        if (/^\s*(\/\/|\*)/.test(line)) continue;
+        if (/(?:from|import)\s*\(?\s*['"][^'"]*\.\.\/scripts\//.test(line)) {
+          offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'move the module into src/ and import it as TypeScript, then let scripts/ bundle it. ' +
+        'A scripts/*.mjs imported by a test broke windows-latest at the import statement while ' +
+        'ubuntu and macos stayed green.'
+    ).toEqual([]);
+  });
+
+  it('no runtime module carries a hand-written .d.ts or .d.mts sidecar', () => {
+    // The other half of the same break. A declaration file sitting beside a runtime module of
+    // the same basename is a second resolution candidate for the same import specifier, and
+    // which one wins is a property of the resolver and the platform rather than of this
+    // repository. If a module needs types, write it in TypeScript — that is what src/ is.
+    //
+    // `sourceFiles` above matches `.ts|.tsx|.mjs|.js` and therefore does NOT see a `.d.mts` —
+    // reusing it here would have produced a rule that passed over the exact file it was
+    // written for, which is the failure mode this suite has now recorded eight times. So this
+    // walks for itself, and asserts the walk reached the directories before believing it.
+    const declarations: string[] = [];
+    const walked: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue;
+        const rel = join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else {
+          walked.push(rel);
+          if (/\.d\.(m|c)?ts$/.test(entry.name)) declarations.push(rel);
+        }
+      }
+    };
+    for (const d of ['tests', 'src', 'guard', 'cli', 'scripts']) walk(d);
+
+    expect(walked.length, 'the declaration-file walk returned nothing and would pass forever').toBeGreaterThan(60);
+    expect(
+      declarations,
+      'write the module in TypeScript instead. A .d.mts beside a .mjs is how windows-latest ' +
+        'came to parse a declaration file as JavaScript while ubuntu and macos stayed green.'
+    ).toEqual([]);
+  });
+
   it('never tests for an absolute path with startsWith("/")', () => {
     const offenders: string[] = [];
     for (const f of files) {
