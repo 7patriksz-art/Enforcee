@@ -113,10 +113,38 @@ of finding something new. Taking three times as long to land green is cheap by c
 **A job that produces only a document is a job that failed.**
 
 Sixteen contradictions accumulated across nine days of jobs that wrote prose nobody read. The
-output of a run is a commit, or a concrete task with a named next action. If a run genuinely
-finds nothing, that is one paragraph in `claude/70-DAILY-LOG.md` naming what was checked and
-what would have counted as a finding — never manufactured work, and never a document that
-looks like progress.
+output of a run is a commit, or a concrete task with a named next action.
+
+### Every finding goes in the ledger, or it does not exist
+
+```bash
+node scripts/findings.mjs add --source <your-job-name> \
+  --claim "what is wrong, in one sentence someone could act on" \
+  --severity blocker|high|medium|low \
+  --needs agent|patrik \
+  --where path/to/file.ts:42 \
+  --evidence "the measurement or quote that makes it true"
+```
+
+`FINDINGS.jsonl` is committed, so it survives a container rollback and shows up in a diff.
+
+**`--needs patrik` is for money, names, credentials, irreversible choices and questions of
+taste. Nothing else.** Parking work there because it is hard is how an autonomous system
+quietly turns back into a to-do list for a human — which is the thing being built against.
+
+Ids are content-addressed on `(source, claim)`, so re-reporting the same thing records a
+second SIGHTING rather than a second item. Seeing it again is information: it means the thing
+is still true.
+
+### Closing needs evidence
+
+```bash
+node scripts/findings.mjs close <id> --commit <sha>        # or --test <name>
+node scripts/findings.mjs escalate <id> --why "<reason>"   # only when it truly needs Patrik
+```
+
+A close with nothing behind it is refused. The closer grades its own homework, so that is the
+cheapest available lie and the one worth making impossible.
 
 ---
 
