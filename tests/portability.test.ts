@@ -49,6 +49,13 @@ describe('paths are not assumed to be POSIX', () => {
     ...sourceFiles('scripts'),
   ];
 
+  // One list, used by the shim rule below and by the test that audits the list itself.
+  // Duplicating it is the twelfth-time-repeated defect on this project.
+  const EXEMPT_FILES = [
+    join('tests', 'portability.test.ts'), // this file: the rule has to quote what it bans
+    join('scripts', 'sabotage.mjs'), // the harness that proves this rule can go red
+  ];
+
   it('looks at every directory that ships code, including scripts', () => {
     for (const d of ['tests/', 'src/', 'guard/', 'cli/', 'scripts/']) {
       expect(files.some((f) => f.split(/[\\/]/)[0] + '/' === d), `nothing scanned under ${d}`).toBe(true);
@@ -125,6 +132,7 @@ describe('paths are not assumed to be POSIX', () => {
     // because it is the interpreter actually running the check.
     const offenders: string[] = [];
     for (const f of files) {
+      if (EXEMPT_FILES.includes(f)) continue; // the rule and its sabotage harness must quote what they ban
       for (const line of readFileSync(join(ROOT, f), 'utf8').split('\n')) {
         if (/^\s*(\/\/|\*)/.test(line)) continue;
         if (/execFileSync\(\s*['"](npm|npx|yarn|pnpm|tsc|vitest|eslint|prettier)['"]/.test(line)) {
@@ -132,9 +140,15 @@ describe('paths are not assumed to be POSIX', () => {
         }
       }
     }
+    // The remedy this used to print was `process.platform === 'win32' ? 'npm.cmd' : 'npm'`
+    // — the exact pattern the very next test bans, and the one that kept main red on
+    // windows-latest. A control that prints a remedy another control forbids is worse than
+    // one that prints none: it is a wrong answer with our name on it. Charter, CONTINUE:
+    // "every remediation Enforcee prints should be one we have actually run."
     expect(
       offenders,
-      "use `process.platform === 'win32' ? 'npm.cmd' : 'npm'` — spawnSync does not resolve .cmd"
+      'spawn process.execPath, or import the tool as a library — never a shim name. ' +
+        'Node will not execFile a .cmd at all (CVE-2024-27980 mitigation), so `npm.cmd` is worse, not better.'
     ).toEqual([]);
   });
 
@@ -146,12 +160,69 @@ describe('paths are not assumed to be POSIX', () => {
     // platform shell and works on both.
     const offenders: string[] = [];
     for (const f of files) {
+      if (EXEMPT_FILES.includes(f)) continue; // ditto — same closed set, audited above
       for (const line of readFileSync(join(ROOT, f), 'utf8').split('\n')) {
         if (/^\s*(\/\/|\*)/.test(line)) continue;
         if (/execFileSync?\([^)]*\.(cmd|bat)['"`]/.test(line)) offenders.push(`${f}: ${line.trim()}`);
       }
     }
-    expect(offenders, 'use execSync — Node will not execFile a .cmd without shell: true').toEqual([]);
+    expect(
+      offenders,
+      'spawn process.execPath, or import the tool as a library. Not execSync either: a shell ' +
+        'quoting bug is how CVE-2024-27980 happened in the first place.'
+    ).toEqual([]);
+  });
+
+  it('never names a .cmd or .bat shim ANYWHERE, however far from the spawn', () => {
+    // The seventh control on this project that passed over the exact thing it was written
+    // to catch. Both checks above are LINE-scoped: they need the shim literal and the
+    // execFile call on the same line. tests/licence-subject.test.ts put the literal on line
+    // 28 and the call on line 31:
+    //
+    //     const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';   // line 28
+    //     execFileSync(NPM, [...])                                       // line 31
+    //
+    // Neither regex matched, both stayed green, and main was red on windows-latest for two
+    // commits. One variable of indirection defeated the whole control.
+    //
+    // This rule survives the indirection because it stops looking at the call site. A shim
+    // name has no legitimate use in this codebase wherever it appears — every place that
+    // needs to run node has process.execPath, and every place that needs a build step can
+    // import esbuild. So the literal itself is the offence, and there is nowhere to hide it.
+    const EXEMPT = new Set(EXEMPT_FILES);
+    const offenders: string[] = [];
+    for (const f of files) {
+      if (EXEMPT.has(f)) continue;
+      for (const [i, line] of readFileSync(join(ROOT, f), 'utf8').split('\n').entries()) {
+        if (/^\s*(\/\/|\*|#)/.test(line)) continue;
+        if (/['"`][\w.-]*\.(cmd|bat)['"`]/.test(line)) offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+      }
+    }
+    expect(
+      offenders,
+      'spawn process.execPath, or import the tool as a library — never name a .cmd/.bat shim'
+    ).toEqual([]);
+  });
+
+  it('and the exempt list is a closed set of two, so it cannot be widened quietly', () => {
+    // An exempt list is a hole in a control, and the way holes get abused is by growing.
+    // Only two files can legitimately contain the banned literal: the rule that has to
+    // quote what it bans, and the harness that proves the rule goes red. Adding a third
+    // fails HERE, which forces the exemption to be an argued decision rather than a
+    // one-line edit that silently turns the check off for a whole file.
+    expect(EXEMPT_FILES.slice().sort(), 'the shim exemption is not a place to park a new file').toEqual(
+      [join('scripts', 'sabotage.mjs'), join('tests', 'portability.test.ts')].sort()
+    );
+    // And an entry that names a file which does not exist is an exemption for nothing,
+    // while the real file goes on being checked under a different path — a stale hole that
+    // reads as coverage. Both must be files this scan actually walked.
+    for (const f of EXEMPT_FILES) {
+      expect(files, `${f} is exempt from a scan that never reaches it`).toContain(f);
+    }
+    // What this does NOT do, stated rather than implied: it does not prove the two exempt
+    // files are safe. Inside them the literal is unpoliced. They are exempt because the
+    // rule cannot express itself without quoting the thing it forbids, and that cost is
+    // paid deliberately, in two named places, not spread across the tree.
   });
 
   it('never tests for an absolute path with startsWith("/")', () => {

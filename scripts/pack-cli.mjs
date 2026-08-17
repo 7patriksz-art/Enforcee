@@ -245,7 +245,13 @@ try {
   // expected. What is NOT acceptable is treating any throw as a pass, which is what this
   // did: on Windows the probe could not even load the bundle, crashed, and was reported as
   // "verified at runtime". A control that cannot fail is not a control (charter rule 6).
-  judgeProbe(`${e.stdout ?? ''}${e.stderr ?? ''}`);
+  // No output and no exit status means the OS never created a process, which is a different
+  // thing from a program that printed nothing — judgeProbe would read the second as "the
+  // bundle never loaded" and the first as the same, hiding the actual cause. Same idea as
+  // tests/helpers/spawn.ts; this file is plain ESM in the publish path and imports nothing
+  // from tests/, so the one line is repeated rather than shared, deliberately.
+  const spawnFailed = !e.stdout && !e.stderr && (e.status === undefined || e.status === null);
+  judgeProbe(spawnFailed ? `SPAWN FAILED: ${e.message}` : `${e.stdout ?? ''}${e.stderr ?? ''}`);
 }
 
 function judgeProbe(out) {
@@ -271,9 +277,16 @@ try {
   execFileSync(process.execPath, [bundle, 'guard', 'nonexistent.md'], { encoding: 'utf8', env: { ...process.env, ENFORCEE_LICENCE: '' } });
   bad('guard ran without a licence');
 } catch (e) {
+  // This one already fails closed on a spawn failure, because it demands status 3 and a
+  // spawn that never started has no status. The message is what needed fixing: "guard
+  // exited undefined" sent a reader looking for a licence bug that was not there.
   e.status === 3 && /part we charge for/i.test(e.stdout ?? '')
     ? ok('guard refuses without a licence, with a readable reason')
-    : bad(`guard exited ${e.status} without the expected message`);
+    : bad(
+        e.status === undefined || e.status === null
+          ? `guard could not be spawned at all, so nothing about licensing was checked: ${e.message}`
+          : `guard exited ${e.status} without the expected message`
+      );
 }
 
 

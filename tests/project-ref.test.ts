@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdtempSync, mkdirSync, cpSync, rmSync } from
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { harvest } from './helpers/spawn';
 
 /**
  * The project ref must resolve in an environment that has nothing.
@@ -80,7 +81,7 @@ describe('the project ref resolves everywhere', () => {
           timeout: 60_000,
         });
       } catch (e: any) {
-        output = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+        output = harvest(e).output;
       }
 
       // Asserting only the ABSENCE of "No project ref" would pass for any number of

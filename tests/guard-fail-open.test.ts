@@ -8,6 +8,7 @@ import { compilePolicy, proposeDenyRules, toDenyRule } from '../src/lib/enforce/
 import { parseRuleset } from '../src/lib/rules/parse';
 import { issueLicence } from '../src/lib/licence';
 import { fileURLToPath } from 'node:url';
+import { harvest } from './helpers/spawn';
 
 /**
  * FAIL-OPEN is the worst outcome this file can produce.
@@ -75,7 +76,7 @@ function run(dir: string, command: string, tool = 'Bash', input?: Record<string,
     });
   } catch (e) {
     crashed = true;
-    stdout = (e as { stdout?: string }).stdout ?? '';
+    stdout = harvest(e).output;
   }
   let decision: string | undefined;
   try {

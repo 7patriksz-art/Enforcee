@@ -7,6 +7,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { parseRuleset } from '@/lib/rules/parse';
 import { buildReinjectText, compilePolicy, hookSettings, proposeDenyRules, toDenyRule } from '@/lib/enforce/policy';
 import { issueLicence } from '@/lib/licence';
+import { harvest } from './helpers/spawn';
 
 const REAL_GUARD = join(process.cwd(), 'guard', 'guard.mjs');
 
@@ -74,8 +75,10 @@ function runGuard(payload: object, cwd = project): { code: number; stdout: strin
     });
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
-    return { code: err.status ?? -1, stdout: err.stdout ?? '', stderr: err.stderr ?? '' };
+    const h = harvest(e);
+    // spawnFailed surfaces in stdout so a test asserting on output cannot read silence as
+    // a verdict; code stays -1 for a real non-zero exit, per this helper's original contract.
+    return { code: h.code ?? -1, stdout: h.spawnFailed ? h.output : h.stdout, stderr: h.stderr };
   }
 }
 

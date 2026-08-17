@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { buildSync } from 'esbuild';
 
 /**
  * A licence must be issuable for a project other than this one.
@@ -21,21 +22,48 @@ import { resolve } from 'node:path';
  */
 const ROOT = resolve(__dirname, '..');
 
-// `npm` is `npm.cmd` on Windows and execFileSync does not resolve shims. Caught here by
-// tests/portability.test.ts, which is the seventh bug of this class on this project — and
-// Windows is the platform Patrik develops on, so it would have gone red on his machine and
-// on the CI leg that matters most for him.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+/**
+ * This used to spawn `npm run licence:repo`, naming the binary
+ * `process.platform === 'win32' ? 'npm.cmd' : 'npm'`. That kept main RED on windows-latest
+ * for two commits (CI runs 70 and 71): since the CVE-2024-27980 mitigation Node refuses to
+ * execFile a `.cmd` at all without `shell: true`, so the spawn threw BEFORE the process
+ * existed — no stdout, no stderr — and the catch below turned that into `''`. All four
+ * assertions then failed by accusing the licence script of printing the wrong thing when the
+ * script had never run. Our own harness manufacturing a false accusation, which is the one
+ * thing this product exists not to do.
+ *
+ * The dependency is removed rather than worked around (rung 7 of the escalation ladder in
+ * docs/THE-CYCLE.md): esbuild is imported as a library and the bundle is spawned with
+ * `process.execPath`. Same entry point and same flags as the npm script, so this still
+ * exercises the shipped artefact — but there is no shim to resolve on any platform.
+ */
+const ENTRY = 'scripts/issue-repo-licence.mjs';
+const BUNDLE = resolve(ROOT, 'scripts/dist/issue-repo-licence.mjs');
+
+beforeAll(() => {
+  buildSync({
+    entryPoints: [resolve(ROOT, ENTRY)],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'esm',
+    outfile: BUNDLE,
+    logLevel: 'warning',
+  });
+}, 60_000);
 
 function run(args: string[]): string {
   try {
-    return execFileSync(NPM, ['run', 'licence:repo', '--silent', '--', ...args], {
+    return execFileSync(process.execPath, [BUNDLE, ...args], {
       cwd: ROOT,
       encoding: 'utf8',
       env: { ...process.env, ENFORCEE_LICENCE_PRIVATE_KEY: '' },
     });
   } catch (e) {
-    const err = e as { stdout?: string; stderr?: string };
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    // A spawn that never started must not look like a script that printed nothing. Silence
+    // here is what produced four false accusations; it now says so out loud.
+    if (!err.stdout && !err.stderr) return `SPAWN FAILED: ${err.message ?? String(e)}`;
     return `${err.stdout ?? ''}${err.stderr ?? ''}`;
   }
 }

@@ -101,6 +101,23 @@ jobs:
       # `/opt/pw-browsers/chromium-1194/...` — the path in the sandbox this is built in,
       # pinned to a build number. That is why the first CI run of this step went red.
       # scripts/chrome.mjs now resolves it, and falls through to Playwright's own answer.
+      # A green suite says nothing about whether its controls CAN go red. Seven controls on
+      # this project have now passed over the exact thing they were written to catch — the
+      # most recent kept main red on windows-latest for two commits while a rule named
+      # "never execFiles a .cmd or .bat, even by explicit name" sat green, because the
+      # literal was one line away from the call and the regex was line-scoped.
+      #
+      # `sabotage` removes each fix in turn, ASSERTS the removal actually applied (a replace
+      # that matches nothing otherwise reports "control passed" from a sabotage that never
+      # happened — that has occurred here), and requires the named test to go red. Running
+      # it by hand is a thing someone has to remember, which is the category of control this
+      # product exists because models ignore.
+      #
+      # Ubuntu only: it re-runs test files many times, and the property it establishes —
+      # can this control fail — is not platform-specific.
+      - run: npm run sabotage
+        if: matrix.os == 'ubuntu-latest'
+
       - run: npx playwright install --with-deps chromium
         if: matrix.os == 'ubuntu-latest'
 

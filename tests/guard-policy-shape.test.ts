@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { issueLicence } from '../src/lib/licence';
 import { fileURLToPath } from 'node:url';
+import { harvest } from './helpers/spawn';
 
 /**
  * Two shapes of hand-written policy.json that the guard used to mishandle.
@@ -68,7 +69,7 @@ function run(dir: string, command = 'rm -rf /') {
     });
   } catch (e) {
     crashed = true;
-    stdout = (e as { stdout?: string }).stdout ?? '';
+    stdout = harvest(e).output;
   }
   let json: Record<string, never> | null = null;
   const last = stdout.trim().split('\n').pop() ?? '';

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { rmSync, existsSync, writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { harvest } from './helpers/spawn';
 
 /**
  * The findings ledger is what makes "close the day" a possible instruction.
@@ -42,7 +43,7 @@ function run(args: string[]): { out: string; code: number } {
     // ENFORCEE_FINDINGS_FILE points the script at the temp ledger. Without it these tests
     // write to — and delete — the repo's real FINDINGS.jsonl, which is exactly what happened.
     return {
-      out: execFileSync('node', [SCRIPT, ...args], {
+      out: execFileSync(process.execPath, [SCRIPT, ...args], {
         cwd: ROOT,
         encoding: 'utf8',
         env: { ...process.env, ENFORCEE_FINDINGS_FILE: LEDGER },
@@ -50,8 +51,12 @@ function run(args: string[]): { out: string; code: number } {
       code: 0,
     };
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
-    return { out: `${err.stdout ?? ''}${err.stderr ?? ''}`, code: err.status ?? -1 };
+    // A spawn that never started is not a script that printed nothing — every assertion
+    // below reads `out`, so silence here would become a false accusation against
+    // scripts/findings.mjs. tests/spawn-honesty.test.ts caught this file the moment that
+    // rule existed; the rule was written the same hour and this was its first real catch.
+    const h = harvest(e);
+    return { out: h.output, code: h.code ?? -1 };
   }
 }
 
