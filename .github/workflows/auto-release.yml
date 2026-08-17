@@ -79,9 +79,26 @@ jobs:
             fail "INVARIANTS.md changed since $LAST_TAG — a decision moved, so a human releases this one"
           fi
 
-          # 4 · Cooling off. A commit minutes old has not been through the daily self-audit.
-          AGE=$(( $(date -u +%s) - $(git log -1 --format=%ct HEAD) ))
-          [ "$AGE" -ge 43200 ] || fail "head commit is $((AGE/3600))h old; the gate wants 12h so the audit runs have seen it"
+          # 4 · Cooling off, measured on the VERSION BUMP rather than on HEAD.
+          #
+          #     Until 2026-08-17 this read `git log -1 HEAD`, and that was fine because nothing
+          #     pushed automatically: HEAD aged overnight and the condition was free. On
+          #     2026-08-17 four scheduled jobs were given push credentials so their work stops
+          #     stranding in project docs — and every one of their pushes reset this clock. The
+          #     jobs run hourly from 00:00 to 12:00 and this gate runs at 10:00, so HEAD would
+          #     essentially never be 12h old again and the release path would be starved by the
+          #     change that fixed the stranded-work problem. Filed as 3b10aeceee.
+          #
+          #     What the condition is actually for: the RELEASE CONTENT should have been seen by
+          #     an audit run before it ships. That property belongs to the version bump — the
+          #     deliberate intent signal from condition 1 — not to whatever landed most recently.
+          #     Commits after the bump are not unchecked: condition 5 below requires CI green on
+          #     ALL THREE platforms for HEAD itself, every time.
+          BUMP_SHA=$(git log -1 --format=%H -S"\"version\": \"$VERSION\"" -- package.json)
+          [ -n "$BUMP_SHA" ] || fail "could not find the commit that set version $VERSION — refusing to guess its age"
+          AGE=$(( $(date -u +%s) - $(git log -1 --format=%ct "$BUMP_SHA") ))
+          echo "version $VERSION was set by $BUMP_SHA, $((AGE/3600))h ago"
+          [ "$AGE" -ge 43200 ] || fail "version $VERSION was bumped $((AGE/3600))h ago; the gate wants 12h so the audit runs have seen it"
 
           # 5 · Was CI green on ALL THREE platforms for exactly this commit? Read, never assumed
           #     — nine releases once claimed all-tests-pass on a Linux-only suite. This is the

@@ -319,6 +319,19 @@ const SABOTAGES = [
     run: 'tests/coverage-floors.test.ts',
     expect: /asserts it is not empty|no non-empty assertion/,
   },
+  {
+    name: 'release-gate-starved-by-head-age',
+    why:
+      'restoring the HEAD-based cooling-off starves the gate: four scheduled jobs push daily ' +
+      'from 00:00 to 12:00 and the gate runs at 10:00, so HEAD is almost never 12h old and a ' +
+      'security release sits unpublished while nothing reports an error',
+    file: '.github/workflows/auto-release.yml',
+    find: 'AGE=$(( $(date -u +%s) - $(git log -1 --format=%ct "$BUMP_SHA") ))',
+    replace: 'AGE=$(( $(date -u +%s) - $(git log -1 --format=%ct HEAD) ))',
+    occurrences: 1,
+    run: 'tests/release-gate.test.ts',
+    expect: /measures cooling-off from the version bump|measured on HEAD again/,
+  },
 ];
 
 const filter = process.argv[2];
