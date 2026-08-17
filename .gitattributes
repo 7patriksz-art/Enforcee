@@ -15,3 +15,21 @@
 # Deliberately narrow. A blanket `* text=auto eol=lf` would renormalise every tracked text
 # file on checkout, which is a much larger change to make while fixing a red build.
 *.sh text eol=lf
+
+# The guard is LF too, and this line has a stranger history than the one above.
+#
+# `guard/guard.mjs` used to contain a literal NUL byte — a map-key separator written as a raw
+# 0x00 rather than an escape. That made GIT CLASSIFY IT AS BINARY, which silently exempted it
+# from CRLF conversion on Windows checkouts. Nobody knew that was load-bearing.
+#
+# Removing the NUL (so the file could be grepped without `-a`) turned it into an ordinary text
+# file, Windows started checking it out with CRLF, and four test files that read the guard and
+# do exact string matching went red on windows-latest — including the licence public-key
+# substitution, which reported "guard.mjs has no public key block at all".
+#
+# Two fixes, because either alone leaves a trap. The tests now tolerate CRLF; this line stops
+# the conversion happening in the first place, which also keeps guard/guard.mjs and
+# plugin/guard.mjs byte-identical on every platform — a property tests/plugin-guard-sync.test.ts
+# asserts and which CRLF conversion would not have broken today, but would have eventually.
+guard/guard.mjs text eol=lf
+plugin/guard.mjs text eol=lf

@@ -39,7 +39,7 @@ beforeAll(() => {
 
   GUARD = join(project, 'guard-under-test.mjs');
   const real = readFileSync(REAL_GUARD, 'utf8');
-  const patched = real.replace(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----\n/, pubPem);
+  const patched = real.replace(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----\r?\n/, pubPem);
   expect(patched).not.toBe(real);
   writeFileSync(GUARD, patched);
 

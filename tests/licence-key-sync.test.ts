@@ -15,7 +15,12 @@ import { LICENCE_PUBLIC_KEY } from '../src/lib/licence-key';
  */
 describe('licence public key', () => {
   it('is identical in guard.mjs and licence-key.ts', () => {
-    const guard = readFileSync(new URL('../guard/guard.mjs', import.meta.url), 'utf8');
+    // Normalised, because a CRLF checkout is not a missing key. This asserted `-----BEGIN
+    // PUBLIC KEY-----\n` and reported "guard.mjs has no public key block at all" on
+    // windows-latest — a false accusation about the most safety-critical constant we ship,
+    // produced by a line-ending. See .gitattributes: guard.mjs is pinned to LF now, and this
+    // stays tolerant anyway so the two fixes do not depend on each other.
+    const guard = readFileSync(new URL('../guard/guard.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const match = guard.match(/-----BEGIN PUBLIC KEY-----\n[\s\S]*?-----END PUBLIC KEY-----/);
     expect(match, 'guard.mjs has no public key block at all').not.toBeNull();
     expect(match![0].trim()).toBe(LICENCE_PUBLIC_KEY.trim());
