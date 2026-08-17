@@ -260,6 +260,12 @@ var LANGUAGES = {
   romanian: "ro",
   slovak: "sk"
 };
+function unseenSurface(text) {
+  const m = /\b(commit messages?|commit subject|pull request (?:title|description|body)|pr (?:title|description|body)|branch names?|file ?names?|filenames?|email subject|subject lines?|alt text|url slugs?|slugs?)\b/i.exec(
+    text
+  );
+  return m ? m[1].toLowerCase() : null;
+}
 function regionScope(text) {
   const m = /\b(code comments?|inline comments?|docstrings?|code blocks?|code fences?|commit body)\b/i.exec(text);
   return m ? m[1].toLowerCase() : null;
@@ -865,7 +871,7 @@ function runDeterministic(rule, output) {
       rationale: `This rule is about ${region}, and this output contains no code. Text outside code is not evidence about ${region}, so it is left open rather than graded.`
     };
   }
-  const surface = null;
+  const surface = unseenSurface(rule.text);
   if (result && surface && result.verdict !== "NOT_APPLICABLE") {
     return {
       ...result,
