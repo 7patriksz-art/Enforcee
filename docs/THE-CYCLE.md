@@ -130,6 +130,12 @@ The token is scoped to this repository only and expires **2026-11-12**. Rotating
 editing four prompts; `tests/secret-gate.test.ts` and `scripts/sabotage.mjs` are what stop
 that from being the moment the gate quietly stops working.
 
+**Proven, not assumed — 2026-08-17:** the obstacle sweep (10:00) made the first push ever
+landed by a scheduled run, building on `a6d37b3`, after confirming `${#PAT}` is 93 rather than
+the literal `proxy-injected` of length 14 and watching `secret-gate` refuse a deliberately
+committed fake `github_pat_`-shaped string. Until that run the capability was written down but
+unexercised, which is the same standing as a control that has never been failed on purpose.
+
 **This repository is public, so `scripts/push.sh` runs `npm run secret-gate` before every
 push** — outside the `SKIP_CHECKS` branch, because that hatch is for a flaky test and never a
 reason to publish a secret. It refuses on the literal `$PAT` anywhere, and on credential
