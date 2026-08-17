@@ -106,6 +106,42 @@ Concretely, before pushing:
 A red push costs a whole cycle: the next run spends its budget re-deriving what broke instead
 of finding something new. Taking three times as long to land green is cheap by comparison.
 
+### Which jobs can push, and what that costs
+
+Until 2026-08-17 **no** scheduled run could push: `GITHUB_TOKEN` and `GH_TOKEN` in a scheduled
+container are the literal string `proxy-injected`, length 14. Every job that committed had to
+write its diff into a `claude/9X-UNPUSHED-*.patch.md` project doc and hope a later session
+landed it. Three containers were reclaimed on 2026-08-17 alone, and the only work that
+survived was the work whose diff was in a doc.
+
+Four jobs now carry a real fine-grained PAT in their prompt — the four that produce commits:
+
+| job | when |
+|---|---|
+| product engine | 04:00 |
+| engine improvement | 08:00 |
+| obstacle sweep | 10:00 |
+| CLOSER | 12:00 |
+
+The other nine still commit locally and write patch docs. **Landing those is the CLOSER's
+job**, and it is now the first thing in its prompt after collecting the ledger.
+
+The token is scoped to this repository only and expires **2026-11-12**. Rotating it means
+editing four prompts; `tests/secret-gate.test.ts` and `scripts/sabotage.mjs` are what stop
+that from being the moment the gate quietly stops working.
+
+**This repository is public, so `scripts/push.sh` runs `npm run secret-gate` before every
+push** — outside the `SKIP_CHECKS` branch, because that hatch is for a flaky test and never a
+reason to publish a secret. It refuses on the literal `$PAT` anywhere, and on credential
+shapes outside a closed five-file exempt list. `src/lib/prevent/obstacles.ts` redacts the same
+shapes but only when *printing* a report; a display filter has never been able to stop a
+commit, and before this nothing in the push path looked.
+
+If the gate fires, **do not route around it.** `git reset --soft`, remove the file, recommit,
+and file a finding about how it got there. If a credential ever reaches a commit object, say
+so loudly and file a blocker with `--needs patrik`: it has to be rotated, and deleting it in a
+later commit does not help because the object stays reachable.
+
 ---
 
 ## 4. One commit or one task. Never only prose.
