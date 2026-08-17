@@ -46,6 +46,8 @@ const VITEST = join(ROOT, 'node_modules', 'vitest', 'vitest.mjs');
  * matched against the failing output — the assertion text or the test title, so a red for
  * an unrelated reason is not counted as a pass.
  */
+const FLOOR_BLOCK = "  it('there are plans and entitlements to check at all', () => {\n    // THE FLOOR. Every commercial assertion below runs inside `for (const p of PLANS)`. Empty\n    // that array \u2014 a bad refactor, a filter that matches nothing, a data-loading change \u2014 and\n    // every loop body never executes and this entire file goes green while the pricing page\n    // has no plans on it. The assertions are real; the coverage was not guaranteed.\n    //\n    // Six recorded instances on this project of a scan silently covering nothing, two of them\n    // parsers that matched zero rules while every assertion passed over the empty result.\n    // Found by tests/coverage-floors.test.ts, which is the sweep two security audits named as\n    // the highest-value item left and neither carried out.\n    //\n    // Named plans rather than a bare count: a number picked to pass today drifts into\n    // meaninglessness, whereas these three are the product.\n    expect(PLANS.length, 'PLANS is empty \u2014 every loop below is vacuous').toBeGreaterThan(2);\n    for (const id of ['free', 'builder', 'founder']) {\n      expect(\n        PLANS.some((p) => p.id === id),\n        `the ${id} plan is gone from PLANS, so nothing below checks it`\n      ).toBe(true);\n      expect(ENTITLEMENTS[id as keyof typeof ENTITLEMENTS], `no entitlements for ${id}`).toBeDefined();\n    }\n  });\n\n";
+
 const SABOTAGES = [
   {
     name: 'shim-literal-anywhere',
@@ -285,6 +287,37 @@ const SABOTAGES = [
     occurrences: 1,
     run: 'tests/guard-cli-resolution.test.ts',
     expect: /does NOT execute|executed a file out of the working tree/,
+  },
+  {
+    name: 'plans-loop-with-no-floor',
+    why:
+      'the enumeration shape two security audits named as the highest-value sweep left and ' +
+      'neither performed: empty PLANS and every commercial assertion in plans.test.ts passes ' +
+      'over nothing, while the pricing page has no plans on it',
+    file: 'tests/plans.test.ts',
+    // Removes the WHOLE floor block. An earlier version of this entry deleted only the
+    // `.length` line and the control stayed green — correctly, because
+    // `expect(PLANS.some(...)).toBe(true)` also fails on an empty array and is itself a floor.
+    // The harness reported "STAYED GREEN — not a control" and it was the sabotage that was
+    // wrong, not the control. Exactly what asserting-the-sabotage-applied is for.
+    find: FLOOR_BLOCK,
+    replace: '',
+    occurrences: 1,
+    run: 'tests/coverage-floors.test.ts',
+    expect: /asserts it is not empty|no non-empty assertion/,
+  },
+  {
+    name: 'coverage-sweep-blind-to-a-strong-floor',
+    why:
+      'the sweep must recognise a closed-set assertion as a floor. Its first draft did not, ' +
+      'and reported a real and STRONGER guard as a violation — a control that teaches people ' +
+      'to write the worse version of the thing it demands',
+    file: 'tests/coverage-floors.test.ts',
+    find: '  return subject.test(src) || lengthAnywhere.test(src);',
+    replace: '  return lengthAnywhere.test(src);',
+    occurrences: 1,
+    run: 'tests/coverage-floors.test.ts',
+    expect: /asserts it is not empty|no non-empty assertion/,
   },
 ];
 

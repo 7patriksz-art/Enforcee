@@ -7,6 +7,29 @@ import { ENTITLEMENTS, PLANS, entitlementsFor, planById, yearlySaving } from '..
  * one that was never there, because nobody goes looking for it.
  */
 describe('plans: the wall', () => {
+  it('there are plans and entitlements to check at all', () => {
+    // THE FLOOR. Every commercial assertion below runs inside `for (const p of PLANS)`. Empty
+    // that array — a bad refactor, a filter that matches nothing, a data-loading change — and
+    // every loop body never executes and this entire file goes green while the pricing page
+    // has no plans on it. The assertions are real; the coverage was not guaranteed.
+    //
+    // Six recorded instances on this project of a scan silently covering nothing, two of them
+    // parsers that matched zero rules while every assertion passed over the empty result.
+    // Found by tests/coverage-floors.test.ts, which is the sweep two security audits named as
+    // the highest-value item left and neither carried out.
+    //
+    // Named plans rather than a bare count: a number picked to pass today drifts into
+    // meaninglessness, whereas these three are the product.
+    expect(PLANS.length, 'PLANS is empty — every loop below is vacuous').toBeGreaterThan(2);
+    for (const id of ['free', 'builder', 'founder']) {
+      expect(
+        PLANS.some((p) => p.id === id),
+        `the ${id} plan is gone from PLANS, so nothing below checks it`
+      ).toBe(true);
+      expect(ENTITLEMENTS[id as keyof typeof ENTITLEMENTS], `no entitlements for ${id}`).toBeDefined();
+    }
+  });
+
   it('free can audit and nothing else that costs us money', () => {
     const f = ENTITLEMENTS.free;
     expect(f.audit).toBe(true);
