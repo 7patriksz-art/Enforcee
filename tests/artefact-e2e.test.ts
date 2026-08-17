@@ -50,6 +50,10 @@ const ROOT = process.cwd();
 let DIST: string;
 let CLI: string;
 
+/** The tracked build artefact pack-cli rewrites, and its committed bytes. */
+const TRACKED_BUNDLE = join(process.cwd(), 'cli', 'dist', 'enforcee.mjs');
+let committedBundle: Buffer | null = null;
+
 let project: string;
 let guard: string;
 
@@ -65,6 +69,12 @@ beforeAll(() => {
   // Build the artefact exactly as the release does.
   // Build the release candidate with esbuild directly — never by spawning `npm`, which is a
   // .cmd shim on Windows that Node refuses to execFile (tests/portability.test.ts).
+  //
+  // pack-cli rebuilds `cli/dist/enforcee.mjs`, which is a TRACKED build artefact. CI has a
+  // step asserting that file is not stale, and it compares the working tree against the
+  // commit — so a test that rebuilds it turns the tree dirty and fails a check that has
+  // nothing to do with this test. Snapshot it and put it back.
+  committedBundle = readFileSync(TRACKED_BUNDLE);
   execFileSync(process.execPath, [join(ROOT, 'scripts', 'pack-cli.mjs')], { cwd: ROOT, stdio: 'ignore' });
   const source = join(ROOT, 'npm-dist');
   expect(existsSync(join(source, 'dist', 'enforcee.mjs')), 'pack-cli produced no artefact to test').toBe(true);
@@ -104,14 +114,20 @@ beforeAll(() => {
 afterAll(() => {
   if (project) rmSync(project, { recursive: true, force: true });
   if (DIST) rmSync(DIST, { recursive: true, force: true });
+  // Leave the working tree exactly as it was found.
+  if (committedBundle) writeFileSync(TRACKED_BUNDLE, committedBundle);
 });
 
 describe('the release candidate itself is never modified by this test', () => {
   it('npm-dist still carries the real licence public key', () => {
     // The control on the safeguard above. If a future edit patches npm-dist in place again,
     // this fails here rather than by shipping a forgeable package.
-    const shipped = readFileSync(join(ROOT, 'npm-dist', 'dist', 'enforcee.mjs'), 'utf8');
-    const real = readFileSync(join(ROOT, 'src', 'lib', 'licence-key.ts'), 'utf8').match(
+    // Normalised: a Windows checkout gives the TypeScript source CRLF endings while esbuild
+    // writes the bundle with LF, so a raw comparison fails on windows-latest only. Third
+    // instance of this exact class today; .gitattributes covers the guard, not src/.
+    const lf = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+    const shipped = lf(join(ROOT, 'npm-dist', 'dist', 'enforcee.mjs'));
+    const real = lf(join(ROOT, 'src', 'lib', 'licence-key.ts')).match(
       /-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/
     );
     expect(real, 'could not read the real public key from source').not.toBeNull();
