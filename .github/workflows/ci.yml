@@ -26,7 +26,21 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      # fetch-depth: 0, because two checks here are about this repository's HISTORY, not just
+      # its tip. `tests/secret-gate.test.ts` runs the credential gate over `HEAD~3..HEAD` the
+      # way push.sh runs it — the only assertion that exercises the gate end to end on real
+      # commits. With the default depth of 1 that range is not a revision, the gate exits 2
+      # ("could not read the commits it is supposed to scan"), and the test reported it as the
+      # commits tripping the gate. All three platforms stayed red for the three commits that
+      # introduced the gate, and no local run could reproduce it because a normal clone has
+      # history.
+      #
+      # The test now fails loudly on a shallow checkout naming this line, rather than being
+      # skipped: a control that quietly covers nothing in the one place it matters is the
+      # failure this project keeps paying for.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:

@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSync } from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { harvest } from './helpers/spawn';
@@ -151,9 +152,39 @@ describe('the gate stays silent on this repository as it actually is', () => {
   it('does not fire on the whole outgoing-commit range of this working tree', () => {
     // The end-to-end shape, run the way push.sh runs it. If this repo's real history trips
     // the gate, the gate is unusable regardless of how well it scores on fixtures.
+    //
+    // THE RANGE HAS TO EXIST BEFORE ITS CONTENTS MEAN ANYTHING. This asked for `HEAD~3..HEAD`
+    // unconditionally and kept main red on all three platforms for the three commits that
+    // introduced the gate: `actions/checkout` clones with `fetch-depth: 1`, so in CI `HEAD~3`
+    // is not a revision at all. The gate behaved correctly — exit 2, "could not read the
+    // commits it is supposed to scan", which is the fail-closed rule two tests below — and
+    // this assertion rendered it as "the last three commits of this repo trip the gate".
+    //
+    // A checker that could not run, reported as a credential found, is a false accusation
+    // manufactured by the test for the gate whose entire premise is that it never cries wolf.
+    // The local suite could not see it because a sandbox clone is full-depth, so `push.sh`
+    // ran 980 green tests and pushed onto a red main.
+    //
+    // So: establish the range first and name the shallow checkout as the cause when it is
+    // missing, and keep exit 2 distinct from exit 1 in the message. Failing loudly here is
+    // deliberate — CLAUDE.md, "never let a check silently cover nothing". Skipping when the
+    // history is absent would make this test pass in the one place it has never run.
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
+    const DEPTH = 3;
+    expect(
+      git('rev-parse', '--is-shallow-repository'),
+      'this checkout is shallow, so the gate cannot be run over real history here — the CI checkout needs fetch-depth: 0'
+    ).toBe('false');
+    expect(
+      Number(git('rev-list', '--count', 'HEAD')),
+      `fewer than ${DEPTH + 1} commits are reachable, so HEAD~${DEPTH} does not resolve`
+    ).toBeGreaterThan(DEPTH);
+
+    const range = `HEAD~${DEPTH}..HEAD`;
     const { code, out } = (() => {
       try {
-        const o = execFileSync(process.execPath, [GATE, 'HEAD~3..HEAD'], {
+        const o = execFileSync(process.execPath, [GATE, range], {
           cwd: ROOT,
           encoding: 'utf8',
           env: { ...process.env, PAT: '' },
@@ -164,7 +195,12 @@ describe('the gate stays silent on this repository as it actually is', () => {
         return { code: h.code ?? -1, out: h.output };
       }
     })();
-    expect(code, `the last three commits of this repo trip the gate:\n${out}`).toBe(0);
+    expect(
+      code,
+      code === 2
+        ? `the gate could not RUN over ${range}. This is not a credential and not a clean result:\n${out}`
+        : `the last ${DEPTH} commits of this repo trip the gate:\n${out}`
+    ).toBe(0);
     expect(out, 'the gate reported clean without saying how much it read').toMatch(/chars scanned/);
   });
 
@@ -230,11 +266,69 @@ describe('the gate is actually wired into the only path that pushes', () => {
   // this reason. That discipline had not been carried across to a check run by hand. A gate
   // that is present but not invoked is indistinguishable from no gate at all, so being
   // invoked is itself a property worth a test.
-  const pushSh = readFileSync(join(ROOT, 'scripts', 'push.sh'), 'utf8');
+  //
+  // READ IT AS CONTENT, NOT AS A CHECKOUT. These assertions search for literals containing
+  // `\n`, and git hands a Windows runner CRLF unless told otherwise — so `indexOf('\nfi\n')`
+  // returned -1 and "could not find the end of the SKIP_CHECKS branch" was reported on
+  // windows-latest while the branch was exactly where it should be. Second false accusation
+  // in this one file, and the one platform where it fires is the one no local run covers.
+  //
+  // Normalising here is the fix for the assertions. `.gitattributes` pins `*.sh` to LF as
+  // well, because a shell script checked out with CRLF does not merely fail a test, it fails
+  // to execute at all: `bad interpreter: /usr/bin/env bash^M`.
+  const readAsLf = (file: string) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  const PUSH_SH = join(ROOT, 'scripts', 'push.sh');
+  const pushSh = readAsLf(PUSH_SH);
+
+  /** The three positions every assertion below is about, so CRLF can be exercised through it. */
+  const positions = (src: string) => ({
+    skipBranch: src.indexOf('if [ "${SKIP_CHECKS:-}" = "1" ]'),
+    closingFi: src.indexOf('\nfi\n', src.indexOf('if [ "${SKIP_CHECKS:-}" = "1" ]')),
+    gateAt: src.search(/^\s*npm run --silent secret-gate/m),
+  });
 
   it('push.sh invokes the gate', () => {
     expect(pushSh, 'scripts/push.sh does not run the secret gate at all').toMatch(
       /^\s*npm run --silent secret-gate/m
+    );
+  });
+
+  it('reads push.sh as content, so a CRLF checkout cannot fake a missing gate', () => {
+    // The windows-latest failure, reproduced on EVERY platform: write push.sh's own bytes out
+    // with CRLF and read the copy back through the same helper the assertions use. A
+    // normalisation done inside the test instead would assert nothing — it would compare a
+    // string against itself.
+    const tmp = join(mkdtempSync(join(tmpdir(), 'enforcee-crlf-')), 'push.sh');
+    writeFileSync(tmp, pushSh.replace(/\n/g, '\r\n'), 'utf8');
+    // Assert the fixture is genuinely what a Windows checkout produces, or this control is
+    // scoring a sabotage that never happened — scripts/sabotage.mjs rule 1, applied in-test.
+    expect(readFileSync(tmp, 'utf8'), 'the CRLF fixture is not CRLF, so this proves nothing').toContain('\r\n');
+
+    const p = positions(readAsLf(tmp));
+    expect(p.closingFi, 'a CRLF checkout hides the end of the SKIP_CHECKS branch').toBeGreaterThan(p.skipBranch);
+    expect(p.gateAt, 'a CRLF checkout hides the gate invocation').toBeGreaterThan(p.closingFi);
+  });
+
+  it('.gitattributes pins shell scripts to LF', () => {
+    // Not a test-only concern: a CRLF `push.sh` cannot run.
+    const attrs = readAsLf(join(ROOT, '.gitattributes'));
+    expect(attrs, '*.sh is not pinned to LF, so a Windows checkout gets an unrunnable script').toMatch(
+      /^\*\.sh\s+text\s+eol=lf\s*$/m
+    );
+  });
+
+  it('CI checks out full history, so the end-to-end gate scan has commits to read', () => {
+    // The other half of the all-platforms red. The one assertion that runs the gate over real
+    // commits needs `HEAD~3` to resolve, and `actions/checkout` defaults to depth 1. That test
+    // now fails loudly rather than skipping when the checkout is shallow — this one names the
+    // line that has to stay, so deleting it is caught here rather than as a confusing gate
+    // failure in CI.
+    const ci = readAsLf(join(ROOT, '.github', 'workflows', 'ci.yml'));
+    expect(ci, 'ci.yml no longer runs the suite, so this control is pointed at nothing').toMatch(
+      /^\s*- run: npm test\s*$/m
+    );
+    expect(ci, 'the CI checkout is shallow again — the end-to-end gate scan cannot run').toMatch(
+      /uses: actions\/checkout@v\d+\s*\n\s*with:\s*\n\s*fetch-depth: 0/
     );
   });
 
@@ -250,9 +344,7 @@ describe('the gate is actually wired into the only path that pushes', () => {
     // SKIP_CHECKS exists for shipping past a slow or flaky test. It is never a reason to
     // publish a secret, and an escape hatch that also disables the safety check becomes the
     // default. The gate must sit outside that branch — after the `fi` that closes it.
-    const skipBranch = pushSh.indexOf('if [ "${SKIP_CHECKS:-}" = "1" ]');
-    const closingFi = pushSh.indexOf('\nfi\n', skipBranch);
-    const gateAt = pushSh.search(/^\s*npm run --silent secret-gate/m);
+    const { skipBranch, closingFi, gateAt } = positions(pushSh);
     expect(skipBranch, 'the SKIP_CHECKS branch is gone — re-read this rule').toBeGreaterThan(-1);
     expect(closingFi, 'could not find the end of the SKIP_CHECKS branch').toBeGreaterThan(skipBranch);
     expect(gateAt, 'the secret gate is inside the SKIP_CHECKS branch and can be skipped').toBeGreaterThan(

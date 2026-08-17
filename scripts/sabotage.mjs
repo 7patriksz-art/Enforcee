@@ -204,6 +204,36 @@ const SABOTAGES = [
     run: 'tests/secret-gate.test.ts',
     expect: /catches a realistically-shaped GitHub PAT/,
   },
+  {
+    name: 'crlf-blind-push-sh-read',
+    why:
+      'the 2026-08-17 windows-latest red: push.sh assertions search for literals containing ' +
+      "`\\n`, git checks the file out with CRLF on Windows, and the gate's own test reported " +
+      '"could not find the end of the SKIP_CHECKS branch" about a file that was correct. A ' +
+      'false accusation produced by the test for the check whose premise is that it never ' +
+      'cries wolf, on the one platform no local run covers',
+    file: 'tests/secret-gate.test.ts',
+    find: "const readAsLf = (file: string) => readFileSync(file, 'utf8').replace(/\\r\\n/g, '\\n');",
+    replace: "const readAsLf = (file: string) => readFileSync(file, 'utf8');",
+    occurrences: 1,
+    run: 'tests/secret-gate.test.ts',
+    expect: /a CRLF checkout hides the end of the SKIP_CHECKS branch|reads push.sh as content/,
+  },
+  {
+    name: 'shallow-ci-checkout',
+    why:
+      'the other half of that red, on all three platforms: actions/checkout defaults to ' +
+      'fetch-depth 1, so `HEAD~3..HEAD` is not a revision in CI, the gate exits 2 — correctly, ' +
+      'it could not read what it was asked to scan — and the test rendered that as the commits ' +
+      'tripping the gate. A full clone locally means push.sh runs 980 green tests over a ' +
+      'control that has never once executed where it matters',
+    file: '.github/workflows/ci.yml',
+    find: '      - uses: actions/checkout@v6\n        with:\n          fetch-depth: 0\n',
+    replace: '      - uses: actions/checkout@v6\n',
+    occurrences: 1,
+    run: 'tests/secret-gate.test.ts',
+    expect: /the CI checkout is shallow again|CI checks out full history/,
+  },
 ];
 
 const filter = process.argv[2];

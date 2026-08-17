@@ -1,0 +1,17 @@
+# Shell scripts are LF, everywhere, always.
+#
+# `scripts/push.sh` is the only path that pushes, and on 2026-08-17 windows-latest went red
+# with "could not find the end of the SKIP_CHECKS branch" — the branch was exactly where it
+# belonged, but git had checked the file out with CRLF and the assertion searched for a
+# literal containing `\n`. tests/secret-gate.test.ts now normalises, so that half is fixed
+# in the test.
+#
+# This line is the other half, and it is not about tests: a shell script checked out with
+# CRLF does not run at all. `#!/usr/bin/env bash\r` makes the kernel look for an interpreter
+# literally named `bash\r` and the shell reports `bad interpreter: ... ^M`. Anyone who clones
+# this repo on Windows and runs a script under WSL, git-bash or a container gets that, and
+# the error names the interpreter rather than the line endings.
+#
+# Deliberately narrow. A blanket `* text=auto eol=lf` would renormalise every tracked text
+# file on checkout, which is a much larger change to make while fixing a red build.
+*.sh text eol=lf
