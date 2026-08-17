@@ -68,6 +68,23 @@ else
 fi
 : "${PAT:?PAT is not set. Export it for this command only; never write it to a file.}"
 
+# ── NOTHING CARRYING A CREDENTIAL LEAVES THIS MACHINE ─────────────────────────
+#
+# From 2026-08-17 four scheduled jobs carry a real PAT so they can push their own work
+# instead of stranding it in a project doc. THIS REPOSITORY IS PUBLIC. Before that, a leaked
+# token was not reachable from a scheduled run because a scheduled run had no token; now an
+# autonomous job doing `git add -A` over a scratch file containing its own credential writes
+# a live push credential into a public repo, and the first thing that credential can do is
+# push.
+#
+# `src/lib/prevent/obstacles.ts` has redacted these shapes since 2026-08-16 — but only when
+# PRINTING a report. A display filter cannot stop a commit, and nothing in this path looked.
+#
+# DELIBERATELY OUTSIDE THE SKIP_CHECKS BRANCH. SKIP_CHECKS=1 is for shipping while a slow
+# test is flaky; it is never a reason to publish a secret. An escape hatch that also disables
+# the safety check is how escape hatches become the default.
+npm run --silent secret-gate
+
 REPO="$(git config --get remote.origin.url | sed -E 's#https://[^@]*@#https://#')"
 HOST_PATH="${REPO#https://}"
 

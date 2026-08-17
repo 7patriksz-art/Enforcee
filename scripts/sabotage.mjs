@@ -181,6 +181,29 @@ const SABOTAGES = [
     run: 'tests/doc-claims.test.ts',
     expect: /does not manufacture a claim out of an argument|was read as a subcommand named CLAUDE/,
   },
+  {
+    name: 'unwired-secret-gate',
+    why:
+      'a gate that exists but is not invoked is indistinguishable from no gate. This happened ' +
+      'for real on 2026-08-17: a manual test stashed the uncommitted gate away, the push ran ' +
+      'unguarded, and a token-shaped string reached the public remote',
+    file: 'scripts/push.sh',
+    find: 'npm run --silent secret-gate',
+    replace: '# npm run --silent secret-gate',
+    occurrences: 1,
+    run: 'tests/secret-gate.test.ts',
+    expect: /push.sh invokes the gate|does not run the secret gate/,
+  },
+  {
+    name: 'secret-gate-floor-dropped',
+    why: 'lowering the length floor is how the gate stops distinguishing a real token from a fixture, in either direction',
+    file: 'src/lib/secret-gate.ts',
+    find: 're: /github_pat_[A-Za-z0-9_]{60,}/g,',
+    replace: 're: /github_pat_[A-Za-z0-9_]{200,}/g,',
+    occurrences: 1,
+    run: 'tests/secret-gate.test.ts',
+    expect: /catches a realistically-shaped GitHub PAT/,
+  },
 ];
 
 const filter = process.argv[2];
