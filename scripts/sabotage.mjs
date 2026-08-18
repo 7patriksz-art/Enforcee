@@ -795,6 +795,85 @@ const SABOTAGES = [
     run: 'tests/invariants.test.ts',
     expect: /is computed, so its value cannot be checked here|exits non-zero in more than one place|a non-zero exit appeared outside the close gate/,
   },
+
+  // -- the status line: the one row a user sees on every single turn ---------------
+  {
+    name: 'statusline-hides-that-enforcement-is-off',
+    why:
+      'a licence notice at session start scrolls away in ninety seconds; this row does not. ' +
+      'A line that looks the same whether or not it is stopping anything implies cover that ' +
+      'is not there, which is worse than showing nothing at all',
+    file: 'src/lib/trace/statusline.ts',
+    find: '  if (!p.enforcing) {',
+    replace: '  if (false && !p.enforcing) {',
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /auditing only|it showed activity counts while enforcing nothing/,
+  },
+  {
+    name: 'statusline-renders-an-absent-install-as-a-quiet-success',
+    why: 'a configured status line over no policy must not look like a well-behaved project',
+    file: 'src/lib/trace/statusline.ts',
+    find: "  if (!p.installed) return `${mark} ${c.grey('\u00b7 not installed in this project')}`;",
+    replace: '  if (!p.installed) p.installed = true;',
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /not installed in this project|an absent install rendered as a clean run/,
+  },
+  {
+    name: 'statusline-editorialises',
+    why: 'there is no ledger row that would make "protected" true, so the row cannot say it',
+    file: 'src/lib/trace/statusline.ts',
+    find: "  const right = acts.length ? acts.join(c.grey(' \u00b7 ')) : c.grey('watching');",
+    replace: "  const right = acts.length ? acts.join(c.grey(' \u00b7 ')) : c.green('all safe');",
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /the status line editorialises/,
+  },
+  {
+    name: 'statusline-reads-the-whole-ledger-on-every-turn',
+    why:
+      'the ledger is append-only and shared by every session in the project. Reading all of ' +
+      'it on every assistant message is a cost the user pays for our summary',
+    file: 'src/lib/trace/summary.ts',
+    find: '  if (text.length <= maxBytes) return text;',
+    replace: '  if (true) return text;',
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /the whole file was read/,
+  },
+  {
+    name: 'install-stops-wiring-the-status-line',
+    why:
+      'left out of the install once already, which made the trace something you had to go ' +
+      'and look for. A tool nobody can see working is a tool nobody renews',
+    file: 'src/lib/enforce/policy.ts',
+    find: "    statusLine: { type: 'command', command: `${cliPath} statusline`, padding: 0 },",
+    replace: '',
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /the install no longer wires the status line|writes a statusLine that calls this command/,
+  },
+  {
+    name: 'statusline-blanks-the-row-on-an-unreadable-file',
+    why:
+      'status is what you look at WHEN something is wrong, so it must not be the next thing ' +
+      'to break. Removing the per-read guard sends an unreadable ledger to the outer catch, ' +
+      'which prints NOTHING - the row silently vanishes and the user reads that as "not ' +
+      'installed". Targets the built bundle, because that is what the test runs.\n     *\n' +
+      '     * NOTE: the outer try/catch itself has no sabotage. It is a backstop for the ' +
+      'unforeseen, and naming a foreseen input that trips it would make it foreseen. Saying ' +
+      'so beats claiming a control that could not fail.',
+    // Targets the BUILT bundle, because that is what the test runs. Sabotaging cli/index.ts
+    // changed nothing the test could see and the harness reported it as no control at all -
+    // the same staleness trap that shipped a wrong cli/dist twice on this project.
+    file: 'cli/dist/enforcee.mjs',
+    find: "          return readFileSync3(join6(dir, f), \"utf8\");\n        } catch {\n          return null;\n        }",
+    replace: "          return readFileSync3(join6(dir, f), \"utf8\");\n        } finally {\n        }",
+    occurrences: 1,
+    run: 'tests/statusline.test.ts',
+    expect: /the row went blank instead of reporting the install|unreadable ledger made the status line exit non-zero/,
+  },
 ];
 
 const filter = process.argv[2];

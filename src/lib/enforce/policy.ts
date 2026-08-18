@@ -363,7 +363,7 @@ export function compilePolicy(
 }
 
 /** The settings.json fragment that wires the guard into a project. */
-export function hookSettings(guardPath = '.enforcee/guard.mjs') {
+export function hookSettings(guardPath = '.enforcee/guard.mjs', cliPath = 'npx enforcee') {
   const cmd = `node ${guardPath}`;
   return {
     hooks: {
@@ -372,5 +372,17 @@ export function hookSettings(guardPath = '.enforcee/guard.mjs') {
       SessionStart: [{ matcher: 'startup|resume|compact|fork', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
       Stop: [{ matcher: '*', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
     },
+    /**
+     * THE ONE PERSISTENT SURFACE.
+     *
+     * Hooks speak at the moment they fire and then scroll away. Claude Code redraws the
+     * status line under every turn, and its own documentation says plugins cannot create
+     * panels, sidebars or always-visible widgets — so this row is the entire answer to
+     * "where does the user see that this thing exists".
+     *
+     * It is included in the install because leaving it out made the trace something you had
+     * to go and look for. A tool nobody can see working is a tool nobody renews.
+     */
+    statusLine: { type: 'command', command: `${cliPath} statusline`, padding: 0 },
   };
 }

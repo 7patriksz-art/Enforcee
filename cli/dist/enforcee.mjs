@@ -12015,6 +12015,12 @@ var EMPTY2 = {
   blockedBy: [],
   empty: true
 };
+function tailOfLedger(text, maxBytes = 256 * 1024) {
+  if (text.length <= maxBytes) return text;
+  const cut = text.slice(text.length - maxBytes);
+  const nl = cut.indexOf("\n");
+  return nl === -1 ? "" : cut.slice(nl + 1);
+}
 function readLedger(text) {
   const rows = [];
   for (const line of text.split("\n")) {
@@ -12133,9 +12139,49 @@ function renderTraceFile(t, at) {
   return lines.join("\n") + "\n";
 }
 
+// src/lib/trace/statusline.ts
+var ESC2 = "\x1B[";
+var C = {
+  /** The mark. One colour, used once, so the eye finds it and then moves on. */
+  brand: (s) => `${ESC2}38;5;141m${s}${ESC2}0m`,
+  red: (s) => `${ESC2}31m${s}${ESC2}0m`,
+  amber: (s) => `${ESC2}33m${s}${ESC2}0m`,
+  green: (s) => `${ESC2}32m${s}${ESC2}0m`,
+  grey: (s) => `${ESC2}90m${s}${ESC2}0m`
+};
+var PLAIN2 = {
+  brand: (s) => s,
+  red: (s) => s,
+  amber: (s) => s,
+  green: (s) => s,
+  grey: (s) => s
+};
+var MARK = "\u2B22";
+function renderStatusLine(p, colour = true) {
+  const c = colour ? C : PLAIN2;
+  const mark = c.brand(`${MARK} enforcee`);
+  if (!p.installed) return `${mark} ${c.grey("\xB7 not installed in this project")}`;
+  const known = [`${p.rules} rule${p.rules === 1 ? "" : "s"}`];
+  if (p.learned) known.push(`${p.learned} learned`);
+  if (!p.enforcing) {
+    return `${mark} ${c.grey(`\xB7 ${known.join(" \xB7 ")} \xB7`)} ${c.amber("auditing only")}`;
+  }
+  const t = p.trace;
+  const acts = [];
+  if (t.blocked) acts.push(c.red(`${t.blocked} blocked`));
+  if (t.unmet) acts.push(c.red(`${t.unmet} unmet`));
+  if (t.refuted) acts.push(c.red(`${t.refuted} refuted`));
+  if (t.warned) acts.push(c.amber(`${t.warned} warned`));
+  if (t.unsettled) acts.push(c.amber(`${t.unsettled} unsettled`));
+  if (t.verified) acts.push(c.green(`${t.verified} verified`));
+  if (t.allowed) acts.push(c.grey(`${t.allowed} allowed`));
+  const right = acts.length ? acts.join(c.grey(" \xB7 ")) : c.grey("watching");
+  return `${mark} ${c.grey(`\xB7 ${known.join(" \xB7 ")} \xB7`)} ${right}`;
+}
+
 // cli/index.ts
 var VERSION2 = true ? "0.9.1" : "0.0.0-dev";
-var C = {
+var C2 = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
   bold: (s) => `\x1B[1m${s}\x1B[0m`,
   green: (s) => `\x1B[32m${s}\x1B[0m`,
@@ -12144,44 +12190,45 @@ var C = {
   grey: (s) => `\x1B[90m${s}\x1B[0m`
 };
 var VERDICT = {
-  FOLLOWED: C.green,
-  VIOLATED: C.red,
-  UNVERIFIABLE: C.yellow,
-  NOT_APPLICABLE: C.grey
+  FOLLOWED: C2.green,
+  VIOLATED: C2.red,
+  UNVERIFIABLE: C2.yellow,
+  NOT_APPLICABLE: C2.grey
 };
 function help() {
   console.log(`
-${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually follow your rules?")}
+${C2.bold("enforcee")} ${C2.dim(VERSION2)}  ${C2.dim("\u2014 did your AI actually follow your rules?")}
 
-  ${C.bold("enforcee audit")} <rules-file> <output-file>   audit an output against a ruleset
-  ${C.bold("enforcee brief")} <prompt-file>               read the request: what is asked, what it needs, how we will know
-  ${C.bold("enforcee close")}                             run the criteria this run committed to before it started
-  ${C.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
-  ${C.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
-  ${C.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
-  ${C.bold("enforcee learn")} <conversation-file> [rules]   propose rules from what you already said
-  ${C.bold("enforcee learned")}                             what has been learned, and what you decided
-  ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
-  ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
-  ${C.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
-  ${C.bold("enforcee sign")} <receipt.json>                 sign a receipt you can hand to a client ${C.dim("(Founder)")}
-  ${C.bold("enforcee check")} <signed.json> --key <pub>      check somebody's signed receipt ${C.dim("(free, offline)")}
-  ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
-  ${C.bold("enforcee licence set")} <key> [--project]        install a licence (machine-wide, or this repo)
-  ${C.bold("enforcee status")}                              is it installed, and what has it actually done?
-  ${C.bold("enforcee trace")}                               the one-line summary of what it did, from the ledger
-  ${C.bold("enforcee licence")}                             show the licence this machine is using
+  ${C2.bold("enforcee audit")} <rules-file> <output-file>   audit an output against a ruleset
+  ${C2.bold("enforcee brief")} <prompt-file>               read the request: what is asked, what it needs, how we will know
+  ${C2.bold("enforcee close")}                             run the criteria this run committed to before it started
+  ${C2.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
+  ${C2.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
+  ${C2.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
+  ${C2.bold("enforcee learn")} <conversation-file> [rules]   propose rules from what you already said
+  ${C2.bold("enforcee learned")}                             what has been learned, and what you decided
+  ${C2.bold("enforcee accept")}|${C2.bold("decline")} <id>              decide on a learned preference
+  ${C2.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
+  ${C2.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
+  ${C2.bold("enforcee sign")} <receipt.json>                 sign a receipt you can hand to a client ${C2.dim("(Founder)")}
+  ${C2.bold("enforcee check")} <signed.json> --key <pub>      check somebody's signed receipt ${C2.dim("(free, offline)")}
+  ${C2.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C2.dim("(licensed)")}
+  ${C2.bold("enforcee licence set")} <key> [--project]        install a licence (machine-wide, or this repo)
+  ${C2.bold("enforcee status")}                              is it installed, and what has it actually done?
+  ${C2.bold("enforcee trace")}                               the one-line summary of what it did, from the ledger
+  ${C2.bold("enforcee statusline")}                          the live row Claude Code draws under every turn
+  ${C2.bold("enforcee licence")}                             show the licence this machine is using
 
-  ${C.dim("--judge")}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
-  ${C.dim("--json")}         emit the receipt as JSON instead of a table
-  ${C.dim("--quiet")}        exit code only
+  ${C2.dim("--judge")}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
+  ${C2.dim("--json")}         emit the receipt as JSON instead of a table
+  ${C2.dim("--quiet")}        exit code only
 
 Exits non-zero when a rule is VIOLATED, or when preflight finds a missing precondition,
 so both work as a CI gate.
 
-${C.dim("audit, health, learn, session and check need no account, no key and no network.")}
-${C.dim("check exits 0 valid \xB7 1 refuted \xB7 4 unverifiable \u2014 a thing it could not check is never a failure.")}
-${C.dim("guard needs a licence, checked offline against a key compiled into this binary.")}
+${C2.dim("audit, health, learn, session and check need no account, no key and no network.")}
+${C2.dim("check exits 0 valid \xB7 1 refuted \xB7 4 unverifiable \u2014 a thing it could not check is never a failure.")}
+${C2.dim("guard needs a licence, checked offline against a key compiled into this binary.")}
 `);
 }
 function looksLikeTranscript(raw) {
@@ -12228,11 +12275,11 @@ function positionalsOf(argv) {
 }
 function read(path2) {
   if (!path2) {
-    console.error(C.red("Missing a file argument. Run `enforcee` with no arguments to see usage."));
+    console.error(C2.red("Missing a file argument. Run `enforcee` with no arguments to see usage."));
     process.exit(2);
   }
   if (!existsSync5(path2)) {
-    console.error(C.red(`Not found: ${path2}`));
+    console.error(C2.red(`Not found: ${path2}`));
     process.exit(2);
   }
   return readFileSync3(path2, "utf8");
@@ -12263,18 +12310,18 @@ async function main() {
       console.log("");
       for (const r of receipt.results) {
         const rule = byId.get(r.ruleId);
-        const badge = r.method === "deterministic" ? C.dim("proof") : r.method === "judged" ? C.dim("judge") : C.dim("   \u2014 ");
+        const badge = r.method === "deterministic" ? C2.dim("proof") : r.method === "judged" ? C2.dim("judge") : C2.dim("   \u2014 ");
         console.log(
           `  ${VERDICT[r.verdict](r.verdict.padEnd(15))} ${badge}  ${rule?.text.slice(0, 78) ?? r.ruleId}`
         );
-        if (r.evidence[0]) console.log(C.grey(`                        ${JSON.stringify(r.evidence[0].quote.slice(0, 64))}`));
+        if (r.evidence[0]) console.log(C2.grey(`                        ${JSON.stringify(r.evidence[0].quote.slice(0, 64))}`));
       }
       const s = receipt.summary;
       console.log("");
       console.log(
-        `  ${C.bold(`${Math.round(s.coverage * 100)}% coverage`)}  \xB7  ${s.violated} violated  \xB7  ${s.unverifiable} unverifiable  \xB7  ${Math.round(s.deterministicShare * 100)}% proven by code`
+        `  ${C2.bold(`${Math.round(s.coverage * 100)}% coverage`)}  \xB7  ${s.violated} violated  \xB7  ${s.unverifiable} unverifiable  \xB7  ${Math.round(s.deterministicShare * 100)}% proven by code`
       );
-      console.log(C.grey(`  receipt ${receipt.digest.slice(0, 16)}  \xB7  cost $${totalUsd2.toFixed(5)}`));
+      console.log(C2.grey(`  receipt ${receipt.digest.slice(0, 16)}  \xB7  cost $${totalUsd2.toFixed(5)}`));
       console.log("");
     }
     process.exit(receipt.summary.violated > 0 ? 1 : 0);
@@ -12283,27 +12330,27 @@ async function main() {
     const bi = args.indexOf("--brief");
     const briefPath = bi > -1 ? args[bi + 1] : join6(".enforcee", "brief.json");
     if (!existsSync5(briefPath)) {
-      console.error(C.red(`no brief at ${briefPath}`));
-      console.error(C.grey("  run `enforcee brief <prompt-file>` first \u2014 a run with no contract cannot be closed"));
+      console.error(C2.red(`no brief at ${briefPath}`));
+      console.error(C2.grey("  run `enforcee brief <prompt-file>` first \u2014 a run with no contract cannot be closed"));
       process.exit(2);
     }
     const brief = JSON.parse(read(briefPath));
     const report = close(brief);
     console.log("");
-    console.log(`  ${C.bold("Closing")} ${C.grey(brief.id)}`);
+    console.log(`  ${C2.bold("Closing")} ${C2.grey(brief.id)}`);
     console.log("");
     for (const r of report.results) {
-      const tag = r.outcome === "PASS" ? C.green("PASS   ") : r.outcome === "FAIL" ? C.red("FAIL   ") : C.yellow("PENDING");
+      const tag = r.outcome === "PASS" ? C2.green("PASS   ") : r.outcome === "FAIL" ? C2.red("FAIL   ") : C2.yellow("PENDING");
       console.log(`  ${tag} ${r.requirement.slice(0, 74)}`);
-      if (r.acceptance.run) console.log(C.grey(`          ${r.acceptance.run}`));
-      if (r.outcome !== "PASS") console.log(C.grey(`          ${r.detail.split("\n").slice(-3).join(" ").slice(0, 150)}`));
+      if (r.acceptance.run) console.log(C2.grey(`          ${r.acceptance.run}`));
+      if (r.outcome !== "PASS") console.log(C2.grey(`          ${r.detail.split("\n").slice(-3).join(" ").slice(0, 150)}`));
     }
     console.log("");
-    console.log(report.green ? `  ${C.green(C.bold(report.summary))}` : `  ${C.red(C.bold(report.summary))}`);
+    console.log(report.green ? `  ${C2.green(C2.bold(report.summary))}` : `  ${C2.red(C2.bold(report.summary))}`);
     if (!report.green) {
       console.log("");
-      console.log(C.grey("  Not green. Everything above that is not PASS is the work list \u2014 a pending"));
-      console.log(C.grey("  criterion is a check nobody wrote, which is not the same as a thing that works."));
+      console.log(C2.grey("  Not green. Everything above that is not PASS is the work list \u2014 a pending"));
+      console.log(C2.grey("  criterion is a check nobody wrote, which is not the same as a thing that works."));
     }
     console.log("");
     process.exit(report.green ? 0 : 1);
@@ -12311,8 +12358,8 @@ async function main() {
   if (cmd === "brief") {
     const [, promptPath] = args;
     if (!promptPath) {
-      console.error(C.red("usage: enforcee brief <prompt-file> [--rules <ruleset>]"));
-      console.error(C.grey("       reads the request, probes what it will need, and writes .enforcee/brief.json"));
+      console.error(C2.red("usage: enforcee brief <prompt-file> [--rules <ruleset>]"));
+      console.error(C2.grey("       reads the request, probes what it will need, and writes .enforcee/brief.json"));
       process.exit(2);
     }
     const prompt = read(promptPath);
@@ -12326,45 +12373,45 @@ async function main() {
       action: `export ${r.precondition.target}=<value> before this run, or say it is not needed`
     }));
     console.log("");
-    console.log(`  ${C.bold("Brief")} ${C.grey(brief.id)}  ${C.grey(rulesPath ? `rules: ${rulesPath}` : "no ruleset found")}`);
+    console.log(`  ${C2.bold("Brief")} ${C2.grey(brief.id)}  ${C2.grey(rulesPath ? `rules: ${rulesPath}` : "no ruleset found")}`);
     console.log("");
     const byKind = (k) => brief.requirements.filter((r) => r.kind === k);
-    console.log(`  ${C.bold(String(brief.requirements.length))} thing${brief.requirements.length === 1 ? "" : "s"} asked for` + C.grey(`  \u2014 ${byKind("do").length} to do, ${byKind("constraint").length} constraint(s), ${byKind("question").length} question(s)`));
+    console.log(`  ${C2.bold(String(brief.requirements.length))} thing${brief.requirements.length === 1 ? "" : "s"} asked for` + C2.grey(`  \u2014 ${byKind("do").length} to do, ${byKind("constraint").length} constraint(s), ${byKind("question").length} question(s)`));
     for (const r of brief.requirements) {
-      const tag = r.kind === "constraint" ? C.yellow("never ") : r.kind === "question" ? C.grey("ask   ") : C.grey("do    ");
+      const tag = r.kind === "constraint" ? C2.yellow("never ") : r.kind === "question" ? C2.grey("ask   ") : C2.grey("do    ");
       console.log(`    ${tag} ${r.text.slice(0, 92)}`);
     }
     console.log("");
     if (!brief.preconditions.length) {
-      console.log(C.grey("  The prompt names no tool, key or file, so there is nothing to check before starting."));
+      console.log(C2.grey("  The prompt names no tool, key or file, so there is nothing to check before starting."));
     } else {
-      console.log(`  ${C.bold("Needs")}`);
-      for (const r of report.met) console.log(`    ${C.green("ok    ")} ${r.precondition.target}  ${C.grey(r.evidence)}`);
-      for (const r of report.missing) console.log(`    ${C.red("MISSING")} ${r.precondition.target}  ${C.grey(r.detail)}`);
+      console.log(`  ${C2.bold("Needs")}`);
+      for (const r of report.met) console.log(`    ${C2.green("ok    ")} ${r.precondition.target}  ${C2.grey(r.evidence)}`);
+      for (const r of report.missing) console.log(`    ${C2.red("MISSING")} ${r.precondition.target}  ${C2.grey(r.detail)}`);
     }
     const pending = brief.acceptance.filter((a) => !a.run);
     console.log("");
-    console.log(`  ${C.bold("How we will know it worked")}`);
+    console.log(`  ${C2.bold("How we will know it worked")}`);
     for (const a of brief.acceptance) {
       const req = brief.requirements.find((r) => r.id === a.for);
-      if (a.run) console.log(`    ${C.green("check ")} ${C.bold(a.run)}  ${C.grey("\u2192 " + req.text.slice(0, 60))}`);
-      else console.log(`    ${C.yellow("PENDING")} ${C.grey("no check yet \u2192 " + req.text.slice(0, 60))}`);
+      if (a.run) console.log(`    ${C2.green("check ")} ${C2.bold(a.run)}  ${C2.grey("\u2192 " + req.text.slice(0, 60))}`);
+      else console.log(`    ${C2.yellow("PENDING")} ${C2.grey("no check yet \u2192 " + req.text.slice(0, 60))}`);
     }
     if (pending.length) {
       console.log("");
-      console.log(C.grey(`  ${pending.length} criteri${pending.length === 1 ? "on has" : "a have"} no command yet. Write one into .enforcee/brief.json`));
-      console.log(C.grey("  before starting \u2014 a check invented afterwards gets chosen to flatter the result."));
+      console.log(C2.grey(`  ${pending.length} criteri${pending.length === 1 ? "on has" : "a have"} no command yet. Write one into .enforcee/brief.json`));
+      console.log(C2.grey("  before starting \u2014 a check invented afterwards gets chosen to flatter the result."));
     }
     mkdirSync3(".enforcee", { recursive: true });
     writeFileSync3(join6(".enforcee", "brief.json"), JSON.stringify(brief, null, 2) + "\n");
     console.log("");
-    console.log(C.grey(`  Wrote .enforcee/brief.json`));
+    console.log(C2.grey(`  Wrote .enforcee/brief.json`));
     if (brief.blockers.length) {
       console.log("");
-      console.log(`  ${C.red(C.bold("Blocked \u2014 these need you, and this is all of them:"))}`);
+      console.log(`  ${C2.red(C2.bold("Blocked \u2014 these need you, and this is all of them:"))}`);
       for (const b of brief.blockers) {
-        console.log(`    \xB7 ${C.bold(b.target)} \u2014 ${b.why}`);
-        console.log(`      ${C.grey(b.action)}`);
+        console.log(`    \xB7 ${C2.bold(b.target)} \u2014 ${b.why}`);
+        console.log(`      ${C2.grey(b.action)}`);
       }
       console.log("");
       process.exit(3);
@@ -12375,7 +12422,7 @@ async function main() {
   if (cmd === "preflight") {
     const [, rulesPath] = args;
     if (!rulesPath) {
-      console.error(C.red("usage: enforcee preflight <rules-file>"));
+      console.error(C2.red("usage: enforcee preflight <rules-file>"));
       process.exit(2);
     }
     const { rules } = parseRuleset(read(rulesPath), rulesPath);
@@ -12384,28 +12431,28 @@ async function main() {
     const actions = actionShaped(rules);
     console.log("");
     if (!inferred.length) {
-      console.log(C.grey("  Nothing in this ruleset names a tool, file or variable it depends on."));
-      console.log(C.grey("  That is a fine answer \u2014 it means there is nothing to check before you start."));
+      console.log(C2.grey("  Nothing in this ruleset names a tool, file or variable it depends on."));
+      console.log(C2.grey("  That is a fine answer \u2014 it means there is nothing to check before you start."));
     }
     for (const r of report.met) {
-      console.log(`  ${C.green("ok    ")} ${r.precondition.target}  ${C.grey(r.evidence)}`);
+      console.log(`  ${C2.green("ok    ")} ${r.precondition.target}  ${C2.grey(r.evidence)}`);
     }
     for (const r of report.missing) {
-      console.log(`  ${C.red("MISSING")} ${r.precondition.target}  ${C.grey(r.detail)}`);
-      console.log(`          ${C.grey(r.precondition.why)}`);
+      console.log(`  ${C2.red("MISSING")} ${r.precondition.target}  ${C2.grey(r.detail)}`);
+      console.log(`          ${C2.grey(r.precondition.why)}`);
     }
     if (inferred.length) {
       console.log("");
-      console.log(report.ready ? `  ${C.bold(report.summary)}` : `  ${C.red(C.bold(report.summary))}`);
+      console.log(report.ready ? `  ${C2.bold(report.summary)}` : `  ${C2.red(C2.bold(report.summary))}`);
     }
     if (actions.length) {
       console.log("");
-      console.log(`  ${C.bold(String(actions.length))} rule${actions.length === 1 ? "" : "s"} ask whether an action happened.`);
-      console.log(C.grey("  Auditing an output cannot settle those \u2014 no tool can read a text answer and"));
-      console.log(C.grey("  learn whether an email was sent or an approval was obtained. Listed so they are"));
-      console.log(C.grey("  not quietly counted as passing:"));
-      for (const a of actions.slice(0, 5)) console.log(C.grey(`    \xB7 ${a.text.slice(0, 88)}`));
-      if (actions.length > 5) console.log(C.grey(`    \xB7 \u2026and ${actions.length - 5} more`));
+      console.log(`  ${C2.bold(String(actions.length))} rule${actions.length === 1 ? "" : "s"} ask whether an action happened.`);
+      console.log(C2.grey("  Auditing an output cannot settle those \u2014 no tool can read a text answer and"));
+      console.log(C2.grey("  learn whether an email was sent or an approval was obtained. Listed so they are"));
+      console.log(C2.grey("  not quietly counted as passing:"));
+      for (const a of actions.slice(0, 5)) console.log(C2.grey(`    \xB7 ${a.text.slice(0, 88)}`));
+      if (actions.length > 5) console.log(C2.grey(`    \xB7 \u2026and ${actions.length - 5} more`));
     }
     console.log("");
     process.exit(report.ready ? 0 : 1);
@@ -12413,22 +12460,22 @@ async function main() {
   if (cmd === "verify") {
     const [, claimsPath, transcriptPath] = args;
     if (!claimsPath) {
-      console.error(C.red("usage: enforcee verify <output-file> [transcript.jsonl]"));
+      console.error(C2.red("usage: enforcee verify <output-file> [transcript.jsonl]"));
       process.exit(2);
     }
     const session = transcriptPath ? parseTranscript(read(transcriptPath)) : void 0;
     const report = checkClaims(read(claimsPath), { cwd: process.cwd(), session });
     console.log("");
     for (const c of report.checked) {
-      const tag = c.verdict === "CONFIRMED" ? C.green("CONFIRMED  ") : c.verdict === "REFUTED" ? C.red("REFUTED    ") : C.yellow("UNCHECKABLE");
+      const tag = c.verdict === "CONFIRMED" ? C2.green("CONFIRMED  ") : c.verdict === "REFUTED" ? C2.red("REFUTED    ") : C2.yellow("UNCHECKABLE");
       console.log(`  ${tag} ${c.reason}`);
-      console.log(C.grey(`              "${c.quote.slice(0, 96)}"`));
-      console.log(C.grey(`              ${c.evidence}`));
+      console.log(C2.grey(`              "${c.quote.slice(0, 96)}"`));
+      console.log(C2.grey(`              ${c.evidence}`));
     }
     console.log("");
-    console.log(report.refuted ? `  ${C.red(C.bold(report.summary))}` : `  ${C.bold(report.summary)}`);
+    console.log(report.refuted ? `  ${C2.red(C2.bold(report.summary))}` : `  ${C2.bold(report.summary)}`);
     if (!transcriptPath) {
-      console.log(C.grey("  Pass a transcript to also check claims about tests and commits."));
+      console.log(C2.grey("  Pass a transcript to also check claims about tests and commits."));
     }
     console.log("");
     process.exit(report.refuted > 0 ? 1 : 0);
@@ -12438,9 +12485,9 @@ async function main() {
     const { receipt } = await runAudit({ ruleset, output: " ", deterministicOnly: true });
     if (json) return console.log(JSON.stringify(receipt.health, null, 2));
     console.log("");
-    if (!receipt.health.length) console.log(C.green("  No structural problems found in this ruleset."));
+    if (!receipt.health.length) console.log(C2.green("  No structural problems found in this ruleset."));
     for (const h of receipt.health) {
-      const tint = h.severity === "error" ? C.red : h.severity === "warn" ? C.yellow : C.grey;
+      const tint = h.severity === "error" ? C2.red : h.severity === "warn" ? C2.yellow : C2.grey;
       console.log(`  ${tint(h.code.replace("_", " ").padEnd(16))} ${h.message}`);
     }
     console.log("");
@@ -12448,7 +12495,7 @@ async function main() {
   }
   if (cmd === "learn") {
     if (!args[1]) {
-      console.error(C.red("usage: enforcee learn <file>"));
+      console.error(C2.red("usage: enforcee learn <file>"));
       process.exit(2);
     }
     const raw = read(args[1]);
@@ -12456,12 +12503,12 @@ async function main() {
     const text = fromTranscript ? userTurnsFromTranscript(parseJsonl(raw)) : raw;
     if (fromTranscript) {
       if (text.length === 0) {
-        console.error(C.red("  That transcript contains no human turns this build can read."));
-        console.error(C.grey("  Nothing was analysed \u2014 which is not the same as finding nothing."));
+        console.error(C2.red("  That transcript contains no human turns this build can read."));
+        console.error(C2.grey("  Nothing was analysed \u2014 which is not the same as finding nothing."));
         process.exit(2);
       }
       const pct = (text.length / raw.length * 100).toFixed(1);
-      console.log(C.grey(`  transcript: your turns only \u2014 ${text.length} of ${raw.length} characters (${pct}%)
+      console.log(C2.grey(`  transcript: your turns only \u2014 ${text.length} of ${raw.length} characters (${pct}%)
 `));
     }
     const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
@@ -12494,38 +12541,38 @@ async function main() {
     const held = proposals.filter((p) => p.disposition.kind === "new" && p.mentions < 2);
     console.log("");
     for (const p of conflicts) {
-      console.log(`  ${C.red("NEEDS YOU")} ${C.bold(p.candidate.rule)}`);
-      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
+      console.log(`  ${C2.red("NEEDS YOU")} ${C2.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C2.grey(`    ${line.trim()}`));
       console.log("");
     }
     for (const p of review) {
-      console.log(`  ${C.yellow("OVERLAPS ")} ${C.bold(p.candidate.rule)}`);
-      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C.grey(`    ${line.trim()}`));
+      console.log(`  ${C2.yellow("OVERLAPS ")} ${C2.bold(p.candidate.rule)}`);
+      for (const line of p.message.match(/.{1,86}(\s|$)/g) ?? []) console.log(C2.grey(`    ${line.trim()}`));
       console.log("");
     }
     for (const p of fresh) {
       const check = selfCheckable(p.candidate);
-      console.log(`  ${check.ok ? C.green("READY    ") : C.yellow("WEAK     ")} ${C.bold(p.candidate.rule)}`);
-      console.log(C.grey(`    heard ${p.mentions}\xD7 \xB7 ${check.why}`));
-      console.log(C.grey(`    "${p.candidate.quote.replace(/\s+/g, " ").slice(0, 84)}"`));
-      console.log(C.grey(`    accept with: enforcee accept ${p.candidate.id.slice(0, 8)}`));
+      console.log(`  ${check.ok ? C2.green("READY    ") : C2.yellow("WEAK     ")} ${C2.bold(p.candidate.rule)}`);
+      console.log(C2.grey(`    heard ${p.mentions}\xD7 \xB7 ${check.why}`));
+      console.log(C2.grey(`    "${p.candidate.quote.replace(/\s+/g, " ").slice(0, 84)}"`));
+      console.log(C2.grey(`    accept with: enforcee accept ${p.candidate.id.slice(0, 8)}`));
       console.log("");
     }
     if (held.length) {
-      console.log(C.grey(`  ${held.length} heard once, held back \u2014 a single remark is not a preference.`));
+      console.log(C2.grey(`  ${held.length} heard once, held back \u2014 a single remark is not a preference.`));
       console.log("");
     }
     saveMemory(memory);
     if (conflicts.length) {
-      console.log(`  ${C.red(C.bold(`${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} with rules you already have. Nothing was changed or removed.`))}`);
+      console.log(`  ${C2.red(C2.bold(`${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} with rules you already have. Nothing was changed or removed.`))}`);
       console.log("");
     }
     const offerable = fresh.filter((p) => selfCheckable(p.candidate).ok);
     if (offerable.length) {
-      console.log(C.dim("  Nothing below is active. Paste what you want into your ruleset:\n"));
+      console.log(C2.dim("  Nothing below is active. Paste what you want into your ruleset:\n"));
       console.log(toRulesetMarkdown(offerable.map((p) => p.candidate)));
     } else if (!conflicts.length) {
-      console.log(C.grey("  Nothing new to offer. That is a real answer, not an empty one."));
+      console.log(C2.grey("  Nothing new to offer. That is a real answer, not an empty one."));
       console.log("");
     }
     return;
@@ -12533,21 +12580,21 @@ async function main() {
   if (cmd === "accept" || cmd === "decline" || cmd === "retire") {
     const id = args[1];
     if (!id) {
-      console.error(C.red(`usage: enforcee ${cmd} <id>   (ids are shown by \`enforcee learned\`)`));
+      console.error(C2.red(`usage: enforcee ${cmd} <id>   (ids are shown by \`enforcee learned\`)`));
       process.exit(2);
     }
     const memory = loadMemory();
     const status = cmd === "accept" ? "accepted" : cmd === "decline" ? "declined" : "retired";
     const entry = decide(memory, id, status, args.slice(2).join(" ") || void 0);
     if (!entry) {
-      console.error(C.red(`No learned preference starting with "${id}". Run \`enforcee learned\` to see them.`));
+      console.error(C2.red(`No learned preference starting with "${id}". Run \`enforcee learned\` to see them.`));
       process.exit(2);
     }
     saveMemory(memory);
     console.log("");
-    console.log(`  ${C.bold(status.toUpperCase())}  ${entry.rule}`);
+    console.log(`  ${C2.bold(status.toUpperCase())}  ${entry.rule}`);
     console.log(
-      C.grey(
+      C2.grey(
         status === "accepted" ? "  Recorded. Anything you say later that contradicts this will be raised with you rather than applied." : "  Recorded, and kept \u2014 a decision is not a deletion. It will not be proposed again."
       )
     );
@@ -12559,17 +12606,17 @@ async function main() {
     if (json) return console.log(JSON.stringify(memory, null, 2));
     console.log("");
     if (!memory.entries.length) {
-      console.log(C.grey("  Nothing learned yet in this project. Run `enforcee learn <conversation-file>`."));
+      console.log(C2.grey("  Nothing learned yet in this project. Run `enforcee learn <conversation-file>`."));
       console.log("");
       return;
     }
     for (const e of memory.entries) {
-      const tint = e.status === "accepted" ? C.green : e.status === "proposed" ? C.yellow : C.grey;
-      console.log(`  ${tint(e.status.padEnd(9))} ${C.dim(e.id.slice(0, 8))}  ${e.rule}`);
-      console.log(C.grey(`            heard ${e.mentions}\xD7 \xB7 first seen ${e.firstSeen}${e.note ? ` \xB7 ${e.note}` : ""}`));
+      const tint = e.status === "accepted" ? C2.green : e.status === "proposed" ? C2.yellow : C2.grey;
+      console.log(`  ${tint(e.status.padEnd(9))} ${C2.dim(e.id.slice(0, 8))}  ${e.rule}`);
+      console.log(C2.grey(`            heard ${e.mentions}\xD7 \xB7 first seen ${e.firstSeen}${e.note ? ` \xB7 ${e.note}` : ""}`));
     }
     console.log("");
-    console.log(C.grey("  enforcee accept <id> \xB7 enforcee decline <id> \xB7 nothing here is ever deleted."));
+    console.log(C2.grey("  enforcee accept <id> \xB7 enforcee decline <id> \xB7 nothing here is ever deleted."));
     console.log("");
     return;
   }
@@ -12637,24 +12684,24 @@ async function main() {
         )
       );
     }
-    const tick = (ok) => ok ? C.green("  ok  ") : C.red(" none ");
+    const tick = (ok) => ok ? C2.green("  ok  ") : C2.red(" none ");
     console.log("");
-    console.log(`  ${C.bold("Enforcee")} ${C.dim(VERSION2)}  ${C.grey(process.cwd())}`);
+    console.log(`  ${C2.bold("Enforcee")} ${C2.dim(VERSION2)}  ${C2.grey(process.cwd())}`);
     console.log("");
-    console.log(`${tick(hooks.length > 0)} hooks       ${hooks.length ? hooks.join(", ") : C.grey("not registered \u2014 .claude/settings.json has none")}`);
-    console.log(`${tick(!!policyRaw)} policy      ${policyRaw ? `${deny} blocking, ${warn} warning  ${C.grey(rulesetHash.slice(0, 12))}` : C.grey("not compiled \u2014 run `npm run dogfood` or `enforcee guard <rules>`")}`);
-    console.log(`${tick(lic.ok)} licence     ${lic.ok ? "valid" : C.grey(lic.reason ?? "none \u2014 enforcement is OFF, auditing still works")}`);
+    console.log(`${tick(hooks.length > 0)} hooks       ${hooks.length ? hooks.join(", ") : C2.grey("not registered \u2014 .claude/settings.json has none")}`);
+    console.log(`${tick(!!policyRaw)} policy      ${policyRaw ? `${deny} blocking, ${warn} warning  ${C2.grey(rulesetHash.slice(0, 12))}` : C2.grey("not compiled \u2014 run `npm run dogfood` or `enforcee guard <rules>`")}`);
+    console.log(`${tick(lic.ok)} licence     ${lic.ok ? "valid" : C2.grey(lic.reason ?? "none \u2014 enforcement is OFF, auditing still works")}`);
     console.log("");
     if (ledger.length === 0) {
-      console.log(`${C.red(" none ")} ledger      ${C.grey("NO DECISIONS RECORDED \u2014 the guard has never run in this project.")}`);
-      console.log(`        ${C.grey("Everything above is configuration. None of it has been exercised.")}`);
+      console.log(`${C2.red(" none ")} ledger      ${C2.grey("NO DECISIONS RECORDED \u2014 the guard has never run in this project.")}`);
+      console.log(`        ${C2.grey("Everything above is configuration. None of it has been exercised.")}`);
     } else {
       const parts = [...byDecision.entries()].map(([k, v]) => `${v} ${k.toLowerCase()}`).join(", ");
-      console.log(`${C.green("  ok  ")} ledger      ${ledger.length} decisions \u2014 ${parts}`);
-      console.log(`        ${C.grey(`last: ${last}`)}`);
+      console.log(`${C2.green("  ok  ")} ledger      ${ledger.length} decisions \u2014 ${parts}`);
+      console.log(`        ${C2.grey(`last: ${last}`)}`);
     }
     console.log(
-      obstacles.length ? `${C.green("  ok  ")} learned     ${obstacles.length} obstacles${unresolved ? `, ${C.yellow(`${unresolved} with no proven remedy`)}` : ""}` : `${C.grey(" none ")} learned     ${C.grey("nothing yet \u2014 the guard refreshes this in the background")}`
+      obstacles.length ? `${C2.green("  ok  ")} learned     ${obstacles.length} obstacles${unresolved ? `, ${C2.yellow(`${unresolved} with no proven remedy`)}` : ""}` : `${C2.grey(" none ")} learned     ${C2.grey("nothing yet \u2014 the guard refreshes this in the background")}`
     );
     console.log("");
     return;
@@ -12674,18 +12721,66 @@ async function main() {
     console.log(`  ${renderTrace(t)}`);
     if (t.blockedBy.length) {
       console.log("");
-      for (const r of t.blockedBy.slice(0, 5)) console.log(`  ${C.grey("stopped by")} ${r}`);
-      if (t.blockedBy.length > 5) console.log(`  ${C.grey(`...and ${t.blockedBy.length - 5} more`)}`);
+      for (const r of t.blockedBy.slice(0, 5)) console.log(`  ${C2.grey("stopped by")} ${r}`);
+      if (t.blockedBy.length > 5) console.log(`  ${C2.grey(`...and ${t.blockedBy.length - 5} more`)}`);
     }
     if (t.empty) {
-      console.log(`  ${C.grey("Nothing has been recorded in this project. Run `enforcee status` to see why.")}`);
+      console.log(`  ${C2.grey("Nothing has been recorded in this project. Run `enforcee status` to see why.")}`);
     }
     console.log("");
     return;
   }
+  if (cmd === "statusline") {
+    try {
+      let session;
+      try {
+        const raw = readFileSync3(0, "utf8");
+        if (raw.trim()) session = JSON.parse(raw).session_id;
+      } catch {
+      }
+      const dir = join6(process.cwd(), ".enforcee");
+      const read2 = (f) => {
+        try {
+          return readFileSync3(join6(dir, f), "utf8");
+        } catch {
+          return null;
+        }
+      };
+      const policyRaw = read2("policy.json");
+      let rules = 0;
+      let installed = false;
+      if (policyRaw) {
+        try {
+          const pol = JSON.parse(policyRaw);
+          rules = (pol.deny?.length ?? 0) + (pol.warn?.length ?? 0);
+          installed = true;
+        } catch {
+        }
+      }
+      let learned = 0;
+      const obsRaw = read2("obstacles.json");
+      if (obsRaw) {
+        try {
+          const parsed = JSON.parse(obsRaw);
+          learned = (Array.isArray(parsed) ? parsed : parsed.obstacles ?? []).length;
+        } catch {
+        }
+      }
+      const presence = {
+        installed,
+        rules,
+        learned,
+        enforcing: checkLocalLicence().ok,
+        trace: summarise(readLedger(tailOfLedger(read2("ledger.jsonl") ?? "")), session)
+      };
+      console.log(renderStatusLine(presence));
+    } catch {
+    }
+    return;
+  }
   if (cmd === "obstacles") {
     if (!args[1]) {
-      console.error(C.red("usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]"));
+      console.error(C2.red("usage: enforcee obstacles <transcript.jsonl> [more.jsonl ...]"));
       process.exit(2);
     }
     const files = [];
@@ -12706,14 +12801,14 @@ async function main() {
     };
     for (const a of args.slice(1).filter((x) => !x.startsWith("-"))) {
       if (!existsSync5(a)) {
-        console.error(C.red(`Not found: ${a}`));
+        console.error(C2.red(`Not found: ${a}`));
         process.exit(2);
       }
       walk(a);
     }
     if (files.length === 0) {
-      console.error(C.red("  No .jsonl transcripts found under that path. Nothing was analysed."));
-      console.error(C.grey("  Sessions usually live in ~/.claude/projects (%USERPROFILE%\\.claude\\projects on Windows)."));
+      console.error(C2.red("  No .jsonl transcripts found under that path. Nothing was analysed."));
+      console.error(C2.grey("  Sessions usually live in ~/.claude/projects (%USERPROFILE%\\.claude\\projects on Windows)."));
       process.exit(2);
     }
     let results = 0;
@@ -12732,9 +12827,9 @@ async function main() {
         priorHumanCorpus = Array.isArray(raw) ? false : raw.humanCorpus === true;
       } else if (stored.length) {
         console.log(
-          C.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} \u2192 v${PATTERNS_VERSION}).`)
+          C2.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} \u2192 v${PATTERNS_VERSION}).`)
         );
-        console.log(C.grey("  Their counts could not be reproduced by the current patterns, so keeping them would be reporting a number nothing can check.\n"));
+        console.log(C2.grey("  Their counts could not be reproduced by the current patterns, so keeping them would be reporting a number nothing can check.\n"));
       }
     }
     const seenFiles = priorFiles;
@@ -12760,8 +12855,8 @@ async function main() {
       }
     }
     if (fresh.length > 0 && results === 0) {
-      console.error(C.red(`  No tool results in ${fresh.length} file(s). Nothing was analysed.`));
-      console.error(C.grey("  That is not the same as finding no obstacles."));
+      console.error(C2.red(`  No tool results in ${fresh.length} file(s). Nothing was analysed.`));
+      console.error(C2.grey("  That is not the same as finding no obstacles."));
       process.exit(2);
     }
     const merged = mergeObstacles(prior, scanned);
@@ -12779,37 +12874,37 @@ async function main() {
       JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles, humanCorpus }, null, 2)
     );
     console.log(
-      C.grey(
+      C2.grey(
         `
   ${results} tool results across ${fresh.length} session(s)` + (skipped ? `, ${skipped} unchanged and skipped` : "") + "\n"
       )
     );
     if (!merged.length) {
       if (!negativeIsReportable(coverage)) {
-        console.error(C.red("  Nothing was analysed that records your work."));
-        console.error(C.grey(`  ${whyNegativeWithheld(coverage)}`));
-        console.error(C.grey("  That is not the same as finding no obstacles, so no clean result is being reported.\n"));
+        console.error(C2.red("  Nothing was analysed that records your work."));
+        console.error(C2.grey(`  ${whyNegativeWithheld(coverage)}`));
+        console.error(C2.grey("  That is not the same as finding no obstacles, so no clean result is being reported.\n"));
         process.exit(2);
       }
-      console.log(C.grey("  Nothing recognised blocked this project. That is a real answer.\n"));
+      console.log(C2.grey("  Nothing recognised blocked this project. That is a real answer.\n"));
       return;
     }
     if (!humanCorpus) {
       console.log(
-        C.yellow("  These are real failures, but the transcripts read record no human turn \u2014 so this is what blocked\n  this agent, not a history of the project.\n")
+        C2.yellow("  These are real failures, but the transcripts read record no human turn \u2014 so this is what blocked\n  this agent, not a history of the project.\n")
       );
     }
     for (const o of merged) {
-      const rep = o.hits > 1 ? C.red(`${o.hits}\xD7`) : C.grey("1\xD7");
-      console.log(`  ${rep.padEnd(14)} ${C.bold(o.signature)}  ${C.grey(o.kind)}`);
+      const rep = o.hits > 1 ? C2.red(`${o.hits}\xD7`) : C2.grey("1\xD7");
+      console.log(`  ${rep.padEnd(14)} ${C2.bold(o.signature)}  ${C2.grey(o.kind)}`);
       console.log(
-        o.resolution ? C.grey(`                 ${o.confidence === "observed" ? "\u2192" : "UNVERIFIED \u2014"} ${o.resolution}`) : C.grey("                 No remedy observed yet. A guess here would be a guess.")
+        o.resolution ? C2.grey(`                 ${o.confidence === "observed" ? "\u2192" : "UNVERIFIED \u2014"} ${o.resolution}`) : C2.grey("                 No remedy observed yet. A guess here would be a guess.")
       );
     }
     const brief = toBrief(merged);
     if (brief) {
       writeFileSync3(join6(dir, "obstacles.md"), brief);
-      console.log(C.grey(`
+      console.log(C2.grey(`
   Brief for reinjection written to .enforcee/obstacles.md
 `));
     }
@@ -12820,12 +12915,12 @@ async function main() {
     const findings = analyseCapabilities(s);
     if (json) return console.log(JSON.stringify({ session: { ...s, mainPath: void 0 }, findings }, null, 2));
     console.log("");
-    console.log(C.grey(`  ${s.total} records \xB7 ${s.abandoned} abandoned across ${s.forkPoints.length} rewinds \xB7 ${s.toolCalls.length} tool calls`));
+    console.log(C2.grey(`  ${s.total} records \xB7 ${s.abandoned} abandoned across ${s.forkPoints.length} rewinds \xB7 ${s.toolCalls.length} tool calls`));
     console.log("");
     for (const f of findings) {
-      const tint = f.severity === "error" ? C.red : f.severity === "warn" ? C.yellow : C.grey;
-      console.log(`  ${tint(f.severity.toUpperCase().padEnd(6))} ${C.dim(f.evidence.padEnd(13))} ${f.title}`);
-      if (f.items.length) console.log(C.grey(`         ${f.items.slice(0, 8).join(", ")}`));
+      const tint = f.severity === "error" ? C2.red : f.severity === "warn" ? C2.yellow : C2.grey;
+      console.log(`  ${tint(f.severity.toUpperCase().padEnd(6))} ${C2.dim(f.evidence.padEnd(13))} ${f.title}`);
+      if (f.items.length) console.log(C2.grey(`         ${f.items.slice(0, 8).join(", ")}`));
     }
     console.log("");
     return;
@@ -12837,37 +12932,37 @@ async function main() {
       const res2 = setLicence(token, { path: scope });
       console.log("");
       if (!res2.ok) {
-        console.log(`  ${C.red("\u2715")} ${res2.reason}`);
-        console.log(C.grey("  Paste the whole line from your receipt, including the enf1. prefix."));
+        console.log(`  ${C2.red("\u2715")} ${res2.reason}`);
+        console.log(C2.grey("  Paste the whole line from your receipt, including the enf1. prefix."));
         console.log("");
         process.exit(3);
       }
-      console.log(`  ${C.green("\u2713")} Licence installed \u2014 ${C.bold(res2.path)}`);
+      console.log(`  ${C2.green("\u2713")} Licence installed \u2014 ${C2.bold(res2.path)}`);
       console.log(
-        C.grey(
+        C2.grey(
           flags.has("--project") ? "  Scope: this project only. Other repos on this machine are unaffected." : "  Scope: this machine \u2014 every project. Use --project to licence just this repo."
         )
       );
       if (res2.check.ok) {
         console.log(
-          C.grey(`  ${licenceMessage(res2.check)} \xB7 expires ${new Date(res2.check.payload.exp * 1e3).toISOString().slice(0, 10)}`)
+          C2.grey(`  ${licenceMessage(res2.check)} \xB7 expires ${new Date(res2.check.payload.exp * 1e3).toISOString().slice(0, 10)}`)
         );
       }
-      console.log(C.grey("  Now run: enforcee guard CLAUDE.md"));
+      console.log(C2.grey("  Now run: enforcee guard CLAUDE.md"));
       console.log("");
       return;
     }
     const check = checkLocalLicence();
     console.log("");
     if (check.ok) {
-      console.log(`  ${C.green("\u2713")} ${licenceMessage(check)}`);
-      console.log(C.grey(`  expires ${new Date(check.payload.exp * 1e3).toISOString().slice(0, 10)} \xB7 from ${check.from}`));
+      console.log(`  ${C2.green("\u2713")} ${licenceMessage(check)}`);
+      console.log(C2.grey(`  expires ${new Date(check.payload.exp * 1e3).toISOString().slice(0, 10)} \xB7 from ${check.from}`));
     } else {
-      console.log(`  ${C.yellow("\u2022")} ${licenceMessage(check)}`);
-      console.log(C.grey(`  Looked in ENFORCEE_LICENCE, ${LICENCE_PATHS.project}, ${LICENCE_PATHS.home}`));
+      console.log(`  ${C2.yellow("\u2022")} ${licenceMessage(check)}`);
+      console.log(C2.grey(`  Looked in ENFORCEE_LICENCE, ${LICENCE_PATHS.project}, ${LICENCE_PATHS.home}`));
     }
     console.log("");
-    console.log(C.grey("  audit, health, learn and session work regardless \u2014 they always will."));
+    console.log(C2.grey("  audit, health, learn and session work regardless \u2014 they always will."));
     console.log("");
     return;
   }
@@ -12881,8 +12976,8 @@ async function main() {
       const pub = `${priv}.pub`;
       for (const p of [priv, pub]) {
         if (existsSync5(p)) {
-          console.error(C.red(`  ${p} already exists \u2014 refusing to overwrite a signing key.`));
-          console.error(C.grey("  Every receipt signed with the old key becomes uncheckable. Move it aside first."));
+          console.error(C2.red(`  ${p} already exists \u2014 refusing to overwrite a signing key.`));
+          console.error(C2.grey("  Every receipt signed with the old key becomes uncheckable. Move it aside first."));
           process.exit(2);
         }
       }
@@ -12898,49 +12993,49 @@ async function main() {
         restricted = false;
       }
       console.log("");
-      console.log(`  ${C.green("\u2713")} Signing key written \u2014 ${C.bold(priv)}`);
-      console.log(`    Public half \u2014 ${C.bold(pub)}  ${C.grey("publish this; it is what your client checks against")}`);
+      console.log(`  ${C2.green("\u2713")} Signing key written \u2014 ${C2.bold(priv)}`);
+      console.log(`    Public half \u2014 ${C2.bold(pub)}  ${C2.grey("publish this; it is what your client checks against")}`);
       if (!restricted) {
-        console.log(C.yellow("    Could not restrict permissions on this platform \u2014 anyone with access to this machine can sign as you."));
+        console.log(C2.yellow("    Could not restrict permissions on this platform \u2014 anyone with access to this machine can sign as you."));
       }
       console.log("");
-      console.log(C.grey("  Next:  enforcee audit CLAUDE.md output.md --json > receipt.json"));
-      console.log(C.grey("         enforcee sign receipt.json"));
+      console.log(C2.grey("  Next:  enforcee audit CLAUDE.md output.md --json > receipt.json"));
+      console.log(C2.grey("         enforcee sign receipt.json"));
       console.log("");
       return;
     }
     const receiptPath = pos[1];
     if (!receiptPath) {
-      console.error(C.red("usage: enforcee sign <receipt.json> [--key <private-key>] [--out <file>]"));
-      console.error(C.grey("       enforcee sign keygen        create the signing key, once"));
+      console.error(C2.red("usage: enforcee sign <receipt.json> [--key <private-key>] [--out <file>]"));
+      console.error(C2.grey("       enforcee sign keygen        create the signing key, once"));
       process.exit(2);
     }
     const lic = checkLocalLicence();
     const entitled = lic.ok && entitlementsFor(lic.payload.plan).attestation;
     if (!entitled) {
       console.log("");
-      console.log(`  ${C.yellow("Signed receipts are the part we charge for.")} ${C.grey("(Founder)")}`);
-      console.log(`  ${C.grey(lic.ok ? `Licensed to ${lic.payload.sub} \xB7 ${lic.payload.plan} \u2014 signing is on Founder.` : licenceMessage(lic))}`);
+      console.log(`  ${C2.yellow("Signed receipts are the part we charge for.")} ${C2.grey("(Founder)")}`);
+      console.log(`  ${C2.grey(lic.ok ? `Licensed to ${lic.payload.sub} \xB7 ${lic.payload.plan} \u2014 signing is on Founder.` : licenceMessage(lic))}`);
       console.log("");
-      console.log(C.grey("  Free and unlimited without it:"));
-      console.log(C.grey(`    enforcee audit <rules> <output> --json    the receipt itself, with every verdict`));
-      console.log(C.grey(`    enforcee check <signed-receipt> --key <k>  checking somebody else's signed receipt`));
+      console.log(C2.grey("  Free and unlimited without it:"));
+      console.log(C2.grey(`    enforcee audit <rules> <output> --json    the receipt itself, with every verdict`));
+      console.log(C2.grey(`    enforcee check <signed-receipt> --key <k>  checking somebody else's signed receipt`));
       console.log("");
-      console.log(C.grey("  Already subscribed?  enforcee licence set <your licence>"));
+      console.log(C2.grey("  Already subscribed?  enforcee licence set <your licence>"));
       console.log("");
       process.exit(3);
     }
     const keyPath = keyFlag ?? ATTESTATION_KEY_PATHS.privateKey;
     const keyFromEnv = process.env.ENFORCEE_SIGNING_KEY?.trim();
     if (!keyFromEnv && !existsSync5(keyPath)) {
-      console.error(C.red(`  No signing key at ${keyPath}.`));
-      console.error(C.grey("  Make one:  enforcee sign keygen"));
+      console.error(C2.red(`  No signing key at ${keyPath}.`));
+      console.error(C2.grey("  Make one:  enforcee sign keygen"));
       process.exit(2);
     }
     const privateKeyPem = keyFromEnv || readFileSync3(keyPath, "utf8");
     const result = signDocument(read(receiptPath), privateKeyPem);
     if (!result.ok) {
-      console.error(C.red(`  ${result.reason}`));
+      console.error(C2.red(`  ${result.reason}`));
       process.exit(2);
     }
     const outPath = outFlag ?? receiptPath.replace(/(\.json)?$/i, ".signed.json");
@@ -12950,18 +13045,18 @@ async function main() {
       return;
     }
     console.log("");
-    console.log(`  ${C.green("\u2713")} Signed \u2014 ${C.bold(outPath)}`);
+    console.log(`  ${C2.green("\u2713")} Signed \u2014 ${C2.bold(outPath)}`);
     console.log(
-      C.grey(
+      C2.grey(
         `  Covers ${result.covers.rules} rule verdict${result.covers.rules === 1 ? "" : "s"} \xB7 ${result.covers.violated} violated \xB7 digest ${result.digest.slice(0, 16)}`
       )
     );
     if (result.covers.rules === 0) {
-      console.log(C.yellow("  This receipt grades zero rules. The signature is real and it is evidence of nothing."));
+      console.log(C2.yellow("  This receipt grades zero rules. The signature is real and it is evidence of nothing."));
     }
     console.log("");
-    console.log(C.grey("  Give your client the signed file and your public key, and tell them:"));
-    console.log(C.grey(`    npx enforcee check ${outPath} --key <your-public-key.pub>`));
+    console.log(C2.grey("  Give your client the signed file and your public key, and tell them:"));
+    console.log(C2.grey(`    npx enforcee check ${outPath} --key <your-public-key.pub>`));
     console.log("");
     return;
   }
@@ -12969,16 +13064,16 @@ async function main() {
     const target = positionalsOf(argv)[1];
     const keyPath = flagValue(argv, "--key");
     if (!target) {
-      console.error(C.red("usage: enforcee check <signed-receipt.json> --key <public-key.pub>"));
+      console.error(C2.red("usage: enforcee check <signed-receipt.json> --key <public-key.pub>"));
       process.exit(2);
     }
     if (!keyPath) {
-      console.error(C.red("  --key is required: a check with nothing to check against is not a check."));
-      console.error(C.grey("  Ask whoever gave you the receipt for their public key."));
+      console.error(C2.red("  --key is required: a check with nothing to check against is not a check."));
+      console.error(C2.grey("  Ask whoever gave you the receipt for their public key."));
       process.exit(2);
     }
     if (!existsSync5(keyPath)) {
-      console.error(C.red(`  No such key file: ${keyPath}`));
+      console.error(C2.red(`  No such key file: ${keyPath}`));
       process.exit(2);
     }
     const report = checkDocument(read(target), readFileSync3(keyPath, "utf8"));
@@ -12988,26 +13083,26 @@ async function main() {
       process.exit(code);
     }
     if (!quiet) {
-      const mark = report.outcome === "VALID" ? C.green("\u2713 VALID") : report.outcome === "REFUTED" ? C.red("\u2715 REFUTED") : C.yellow("\u2022 UNVERIFIABLE");
+      const mark = report.outcome === "VALID" ? C2.green("\u2713 VALID") : report.outcome === "REFUTED" ? C2.red("\u2715 REFUTED") : C2.yellow("\u2022 UNVERIFIABLE");
       console.log("");
-      console.log(`  ${C.bold(mark)}  ${target}`);
+      console.log(`  ${C2.bold(mark)}  ${target}`);
       console.log(`  ${report.reason}`);
       if (report.covers) {
         console.log(
-          C.grey(
+          C2.grey(
             `  Covers ${report.covers.rules} rule verdict${report.covers.rules === 1 ? "" : "s"} \xB7 ${report.covers.followed} followed \xB7 ${report.covers.violated} violated \xB7 ${report.covers.unverifiable} unverifiable`
           )
         );
       }
-      if (report.signedAt) console.log(C.grey(`  Signed at ${report.signedAt} (self-reported)`));
+      if (report.signedAt) console.log(C2.grey(`  Signed at ${report.signedAt} (self-reported)`));
       if (report.proves.length) {
         console.log("");
-        console.log(C.grey("  This proves:"));
-        for (const p of report.proves) console.log(C.grey(`    \xB7 ${p}`));
+        console.log(C2.grey("  This proves:"));
+        for (const p of report.proves) console.log(C2.grey(`    \xB7 ${p}`));
       }
       console.log("");
-      console.log(C.grey("  It does NOT prove:"));
-      for (const p of report.doesNotProve) console.log(C.grey(`    \xB7 ${p}`));
+      console.log(C2.grey("  It does NOT prove:"));
+      for (const p of report.doesNotProve) console.log(C2.grey(`    \xB7 ${p}`));
       console.log("");
     }
     process.exit(code);
@@ -13018,15 +13113,15 @@ async function main() {
     const lic = checkLocalLicence();
     if (!lic.ok) {
       console.log("");
-      console.log(`  ${C.yellow("The guard is the part we charge for.")}`);
-      console.log(`  ${C.grey(licenceMessage(lic))}`);
+      console.log(`  ${C2.yellow("The guard is the part we charge for.")}`);
+      console.log(`  ${C2.grey(licenceMessage(lic))}`);
       console.log("");
-      console.log(C.grey("  What you can still do right now, free and unlimited:"));
-      console.log(C.grey(`    enforcee audit ${rulesPath} <output-file>   which rules were actually followed`));
-      console.log(C.grey(`    enforcee health ${rulesPath}                what is wrong with the ruleset itself`));
+      console.log(C2.grey("  What you can still do right now, free and unlimited:"));
+      console.log(C2.grey(`    enforcee audit ${rulesPath} <output-file>   which rules were actually followed`));
+      console.log(C2.grey(`    enforcee health ${rulesPath}                what is wrong with the ruleset itself`));
       console.log("");
-      console.log(C.grey("  Already subscribed? Paste your licence:"));
-      console.log(C.grey("    enforcee licence set <your licence>"));
+      console.log(C2.grey("  Already subscribed? Paste your licence:"));
+      console.log(C2.grey("    enforcee licence set <your licence>"));
       console.log("");
       process.exit(3);
     }
@@ -13057,16 +13152,16 @@ async function main() {
       runner = false;
     }
     console.log("");
-    console.log(`  Wrote ${C.bold(".enforcee/policy.json")} \u2014 ${policy.deny.length} blocking, ${policy.warn.length} warning.`);
+    console.log(`  Wrote ${C2.bold(".enforcee/policy.json")} \u2014 ${policy.deny.length} blocking, ${policy.warn.length} warning.`);
     if (runner) {
-      console.log(`  Wrote ${C.bold(".enforcee/guard.mjs")} \u2014 the runner your hook points at.`);
+      console.log(`  Wrote ${C2.bold(".enforcee/guard.mjs")} \u2014 the runner your hook points at.`);
     } else {
-      console.log(C.yellow("  Could not find the guard runner to copy \u2014 the hook has nothing to run."));
-      console.log(C.grey("  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself."));
+      console.log(C2.yellow("  Could not find the guard runner to copy \u2014 the hook has nothing to run."));
+      console.log(C2.grey("  Reinstall with `npm i -g enforcee`, or copy guard/guard.mjs from the package yourself."));
     }
-    console.log(C.grey(`  ${licenceMessage(lic)}`));
-    console.log(C.grey("  Add the hook wiring with the installer from enforcee.com/install,"));
-    console.log(C.grey("  or point .claude/settings.json at .enforcee/guard.mjs yourself."));
+    console.log(C2.grey(`  ${licenceMessage(lic)}`));
+    console.log(C2.grey("  Add the hook wiring with the installer from enforcee.com/install,"));
+    console.log(C2.grey("  or point .claude/settings.json at .enforcee/guard.mjs yourself."));
     console.log("");
     return;
   }
@@ -13074,6 +13169,6 @@ async function main() {
   process.exit(2);
 }
 main().catch((e) => {
-  console.error(C.red(String(e instanceof Error ? e.message : e)));
+  console.error(C2.red(String(e instanceof Error ? e.message : e)));
   process.exit(2);
 });

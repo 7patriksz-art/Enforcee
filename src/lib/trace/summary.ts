@@ -75,6 +75,24 @@ const EMPTY: Trace = {
   empty: true,
 };
 
+/**
+ * The last `maxBytes` of a ledger, starting at a line boundary.
+ *
+ * The status line redraws on every assistant message. A ledger is append-only and shared by
+ * every session in the project, so it grows without bound - reading all of it forty times an
+ * hour is a cost the user pays for our summary, which is the wrong way round.
+ *
+ * The first line of a tail is almost always half a row. It is dropped rather than parsed:
+ * readLedger would skip it anyway, but dropping it deliberately means a truncated row can
+ * never be mistaken for a real one by anything downstream.
+ */
+export function tailOfLedger(text: string, maxBytes = 256 * 1024): string {
+  if (text.length <= maxBytes) return text;
+  const cut = text.slice(text.length - maxBytes);
+  const nl = cut.indexOf('\n');
+  return nl === -1 ? '' : cut.slice(nl + 1);
+}
+
 /** Parse a ledger file's contents. A malformed line is skipped, never fatal. */
 export function readLedger(text: string): LedgerRow[] {
   const rows: LedgerRow[] = [];

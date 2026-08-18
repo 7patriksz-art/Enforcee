@@ -34,7 +34,8 @@ import {
   signDocument,
 } from '../src/lib/attest-file';
 import type { RuleResult } from '../src/lib/types';
-import { readLedger, renderTrace, renderTraceFile, summarise } from '../src/lib/trace/summary';
+import { readLedger, renderTrace, renderTraceFile, summarise, tailOfLedger } from '../src/lib/trace/summary';
+import { renderStatusLine, type Presence } from '../src/lib/trace/statusline';
 
 /**
  * Injected at build time from package.json — see the --define in build:cli.
@@ -80,7 +81,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee check')} <signed.json> --key <pub>      check somebody's signed receipt ${C.dim('(free, offline)')}
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key> [--project]        install a licence (machine-wide, or this repo)
-  ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee trace')}                               the one-line summary of what it did, from the ledger\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
+  ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee trace')}                               the one-line summary of what it did, from the ledger\n  ${C.bold('enforcee statusline')}                          the live row Claude Code draws under every turn\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
   ${C.dim('--json')}         emit the receipt as JSON instead of a table
@@ -777,6 +778,81 @@ async function main(): Promise<void> {
       console.log(`  ${C.grey('Nothing has been recorded in this project. Run `enforcee status` to see why.')}`);
     }
     console.log('');
+    return;
+  }
+
+  // -- statusline: the row Claude Code redraws under every turn ------------
+  //
+  // Patrik, 2026-08-18: *"we should clearly message our existence constantly in applied
+  // projects, what we did, how, why whilst keeping the trace minimal."*
+  //
+  // Every other status line in this ecosystem shows the MODEL's state - cost, context
+  // percentage, git branch. This one shows YOURS: the rules this project compiled, what it
+  // has learned here, and what the guard did this session. Counted from the ledger, never
+  // asserted, same as everything else that carries a number.
+  //
+  // THREE THINGS THIS COMMAND MUST NEVER DO, because it runs on every single turn:
+  //   1. be slow. It reads a bounded tail of the ledger, not the whole file.
+  //   2. crash. A stack trace in somebody's status bar is worse than no status bar, so the
+  //      whole body is wrapped and failure prints nothing at all.
+  //   3. exit non-zero. Claude Code is running this constantly; it must be inert.
+  if (cmd === 'statusline') {
+    try {
+      // Claude Code writes a JSON payload on stdin. We read it for the session id so the
+      // counts are THIS session's, and tolerate its absence so the command stays usable by
+      // hand: `enforcee statusline` in a terminal has to work for anyone checking it.
+      let session: string | undefined;
+      try {
+        const raw = readFileSync(0, 'utf8');
+        if (raw.trim()) session = (JSON.parse(raw) as { session_id?: string }).session_id;
+      } catch {
+        /* no stdin, or not JSON. Fall back to the whole ledger. */
+      }
+
+      const dir = join(process.cwd(), '.enforcee');
+      const read = (f: string) => {
+        try {
+          return readFileSync(join(dir, f), 'utf8');
+        } catch {
+          return null;
+        }
+      };
+
+      const policyRaw = read('policy.json');
+      let rules = 0;
+      let installed = false;
+      if (policyRaw) {
+        try {
+          const pol = JSON.parse(policyRaw) as { deny?: unknown[]; warn?: unknown[] };
+          rules = (pol.deny?.length ?? 0) + (pol.warn?.length ?? 0);
+          installed = true;
+        } catch {
+          /* a corrupt policy is not an install */
+        }
+      }
+
+      let learned = 0;
+      const obsRaw = read('obstacles.json');
+      if (obsRaw) {
+        try {
+          const parsed = JSON.parse(obsRaw) as { obstacles?: unknown[] } | unknown[];
+          learned = (Array.isArray(parsed) ? parsed : (parsed.obstacles ?? [])).length;
+        } catch {
+          /* skip */
+        }
+      }
+
+      const presence: Presence = {
+        installed,
+        rules,
+        learned,
+        enforcing: checkLocalLicence().ok,
+        trace: summarise(readLedger(tailOfLedger(read('ledger.jsonl') ?? '')), session),
+      };
+      console.log(renderStatusLine(presence));
+    } catch {
+      /* Silent. This row is decoration next to somebody's actual work. */
+    }
     return;
   }
 
