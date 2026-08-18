@@ -54,7 +54,11 @@ export type ObstacleKind = 'credential' | 'network' | 'environment' | 'tooling';
  * displayed as though it were current. A store that survives the code that wrote it is a
  * store that lies.
  */
-export const PATTERNS_VERSION = 2;
+// v3, 2026-08-18: every pattern now ignores a match sitting on a comment line. Counts taken
+// under v2 included mentions — this file's own 401 comment was four of them — so they cannot
+// be reproduced by the code that reads them, which is the exact condition this number exists
+// to detect. See matchIsMention.
+export const PATTERNS_VERSION = 3;
 
 export interface Obstacle {
   /** Stable id over the signature — the same wall keeps the same id across sessions. */
@@ -241,6 +245,152 @@ export function normaliseCapture(v: string): string {
   return v.replace(/\\{2,}/g, '\\').replace(/[.,;]+$/, '').trim();
 }
 
+/**
+ * ── READING ABOUT A FAILURE IS NOT HITTING ONE ─────────────────────────────────────────────
+ *
+ * Found 2026-08-18, live, by this file's own sweep. The scan of the run's own transcript
+ * filed:
+ *
+ *     4×  HTTP 401 — the credential was rejected              credential
+ *         → Test the token against an authenticated endpoint before using it.
+ *
+ * Nothing in that run ever saw a 401. The evidence stored behind it was:
+ *
+ *     "01 pattern was tightened, every stored \"HTTP 401\" count became a number nothing
+ *      could // reproduce — and it kept being shown as though it were current."
+ *
+ * — the comment in THIS FILE, at line 52, that documents the LAST time the 401 pattern
+ * false-accused somebody. The tool result was a `sed -n` of the source. The agent read a file
+ * about 401s and the product recorded that its credentials had been rejected, then offered a
+ * remedy for rotating a token that was working perfectly.
+ *
+ * The 08-16 tightening fixed bare numbers (`/\b401\b/`, 64% false positives) by requiring HTTP
+ * context. It could not fix this, because `"HTTP 401"` in a sentence ABOUT a 401 has perfect
+ * HTTP context. No amount of tightening the pattern reaches it: the string really is there.
+ * What is missing is not specificity, it is the difference between an EVENT and a MENTION.
+ *
+ * A source comment is a mention. A real 401 arrives as `HTTP/1.1 401 Unauthorized` or
+ * `{"status":401}` on its own line, never behind `//` or ` * `. So the discriminator is the
+ * line the match sits on, and it is general — it protects every pattern, not just this one.
+ * `fatal: not a git repository` in a README and `command not found` in a docstring are the
+ * same bug waiting on a different user.
+ *
+ * ── Not tightened until it accuses nobody ──
+ *
+ * The opposite failure is refusing to see a real wall, and it is just as bad. So this drops
+ * only the MATCH, not the tool result: a file containing both a comment about 401s and a real
+ * 401 still files the real one, because matching continues past the mention. And every marker
+ * here is one that cannot begin a line of genuine failure output. `-`, `+` and `>` are
+ * deliberately absent: a diff line and a quoted line look identical to a stack frame indented
+ * by a shell, and guessing there is how a checker stops checking.
+ *
+ * Both directions are asserted in `tests/obstacles-mentions.test.ts`.
+ */
+// Leading backslashes are tolerated because a line break inside a JSON-encoded tool result
+// survives as the two characters \ and n, and the fragment after it keeps them.
+//
+// `grep -n` and `sed -n '=p'` put `<file>:<line>:` or `<line>:` in front of every line they
+// print, which pushes the comment marker off the start and hid seven of the eleven mentions
+// measured on 2026-08-18. Reading a file through grep is the commonest way an agent looks at
+// source at all, so not seeing through that prefix means the guard misses the majority case.
+const GREP_PREFIX = /^[\s\\]*(?:[^\s:]*:)?\d+[:-]/;
+const MENTION_LINE = /^[\s\\]*(?:\/\/|\/\*|\*|#|<!--)/;
+
+/**
+ * The line the match sits on — where "line" means what a reader sees, not what `split('\n')`
+ * returns.
+ *
+ * `toolResultsFromRecords` stores the `toolUseResult` sidecar as `JSON.stringify(...)`, so a
+ * multi-line file read arrives as ONE physical line with every break encoded as the two
+ * characters `\` and `n`. The first version of this guard looked for real newlines only, and
+ * on the very corpus that motivated it the comment markers were all still there and none of
+ * them were at a line start, so it changed nothing at all — the false 401 came straight back,
+ * count intact. A guard that cannot see the shape its own input actually arrives in is a
+ * guard that has never run.
+ */
+function lineAround(raw: string, index: number): string {
+  const realStart = raw.lastIndexOf('\n', index) + 1;
+  const esc = raw.lastIndexOf('\\n', index);
+  const escStart = esc !== -1 && esc + 2 <= index ? esc + 2 : 0;
+  const start = Math.max(realStart, escStart);
+
+  const realEnd = raw.indexOf('\n', index);
+  const escEnd = raw.indexOf('\\n', index);
+  const ends = [realEnd, escEnd].filter((n) => n !== -1);
+  const end = ends.length ? Math.min(...ends) : raw.length;
+
+  return raw.slice(start, end);
+}
+
+/** Is the match at `index` sitting on a line that is talking about a failure, not reporting one? */
+export function matchIsMention(raw: string, index: number): boolean {
+  const line = lineAround(raw, index);
+  return MENTION_LINE.test(line) || MENTION_LINE.test(line.replace(GREP_PREFIX, ''));
+}
+
+/** Global twin of each pattern, built once, so matching can step past a mention to a real hit. */
+const GLOBAL_RE = new WeakMap<RegExp, RegExp>();
+function globalOf(re: RegExp): RegExp {
+  let g = GLOBAL_RE.get(re);
+  if (!g) {
+    g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    GLOBAL_RE.set(re, g);
+  }
+  return g;
+}
+
+/**
+ * -- AND THE TOOL MUST NOT READ ITS OWN REPORT ----------------------------------------------
+ *
+ * The third false accusation found in the same 2026-08-18 run, after the mention guard above
+ * had already caught two. With comments excluded, two matches still survived, and both were
+ * the ANSI-coloured line
+ *
+ *     6x    HTTP 401 - the credential was rejected    credential
+ *
+ * that `enforcee obstacles` had itself printed a few minutes earlier, captured as a tool
+ * result by the very session being scanned. A report line is not a comment, so nothing above
+ * stops it.
+ *
+ * It is the worst shape of the three because it is a ratchet: once an obstacle is filed, every
+ * later scan re-files it from the printout of the scan before, and the count climbs on its own
+ * for as long as anyone keeps running the command. The occurrence fingerprints do not help --
+ * each printout is a genuinely new tool result at a new index, so it is honestly counted as a
+ * new sighting of a thing that never happened again. This project has already shipped a hits
+ * number that measured how many times the TOOL had run (762x); this is that same lie arriving
+ * through a different door.
+ *
+ * Matched on our own printed furniture rather than on the signatures, so it costs nothing per
+ * pattern and cannot be defeated by adding one. Both directions are in
+ * `tests/obstacles-mentions.test.ts`: a real report is skipped, and a genuine failure that
+ * merely says the word "obstacles" is not.
+ */
+const OWN_REPORT = [
+  /\d+\s+tool results across \d+ session/i,
+  /## Known obstacles in this project/i,
+  /Nothing recognised blocked this project/i,
+  /No remedy (?:has been )?observed yet/i,
+];
+
+/** Is this tool result Enforcee's own obstacle report being read back in? */
+export function isOwnReport(raw: string): boolean {
+  return OWN_REPORT.some((re) => re.test(raw));
+}
+
+/** First match in `raw` that is an event rather than a mention, or null when there is none. */
+export function firstRealMatch(re: RegExp, raw: string): RegExpExecArray | null {
+  const g = globalOf(re);
+  g.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = g.exec(raw)) !== null) {
+    if (!matchIsMention(raw, m.index)) return m;
+    // A zero-length match would spin here forever. Patterns cannot produce one today; the
+    // guard costs nothing and this file has already shipped one infinite-loop class of bug.
+    if (m.index === g.lastIndex) g.lastIndex++;
+  }
+  return null;
+}
+
 /** Collapse whitespace, redact, and clip — evidence quotable without being a wall of text. */
 function snippet(s: string, n = 160): string {
   return redact(s.replace(/\s+/g, ' ').trim()).slice(0, n);
@@ -258,8 +408,12 @@ export function extractObstacles(toolResults: string[], source = ''): Obstacle[]
   for (let i = 0; i < toolResults.length; i++) {
     const raw = toolResults[i];
     if (!raw) continue;
+    // Our own printout is not a failure. See isOwnReport -- without this the count ratchets.
+    if (isOwnReport(raw)) continue;
     for (const p of PATTERNS) {
-      const m = p.re.exec(raw);
+      // Not `p.re.exec`: a comment ABOUT the failure must not consume the result and hide a
+      // real failure further down it. See firstRealMatch.
+      const m = firstRealMatch(p.re, raw);
       if (!m) continue;
       // NORMALISE BEFORE HASHING. A tool result that arrived as JSON has its backslashes
       // doubled, so `C:\\dev\\sk_probe.js` and `C:\\\\dev\\\\sk_probe.js` are the same file and
@@ -375,4 +529,90 @@ export function toolResultsFromRecords(
     if (r.toolUseResult !== undefined) out.push(JSON.stringify(r.toolUseResult).slice(0, 4000));
   }
   return out;
+}
+
+/**
+ * ── COVERAGE: when is a NEGATIVE result from this scan worth anything? ──────────────────
+ *
+ * Found 2026-08-18 by the obstacle sweep reproducing its own step 1. In a scheduled cloud
+ * container the only transcript on disk is the run's OWN — one file, one sessionId, the
+ * session doing the scanning. Over that corpus the two learning commands disagreed:
+ *
+ *     enforcee learn <file>              → exit 2, "no human turns this build can read"
+ *     enforcee obstacles <that dir>      → exit 0, "32 tool results across 1 session(s)"
+ *                                                  "Nothing recognised blocked this project.
+ *                                                   That is a real answer."
+ *
+ * One binary, one corpus, two contradictory answers, and the confident one is the false
+ * negative. `learn` had been hardened against this exact provenance defect on 08-16;
+ * `obstacles` never was, because the two commands read the same files for different reasons
+ * and nothing held the coverage rule in one place. So: this is that place.
+ *
+ * The distinction that matters is between the two halves of the report:
+ *
+ *   - **Obstacles found are always real.** They come from tool results — a 403 in the run's
+ *     own transcript is still a 403. Provenance does not weaken a positive.
+ *   - **"Nothing blocked you" is only real if something was read that records the person's
+ *     work.** Charter honesty rule 2: absence of a violation is weaker evidence than
+ *     presence of one, and we say which we have.
+ *
+ * A transcript with no human turns is a machine talking to itself. That is a legitimate
+ * thing to scan for failures and an illegitimate thing to conclude cleanliness from.
+ *
+ * ── Why this is not tightened until it accuses nobody ──
+ *
+ * The reverse failure is refusing a legitimate corpus. Two shapes had to keep working:
+ *
+ *   1. A real session — the person typed something — reports clean normally.
+ *   2. A REPEAT run where every file was skipped as unchanged still reports clean, because
+ *      the coverage fact was already established over those same files and is carried in the
+ *      store. Re-deriving it would mean re-reading everything, which is the whole cost the
+ *      incremental pass exists to avoid.
+ *
+ * Both are asserted in `tests/silent-skip.test.ts`, alongside the case that must fire.
+ */
+export interface CorpusCoverage {
+  /** Transcripts actually READ this run. A skipped file was not read. */
+  filesRead: number;
+  /** Tool results read. Obstacles can only ever come from these. */
+  toolResults: number;
+  /** Of the files read, how many carried a turn the person themselves typed. */
+  filesWithHumanTurns: number;
+  /**
+   * Whether an EARLIER run over this same store established that the corpus records human
+   * work. Lets an all-skipped refresh stay quiet without re-reading megabytes.
+   */
+  humanCorpusPreviously: boolean;
+}
+
+/**
+ * True when this corpus records some human's work, and a clean result therefore means the
+ * project is clean rather than that the scan was looking at its own reflection.
+ */
+export function corpusRecordsHumanWork(c: CorpusCoverage): boolean {
+  return c.filesWithHumanTurns > 0 || c.humanCorpusPreviously;
+}
+
+/**
+ * May this scan report "nothing blocked this project" as a finding?
+ *
+ * Only about the NEGATIVE. Positives are reportable whatever the provenance.
+ */
+export function negativeIsReportable(c: CorpusCoverage): boolean {
+  // Nothing read this run and nothing established before it: there is no corpus at all.
+  if (c.filesRead === 0 && !c.humanCorpusPreviously) return false;
+  // Files read but empty of tool results — obstacles could not have been found either way.
+  if (c.filesRead > 0 && c.toolResults === 0) return false;
+  return corpusRecordsHumanWork(c);
+}
+
+/** Why the negative was withheld, in the words the user needs. Empty when it is reportable. */
+export function whyNegativeWithheld(c: CorpusCoverage): string {
+  if (negativeIsReportable(c)) return '';
+  if (c.filesRead === 0) return 'No transcript was read this run, so nothing was checked.';
+  if (c.toolResults === 0) return `No tool results in the ${c.filesRead} transcript(s) read, so nothing was checked.`;
+  return (
+    `The ${c.filesRead} transcript(s) read contain no turn a person typed — they are a machine ` +
+    `talking to itself, which is what a scheduled or agent-only session looks like on disk.`
+  );
 }

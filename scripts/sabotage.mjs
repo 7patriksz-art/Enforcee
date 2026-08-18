@@ -493,6 +493,76 @@ const SABOTAGES = [
     run: 'tests/learn-user-turns.test.ts',
     expect: /scheduled task's own prompt is being mined|empty corpus, not a confident one|structured field/,
   },
+  // ── 2026-08-18, the obstacle sweep pointed at its own container ────────────────────────
+  //
+  // Four untruths in one run, three of them false accusations inside the product whose
+  // headline is zero false accusations. Each control below is one of them, and each has to be
+  // able to go red by name or it is decoration.
+  {
+    name: 'machine-only-corpus-called-clean',
+    why:
+      'in a scheduled container the only transcript on disk is the run own, and `obstacles` ' +
+      'answered "Nothing recognised blocked this project. That is a real answer." over it ' +
+      'while `learn` refused the identical file with exit 2',
+    file: 'src/lib/prevent/obstacles.ts',
+    find: '  return c.filesWithHumanTurns > 0 || c.humanCorpusPreviously;',
+    replace: '  return true;',
+    occurrences: 1,
+    run: 'tests/obstacles-mentions.test.ts',
+    expect: /no turn a person typed|refuses to report clean|nothing was checked/i,
+  },
+  {
+    name: 'comment-about-a-failure-counted-as-one',
+    why:
+      'the 401 pattern matched this file own comment describing the last time the 401 pattern ' +
+      'false-accused somebody: the agent read a file about 401s and the product recorded that ' +
+      'its credentials had been rejected',
+    file: 'src/lib/prevent/obstacles.ts',
+    find: '      const m = firstRealMatch(p.re, raw);',
+    replace: '      const m = p.re.exec(raw);',
+    occurrences: 1,
+    run: 'tests/obstacles-mentions.test.ts',
+    expect: /comment about 401s|mention of a failure is not a failure|JSDoc continuation/i,
+  },
+  {
+    name: 'json-encoded-newline-hides-the-comment-marker',
+    why:
+      'tool results arrive as JSON.stringify(...), so a whole file read is ONE physical line ' +
+      'with every break as the two characters backslash and n; the first version of the ' +
+      'mention guard looked for real newlines only and changed nothing at all',
+    file: 'src/lib/prevent/obstacles.ts',
+    find: '  const start = Math.max(realStart, escStart);',
+    replace: '  const start = realStart;',
+    occurrences: 1,
+    run: 'tests/obstacles-mentions.test.ts',
+    expect: /JSON-encoded newline|how tool results actually arrive/i,
+  },
+  {
+    name: 'grep-line-number-hides-the-comment-marker',
+    why:
+      'reading source through `grep -n` puts <file>:<line>: in front of the comment marker, ' +
+      'which hid seven of the eleven mentions measured on 2026-08-18 and is the commonest way ' +
+      'an agent looks at source at all',
+    file: 'src/lib/prevent/obstacles.ts',
+    find: "  return MENTION_LINE.test(line) || MENTION_LINE.test(line.replace(GREP_PREFIX, ''));",
+    replace: '  return MENTION_LINE.test(line);',
+    occurrences: 1,
+    run: 'tests/obstacles-mentions.test.ts',
+    expect: /grep -n line-number prefix/i,
+  },
+  {
+    name: 'tool-counts-its-own-report-as-a-failure',
+    why:
+      'the printed obstacle report is captured as a tool result by the session being scanned, ' +
+      'so every run re-files what the last run printed and the count climbs on its own — the ' +
+      'same lie as the 762x hits number, arriving through a different door',
+    file: 'src/lib/prevent/obstacles.ts',
+    find: '    if (isOwnReport(raw)) continue;',
+    replace: '',
+    occurrences: 1,
+    run: 'tests/obstacles-mentions.test.ts',
+    expect: /ratchets on its own printout|must not read its own report|reinjection brief/i,
+  },
 ];
 
 const filter = process.argv[2];

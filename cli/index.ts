@@ -21,7 +21,7 @@ import { buildBrief } from '../src/lib/brief/extract';
 import { close } from '../src/lib/brief/close';
 import type { Brief } from '../src/lib/brief/types';
 import { checkClaims } from '../src/lib/prevent/claims';
-import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, PATTERNS_VERSION, type Obstacle } from '../src/lib/prevent/obstacles';
+import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, negativeIsReportable, whyNegativeWithheld, corpusRecordsHumanWork, PATTERNS_VERSION, type Obstacle, type CorpusCoverage } from '../src/lib/prevent/obstacles';
 import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, existingFromRuleset } from '../src/lib/prevent/supersede';
 import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference, decide } from '../src/lib/prevent/memory';
 import { createHash } from 'node:crypto';
@@ -803,15 +803,20 @@ async function main(): Promise<void> {
     // obstacles on a pattern-version change: stale mtimes would skip files the NEW patterns
     // have never seen, which is the silent-undercount version of this whole class of bug.
     let priorFiles: Record<string, number> = {};
+    // Whether an earlier run established that this corpus records a person's work. Carried
+    // so an all-skipped refresh does not have to re-read megabytes to re-derive a fact that
+    // was already true of the same files. Discarded with the rest on a version change.
+    let priorHumanCorpus = false;
     if (existsSync(store)) {
       const raw = JSON.parse(readFileSync(store, 'utf8')) as
-        | { version?: number; obstacles?: Obstacle[]; files?: Record<string, number> }
+        | { version?: number; obstacles?: Obstacle[]; files?: Record<string, number>; humanCorpus?: boolean }
         | Obstacle[];
       const version = Array.isArray(raw) ? 0 : (raw.version ?? 0);
       const stored = Array.isArray(raw) ? raw : (raw.obstacles ?? []);
       if (version === PATTERNS_VERSION) {
         prior = stored;
         priorFiles = (Array.isArray(raw) ? {} : ((raw.files ?? {}) as Record<string, number>));
+        priorHumanCorpus = Array.isArray(raw) ? false : raw.humanCorpus === true;
       }
       else if (stored.length) {
         console.log(
@@ -844,8 +849,15 @@ async function main(): Promise<void> {
     const skipped = files.length - fresh.length;
 
     let scanned: Obstacle[] = [];
+    // Counted from the SAME parse as the tool results, so establishing coverage costs no
+    // extra read. `userTurnsFromTranscript` is the one place that knows which of the records
+    // wearing role:"user" the person actually typed — a compaction summary, a hook echo and a
+    // scheduled prompt all wear it too.
+    let filesWithHumanTurns = 0;
     for (const f of fresh) {
-      const tr = toolResultsFromRecords(parseJsonl(readFileSync(f, 'utf8')));
+      const records = parseJsonl(readFileSync(f, 'utf8'));
+      if (userTurnsFromTranscript(records).length > 0) filesWithHumanTurns++;
+      const tr = toolResultsFromRecords(records);
       results += tr.length;
       scanned = mergeObstacles(scanned, extractObstacles(tr, f));
       try {
@@ -865,10 +877,25 @@ async function main(): Promise<void> {
     }
 
     const merged = mergeObstacles(prior, scanned);
+
+    // What this scan is entitled to conclude. Positives stand on their own; the NEGATIVE
+    // needs a corpus that records somebody's work. See obstacles.ts for the run that found
+    // this, where the answer was "that is a real answer" over the run's own transcript.
+    const coverage: CorpusCoverage = {
+      filesRead: fresh.length,
+      toolResults: results,
+      filesWithHumanTurns,
+      humanCorpusPreviously: priorHumanCorpus,
+    };
+    const humanCorpus = corpusRecordsHumanWork(coverage);
+
     if (json) return console.log(JSON.stringify(merged, null, 2));
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles }, null, 2));
+    writeFileSync(
+      store,
+      JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles, humanCorpus }, null, 2)
+    );
 
     console.log(
       C.grey(
@@ -878,8 +905,22 @@ async function main(): Promise<void> {
       )
     );
     if (!merged.length) {
+      // The whole point of this branch. "Nothing blocked you" is a CLAIM, and it is only
+      // true of a corpus that recorded somebody working. Refusing here rather than printing
+      // a confident sentence is the difference between a finding and a false clean bill.
+      if (!negativeIsReportable(coverage)) {
+        console.error(C.red('  Nothing was analysed that records your work.'));
+        console.error(C.grey(`  ${whyNegativeWithheld(coverage)}`));
+        console.error(C.grey('  That is not the same as finding no obstacles, so no clean result is being reported.\n'));
+        process.exit(2);
+      }
       console.log(C.grey('  Nothing recognised blocked this project. That is a real answer.\n'));
       return;
+    }
+    if (!humanCorpus) {
+      console.log(
+        C.yellow('  These are real failures, but the transcripts read record no human turn — so this is what blocked\n  this agent, not a history of the project.\n')
+      );
     }
     for (const o of merged) {
       const rep = o.hits > 1 ? C.red(`${o.hits}×`) : C.grey('1×');

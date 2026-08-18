@@ -11182,7 +11182,7 @@ function checkClaims(text, ctx) {
 }
 
 // src/lib/prevent/obstacles.ts
-var PATTERNS_VERSION = 2;
+var PATTERNS_VERSION = 3;
 var PATTERNS2 = [
   {
     kind: "network",
@@ -11291,6 +11291,51 @@ function redact(s) {
 function normaliseCapture(v) {
   return v.replace(/\\{2,}/g, "\\").replace(/[.,;]+$/, "").trim();
 }
+var GREP_PREFIX = /^[\s\\]*(?:[^\s:]*:)?\d+[:-]/;
+var MENTION_LINE = /^[\s\\]*(?:\/\/|\/\*|\*|#|<!--)/;
+function lineAround(raw, index) {
+  const realStart = raw.lastIndexOf("\n", index) + 1;
+  const esc = raw.lastIndexOf("\\n", index);
+  const escStart = esc !== -1 && esc + 2 <= index ? esc + 2 : 0;
+  const start = Math.max(realStart, escStart);
+  const realEnd = raw.indexOf("\n", index);
+  const escEnd = raw.indexOf("\\n", index);
+  const ends = [realEnd, escEnd].filter((n) => n !== -1);
+  const end = ends.length ? Math.min(...ends) : raw.length;
+  return raw.slice(start, end);
+}
+function matchIsMention(raw, index) {
+  const line = lineAround(raw, index);
+  return MENTION_LINE.test(line) || MENTION_LINE.test(line.replace(GREP_PREFIX, ""));
+}
+var GLOBAL_RE = /* @__PURE__ */ new WeakMap();
+function globalOf(re) {
+  let g = GLOBAL_RE.get(re);
+  if (!g) {
+    g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+    GLOBAL_RE.set(re, g);
+  }
+  return g;
+}
+var OWN_REPORT = [
+  /\d+\s+tool results across \d+ session/i,
+  /## Known obstacles in this project/i,
+  /Nothing recognised blocked this project/i,
+  /No remedy (?:has been )?observed yet/i
+];
+function isOwnReport(raw) {
+  return OWN_REPORT.some((re) => re.test(raw));
+}
+function firstRealMatch(re, raw) {
+  const g = globalOf(re);
+  g.lastIndex = 0;
+  let m;
+  while ((m = g.exec(raw)) !== null) {
+    if (!matchIsMention(raw, m.index)) return m;
+    if (m.index === g.lastIndex) g.lastIndex++;
+  }
+  return null;
+}
 function snippet(s, n = 160) {
   return redact(s.replace(/\s+/g, " ").trim()).slice(0, n);
 }
@@ -11299,8 +11344,9 @@ function extractObstacles(toolResults, source = "") {
   for (let i = 0; i < toolResults.length; i++) {
     const raw = toolResults[i];
     if (!raw) continue;
+    if (isOwnReport(raw)) continue;
     for (const p of PATTERNS2) {
-      const m = p.re.exec(raw);
+      const m = firstRealMatch(p.re, raw);
       if (!m) continue;
       const captured = normaliseCapture(m[1] ?? "");
       const signature = p.signature.replace("$1", captured);
@@ -11376,6 +11422,20 @@ function toolResultsFromRecords(records) {
     if (r.toolUseResult !== void 0) out.push(JSON.stringify(r.toolUseResult).slice(0, 4e3));
   }
   return out;
+}
+function corpusRecordsHumanWork(c) {
+  return c.filesWithHumanTurns > 0 || c.humanCorpusPreviously;
+}
+function negativeIsReportable(c) {
+  if (c.filesRead === 0 && !c.humanCorpusPreviously) return false;
+  if (c.filesRead > 0 && c.toolResults === 0) return false;
+  return corpusRecordsHumanWork(c);
+}
+function whyNegativeWithheld(c) {
+  if (negativeIsReportable(c)) return "";
+  if (c.filesRead === 0) return "No transcript was read this run, so nothing was checked.";
+  if (c.toolResults === 0) return `No tool results in the ${c.filesRead} transcript(s) read, so nothing was checked.`;
+  return `The ${c.filesRead} transcript(s) read contain no turn a person typed \u2014 they are a machine talking to itself, which is what a scheduled or agent-only session looks like on disk.`;
 }
 
 // src/lib/prevent/supersede.ts
@@ -12502,6 +12562,7 @@ async function main() {
     const store = join6(dir, "obstacles.json");
     let prior = [];
     let priorFiles = {};
+    let priorHumanCorpus = false;
     if (existsSync5(store)) {
       const raw = JSON.parse(readFileSync3(store, "utf8"));
       const version = Array.isArray(raw) ? 0 : raw.version ?? 0;
@@ -12509,6 +12570,7 @@ async function main() {
       if (version === PATTERNS_VERSION) {
         prior = stored;
         priorFiles = Array.isArray(raw) ? {} : raw.files ?? {};
+        priorHumanCorpus = Array.isArray(raw) ? false : raw.humanCorpus === true;
       } else if (stored.length) {
         console.log(
           C.yellow(`  Discarded ${stored.length} obstacle(s) recorded under older patterns (v${version} \u2192 v${PATTERNS_VERSION}).`)
@@ -12526,8 +12588,11 @@ async function main() {
     });
     const skipped = files.length - fresh.length;
     let scanned = [];
+    let filesWithHumanTurns = 0;
     for (const f of fresh) {
-      const tr = toolResultsFromRecords(parseJsonl(readFileSync3(f, "utf8")));
+      const records = parseJsonl(readFileSync3(f, "utf8"));
+      if (userTurnsFromTranscript(records).length > 0) filesWithHumanTurns++;
+      const tr = toolResultsFromRecords(records);
       results += tr.length;
       scanned = mergeObstacles(scanned, extractObstacles(tr, f));
       try {
@@ -12541,9 +12606,19 @@ async function main() {
       process.exit(2);
     }
     const merged = mergeObstacles(prior, scanned);
+    const coverage = {
+      filesRead: fresh.length,
+      toolResults: results,
+      filesWithHumanTurns,
+      humanCorpusPreviously: priorHumanCorpus
+    };
+    const humanCorpus = corpusRecordsHumanWork(coverage);
     if (json) return console.log(JSON.stringify(merged, null, 2));
     mkdirSync3(dir, { recursive: true });
-    writeFileSync3(store, JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles }, null, 2));
+    writeFileSync3(
+      store,
+      JSON.stringify({ version: PATTERNS_VERSION, obstacles: merged, files: seenFiles, humanCorpus }, null, 2)
+    );
     console.log(
       C.grey(
         `
@@ -12551,8 +12626,19 @@ async function main() {
       )
     );
     if (!merged.length) {
+      if (!negativeIsReportable(coverage)) {
+        console.error(C.red("  Nothing was analysed that records your work."));
+        console.error(C.grey(`  ${whyNegativeWithheld(coverage)}`));
+        console.error(C.grey("  That is not the same as finding no obstacles, so no clean result is being reported.\n"));
+        process.exit(2);
+      }
       console.log(C.grey("  Nothing recognised blocked this project. That is a real answer.\n"));
       return;
+    }
+    if (!humanCorpus) {
+      console.log(
+        C.yellow("  These are real failures, but the transcripts read record no human turn \u2014 so this is what blocked\n  this agent, not a history of the project.\n")
+      );
     }
     for (const o of merged) {
       const rep = o.hits > 1 ? C.red(`${o.hits}\xD7`) : C.grey("1\xD7");
