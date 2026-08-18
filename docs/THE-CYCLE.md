@@ -35,6 +35,39 @@ it is doing a different job.
 
 ---
 
+### 1a. A scheduled container holds exactly one transcript, and it is your own
+
+**Measured 2026-08-18, 08:00 LEARN run.** `find /root/.claude/projects -name '*.jsonl'`
+returned **one** file. Its `sessionId` was the running session's. So:
+
+```
+enforcee obstacles /root/.claude/projects   →  "12 tool results across 1 session(s)"
+                                               "Nothing recognised blocked this project.
+                                                That is a real answer."
+enforcee learn <that file>                  →  "your turns only — 4137 of 71174 characters"
+```
+
+Both answers are confident, both read as findings, and the 4,137 characters were **this run's
+own scheduled prompt**. Patrik's real sessions are on his machine; `READ-MY-SESSIONS.md`
+already records that `~/.claude` cannot be granted to a cloud session. Nothing had carried
+that fact forward to the station whose prompt names both commands as its step 1.
+
+So, binding:
+
+- **In a scheduled run, `obstacles` and `learn` over `~/.claude/projects` are not evidence.**
+  A clean result there means the corpus was yours, not that the project is clean. Say which
+  one you mean; never file a proposal whose only support is a scheduled container's scan.
+- The real corpus arrives by `READ-MY-SESSIONS.md` — Patrik runs the scan where the files are
+  and sends `obstacles.md`. That path, not the container, is what LEARN is waiting on.
+- `learn` now **refuses** such a transcript (`exit 2`, "no human turns this build can read")
+  rather than reporting a percentage of itself. If you see that refusal, it is working.
+
+The wider rule, because this is the third time the same shape has bitten: **a corpus you did
+not verify the provenance of is not a corpus.** `role: "user"` is not "the person typed
+this" — the compaction summary wore that role in August, and a scheduled prompt wears it now.
+
+---
+
 ## 2. When you hit a wall, take a different route. Never stop.
 
 **Corrected 2026-08-16.** This section first said "rotate the subject area each night". That

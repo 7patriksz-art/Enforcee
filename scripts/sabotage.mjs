@@ -480,6 +480,19 @@ const SABOTAGES = [
     run: 'tests/release-gate.test.ts',
     expect: /invariant REVERSED, not on the file merely existing|counts removed lines/,
   },
+  {
+    name: 'scheduled-prompt-mined-as-the-user',
+    why:
+      "a scheduled task's own prompt arrives with role:'user' and origin.kind 'task-notification'; " +
+      'the text filter names that channel but the real record does not START with the tag, so ' +
+      'in a scheduled container `learn` analysed a corpus that was 100% its own instructions',
+    file: 'src/lib/preferences.ts',
+    find: "    if (r.origin?.kind && MACHINE_ORIGIN_KINDS.has(r.origin.kind)) continue;",
+    replace: '',
+    occurrences: 1,
+    run: 'tests/learn-user-turns.test.ts',
+    expect: /scheduled task's own prompt is being mined|empty corpus, not a confident one|structured field/,
+  },
 ];
 
 const filter = process.argv[2];

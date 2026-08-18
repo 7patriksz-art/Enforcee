@@ -290,6 +290,32 @@ export function extractPreferences(text: string, opts: ExtractOptions = {}): Pre
  *
  * A tool_result never reaches here, because only `type: "text"` blocks are read.
  */
+/**
+ * Structured provenance beats a text sniff. A record carries `origin.kind` when the harness
+ * injected it, and that field is authoritative in a way a prefix match can never be.
+ *
+ * `task-notification` is the channel a SCHEDULED TASK's own prompt arrives on. Measured on
+ * this repository's 08:00 LEARN run, 2026-08-18:
+ *
+ *     { origin: { kind: 'task-notification', subkind: 'scheduled-trigger' },
+ *       entrypoint: 'remote_cowork_trigger',
+ *       message: { role: 'user', content: 'You are the LEARN station — ...' } }   4,137 chars
+ *
+ * The text list below already named `<task-notification>`, so this channel was known and
+ * meant to be excluded. It was excluded by the wrong mechanism: the real record does not
+ * START with that tag, it starts with the prompt. So the filter never fired, and in a
+ * scheduled container — where the only transcript on disk is the run's OWN — `enforcee learn`
+ * analysed a corpus that was 100% the agent's own instructions and reported
+ * "your turns only — 4137 of 71174 characters" while doing it.
+ *
+ * That is the 2026-08-15 defect one layer down. Then it was the assistant's prose mined as
+ * the user's words; here it is the agent's ORDERS mined as the user's words, which is worse,
+ * because a rule derived from an instruction is guaranteed to agree with whoever wrote the
+ * instruction. Patrik's whole objection — "not me pointing at every error" — depends on this
+ * corpus being his and not ours.
+ */
+const MACHINE_ORIGIN_KINDS = new Set(['task-notification']);
+
 const NOT_THE_PERSON_SPEAKING = [
   '<system-reminder>',
   '<task-notification>',
@@ -304,6 +330,7 @@ export function userTurnsFromTranscript(
     type?: string;
     isCompactSummary?: boolean;
     isMeta?: boolean;
+    origin?: { kind?: string };
     message?: { role?: string; content?: unknown };
   }[]
 ): string {
@@ -312,6 +339,8 @@ export function userTurnsFromTranscript(
     if (r.type !== 'user' || r.message?.role !== 'user') continue;
     // The two that cost 93% of the corpus. Both are the machine talking, under the user's role.
     if (r.isCompactSummary || r.isMeta) continue;
+    // The one that cost 100% of it, in every scheduled run this project makes.
+    if (r.origin?.kind && MACHINE_ORIGIN_KINDS.has(r.origin.kind)) continue;
     const c = r.message.content;
     if (typeof c === 'string') parts.push(c);
     else if (Array.isArray(c)) {

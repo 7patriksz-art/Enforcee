@@ -10229,6 +10229,7 @@ function extractPreferences(text, opts = {}) {
   }
   return out.sort((a, b) => RANK[b.strength] - RANK[a.strength] || a.start - b.start);
 }
+var MACHINE_ORIGIN_KINDS = /* @__PURE__ */ new Set(["task-notification"]);
 var NOT_THE_PERSON_SPEAKING = [
   "<system-reminder>",
   "<task-notification>",
@@ -10242,6 +10243,7 @@ function userTurnsFromTranscript(records) {
   for (const r of records) {
     if (r.type !== "user" || r.message?.role !== "user") continue;
     if (r.isCompactSummary || r.isMeta) continue;
+    if (r.origin?.kind && MACHINE_ORIGIN_KINDS.has(r.origin.kind)) continue;
     const c = r.message.content;
     if (typeof c === "string") parts.push(c);
     else if (Array.isArray(c)) {

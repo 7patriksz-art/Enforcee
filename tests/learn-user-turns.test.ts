@@ -69,8 +69,42 @@ const SLASH_COMMAND = {
   message: { role: 'user', content: '<command-name>/compact</command-name>' },
 };
 
+/**
+ * The scheduled task's own prompt, verbatim in shape from the 08:00 LEARN run on 2026-08-18.
+ *
+ * This is the channel that makes the tool agree with itself. In a scheduled cloud container
+ * the ONLY transcript under ~/.claude/projects is the run's own — Patrik's real sessions are
+ * on his machine and READ-MY-SESSIONS.md records that ~/.claude cannot be granted to a cloud
+ * session. So this single record was 4,137 of the 4,137 prose characters `enforcee learn`
+ * analysed: the corpus was the agent's own orders, and the CLI printed a percentage while
+ * reporting it.
+ *
+ * Note what it is NOT: it does not start with `<task-notification>`, which is the tag the
+ * text filter names. Provenance is in `origin.kind`, and until now nothing read it.
+ */
+const SCHEDULED_TASK_PROMPT = {
+  type: 'user',
+  origin: { kind: 'task-notification', subkind: 'scheduled-trigger' },
+  entrypoint: 'remote_cowork_trigger',
+  message: {
+    role: 'user',
+    content:
+      'You are the LEARN station. Never reword a claim to avoid a duplicate. ' +
+      'Always file a finding with evidence.',
+  },
+};
+
 describe('only the human turns are mined', () => {
-  const ALL = [HUMAN, COMPACT_SUMMARY, HOOK_OUTPUT, ASSISTANT, SYSTEM_REMINDER, TOOL_RESULT, SLASH_COMMAND];
+  const ALL = [
+    HUMAN,
+    COMPACT_SUMMARY,
+    HOOK_OUTPUT,
+    ASSISTANT,
+    SYSTEM_REMINDER,
+    TOOL_RESULT,
+    SLASH_COMMAND,
+    SCHEDULED_TASK_PROMPT,
+  ];
 
   it('keeps what the person actually typed', () => {
     expect(userTurnsFromTranscript(ALL)).toContain('British English');
@@ -108,5 +142,31 @@ describe('only the human turns are mined', () => {
     // refusal; this pins that the input to that decision is genuinely empty.
     const machineOnly = [COMPACT_SUMMARY, HOOK_OUTPUT, ASSISTANT, SYSTEM_REMINDER];
     expect(userTurnsFromTranscript(machineOnly)).toBe('');
+  });
+
+  it("drops a scheduled task's own prompt, which arrives wearing the user's role", () => {
+    // The imperatives in that prompt are exactly the shape `extractPreferences` mines:
+    // "Never reword...", "Always file...". Mined, they come back to Patrik as things HE
+    // asked for, when they are things we told ourselves.
+    const out = userTurnsFromTranscript(ALL);
+    expect(out, "the scheduled task's own prompt is being mined as the user").not.toMatch(
+      /LEARN station|reword a claim|file a finding/
+    );
+  });
+
+  it('a scheduled run alone on disk yields an empty corpus, not a confident one', () => {
+    // The measured state of a scheduled container: one transcript, and it is this run's.
+    // Empty is the only honest answer, and the CLI turns empty into an explicit refusal.
+    expect(userTurnsFromTranscript([SCHEDULED_TASK_PROMPT, TOOL_RESULT, ASSISTANT])).toBe('');
+  });
+
+  it('excludes it on the structured field, not on how the text happens to begin', () => {
+    // NOT_THE_PERSON_SPEAKING lists '<task-notification>' by name, so this channel was known
+    // and meant to be excluded. It was excluded by a prefix match the real record does not
+    // satisfy. Pin the distinction, or the fix silently reverts to the sniff that failed.
+    expect(SCHEDULED_TASK_PROMPT.message.content.trimStart().startsWith('<task-notification>')).toBe(false);
+    const untagged = { ...SCHEDULED_TASK_PROMPT, origin: undefined };
+    expect(userTurnsFromTranscript([untagged]), 'only the text filter is doing the work').not.toBe('');
+    expect(userTurnsFromTranscript([SCHEDULED_TASK_PROMPT])).toBe('');
   });
 });
