@@ -148,7 +148,13 @@ describe('the install puts the row on the screen', () => {
 
   it('still writes every hook, so adding the row did not displace the enforcement', () => {
     const s = hookSettings() as { hooks?: Record<string, unknown> };
-    expect(Object.keys(s.hooks ?? {}).sort()).toEqual(['PostCompact', 'PreToolUse', 'SessionStart', 'Stop']);
+    expect(Object.keys(s.hooks ?? {}).sort()).toEqual([
+      'PostCompact',
+      'PreToolUse',
+      'SessionStart',
+      'Stop',
+      'UserPromptSubmit',
+    ]);
   });
 });
 

@@ -36,6 +36,7 @@ import {
 import type { RuleResult } from '../src/lib/types';
 import { readLedger, renderTrace, renderTraceFile, summarise, tailOfLedger } from '../src/lib/trace/summary';
 import { renderStatusLine, type Presence } from '../src/lib/trace/statusline';
+import { corpusFrom, readSaid } from '../src/lib/prevent/said';
 
 /**
  * Injected at build time from package.json — see the --define in build:cli.
@@ -72,7 +73,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee preflight')} <rules-file>              check what your rules assume, before you start
   ${C.bold('enforcee verify')} <output> [transcript]       did it do what it said it did?
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
-  ${C.bold('enforcee learn')} <conversation-file> [rules]   propose rules from what you already said
+  ${C.bold('enforcee learn')} [conversation-file] [rules]  propose rules from what you already said\n                                                 ${C.dim('with no file: from what the guard heard in this project')}
   ${C.bold('enforcee learned')}                             what has been learned, and what you decided
   ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
@@ -436,9 +437,37 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'learn') {
+    // NO ARGUMENT MEANS "what have I already said here".
+    //
+    // The guard captures every instruction-shaped turn into `.enforcee/said.jsonl` as it is
+    // typed. Requiring a filename made learning a thing you had to remember to do, against a
+    // transcript you had to go and find - the manual step the product exists to delete.
+    //
+    // It refuses rather than reporting nothing when the store is empty, because "no
+    // preferences found" and "no corpus was read" look identical in a terminal and only one
+    // of them is a result.
+    let saidCorpus: string | null = null;
     if (!args[1]) {
-      console.error(C.red('usage: enforcee learn <file>'));
-      process.exit(2);
+      const raw = (() => {
+        try {
+          return readFileSync(join(process.cwd(), '.enforcee', 'said.jsonl'), 'utf8');
+        } catch {
+          return '';
+        }
+      })();
+      const rows = readSaid(raw);
+      if (rows.length === 0) {
+        console.error(C.red('  Nothing has been captured in this project yet.'));
+        console.error(
+          C.grey('  The guard records instruction-shaped turns as you type them. Install it with')
+        );
+        console.error(C.grey('  `enforcee guard <rules-file>`, or pass a file: `enforcee learn <file>`.'));
+        process.exit(2);
+      }
+      saidCorpus = corpusFrom(rows);
+      // NOT under --json. A human-readable preamble on stdout makes the output unparseable,
+      // which is the whole point of the flag - caught by tests/said.test.ts on the first run.
+      if (!json) console.log(C.grey(`  ${rows.length} turn${rows.length === 1 ? '' : 's'} captured in this project\n`));
     }
     // A session transcript is JSONL, not prose. Read it as prose and every line the
     // ASSISTANT wrote — its code, its commit messages, its regexes — is mined back as if the
@@ -461,8 +490,8 @@ async function main(): Promise<void> {
     //
     // Same defect as selfcheck and verify:ui running in no pipeline: a correct control wired
     // to nothing.
-    const raw = read(args[1]);
-    const fromTranscript = looksLikeTranscript(raw);
+    const raw = saidCorpus ?? read(args[1]);
+    const fromTranscript = saidCorpus === null && looksLikeTranscript(raw);
     const text = fromTranscript ? userTurnsFromTranscript(parseJsonl(raw)) : raw;
     if (fromTranscript) {
       // Never let a check silently cover nothing. An empty corpus here reads identically to
@@ -474,7 +503,8 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const pct = ((text.length / raw.length) * 100).toFixed(1);
-      console.log(C.grey(`  transcript: your turns only — ${text.length} of ${raw.length} characters (${pct}%)\n`));
+      // Same rule as above: --json means JSON, and this line had the same defect.
+      if (!json) console.log(C.grey(`  transcript: your turns only — ${text.length} of ${raw.length} characters (${pct}%)\n`));
     }
     const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
     const existing = args[2] ? new Set(rulesetRules.map((r) => r.id)) : undefined;

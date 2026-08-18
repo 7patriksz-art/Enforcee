@@ -268,9 +268,29 @@ describe('policy compilation', () => {
   });
 
   it('emits hook wiring for every event the product depends on', () => {
+    // THE WHOLE LOOP, ONE EVENT AT A TIME. Pinned exactly, so an event cannot be dropped by
+    // an edit somewhere else and leave a half-installed product that still looks installed:
+    //
+    //   UserPromptSubmit  LEARN    the only event carrying the user's own words
+    //   PreToolUse        ENFORCE  refuse a forbidden call before it runs
+    //   SessionStart      RESTORE  put the rules back at the start of a session
+    //   PostCompact       RESTORE  and again after compaction drops them
+    //   Stop              VERIFY   check the claims, run the close gate, leave the trace
+    //
+    // Adding one is a decision. Losing one is a silent regression, which is why this is an
+    // exact match rather than a contains.
     const s = hookSettings();
-    expect(Object.keys(s.hooks).sort()).toEqual(['PostCompact', 'PreToolUse', 'SessionStart', 'Stop']);
+    expect(Object.keys(s.hooks).sort()).toEqual([
+      'PostCompact',
+      'PreToolUse',
+      'SessionStart',
+      'Stop',
+      'UserPromptSubmit',
+    ]);
     expect(s.hooks.PreToolUse[0].hooks[0].command).toMatch(/guard\.mjs$/);
+    expect(s.hooks.UserPromptSubmit[0].hooks[0].command, 'the learning half points somewhere else').toMatch(
+      /guard\.mjs$/
+    );
   });
 
   it('stamps the ruleset hash so a stale policy is detectable', () => {

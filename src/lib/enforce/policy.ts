@@ -371,6 +371,12 @@ export function hookSettings(guardPath = '.enforcee/guard.mjs', cliPath = 'npx e
       PostCompact: [{ matcher: 'manual|auto', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
       SessionStart: [{ matcher: 'startup|resume|compact|fork', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
       Stop: [{ matcher: '*', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
+      /**
+       * The learning half. This is the only event that carries the user's own words, so
+       * without it `enforcee learn` stays a thing a human has to remember to run against a
+       * file — which is the manual step the whole product exists to delete.
+       */
+      UserPromptSubmit: [{ matcher: '*', hooks: [{ type: 'command', command: cmd, timeout: 10 }] }],
     },
     /**
      * THE ONE PERSISTENT SURFACE.

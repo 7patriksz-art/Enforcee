@@ -11731,7 +11731,7 @@ function alreadyDeclined(memory, id) {
 }
 
 // cli/index.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 
 // src/lib/plans.ts
 var ENTITLEMENTS = {
@@ -12179,6 +12179,39 @@ function renderStatusLine(p, colour = true) {
   return `${mark} ${c.grey(`\xB7 ${known.join(" \xB7 ")} \xB7`)} ${right}`;
 }
 
+// src/lib/prevent/said.ts
+import { createHash as createHash4 } from "node:crypto";
+function normalise2(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function saidId(text) {
+  return "S-" + createHash4("sha256").update(normalise2(text)).digest("hex").slice(0, 10);
+}
+function readSaid(raw) {
+  const rows = [];
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const r = JSON.parse(t);
+      if (r && typeof r.text === "string" && r.text.trim()) rows.push(r);
+    } catch {
+    }
+  }
+  return rows;
+}
+function corpusFrom(rows) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const r of rows) {
+    const id = r.id || saidId(r.text);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(r.text.trim());
+  }
+  return out.join("\n\n");
+}
+
 // cli/index.ts
 var VERSION2 = true ? "0.9.1" : "0.0.0-dev";
 var C2 = {
@@ -12205,7 +12238,8 @@ ${C2.bold("enforcee")} ${C2.dim(VERSION2)}  ${C2.dim("\u2014 did your AI actuall
   ${C2.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
   ${C2.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
   ${C2.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
-  ${C2.bold("enforcee learn")} <conversation-file> [rules]   propose rules from what you already said
+  ${C2.bold("enforcee learn")} [conversation-file] [rules]  propose rules from what you already said
+                                                 ${C2.dim("with no file: from what the guard heard in this project")}
   ${C2.bold("enforcee learned")}                             what has been learned, and what you decided
   ${C2.bold("enforcee accept")}|${C2.bold("decline")} <id>              decide on a learned preference
   ${C2.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
@@ -12494,12 +12528,30 @@ async function main() {
     process.exit(receipt.health.some((h) => h.severity === "error") ? 1 : 0);
   }
   if (cmd === "learn") {
+    let saidCorpus = null;
     if (!args[1]) {
-      console.error(C2.red("usage: enforcee learn <file>"));
-      process.exit(2);
+      const raw2 = (() => {
+        try {
+          return readFileSync3(join6(process.cwd(), ".enforcee", "said.jsonl"), "utf8");
+        } catch {
+          return "";
+        }
+      })();
+      const rows = readSaid(raw2);
+      if (rows.length === 0) {
+        console.error(C2.red("  Nothing has been captured in this project yet."));
+        console.error(
+          C2.grey("  The guard records instruction-shaped turns as you type them. Install it with")
+        );
+        console.error(C2.grey("  `enforcee guard <rules-file>`, or pass a file: `enforcee learn <file>`."));
+        process.exit(2);
+      }
+      saidCorpus = corpusFrom(rows);
+      if (!json) console.log(C2.grey(`  ${rows.length} turn${rows.length === 1 ? "" : "s"} captured in this project
+`));
     }
-    const raw = read(args[1]);
-    const fromTranscript = looksLikeTranscript(raw);
+    const raw = saidCorpus ?? read(args[1]);
+    const fromTranscript = saidCorpus === null && looksLikeTranscript(raw);
     const text = fromTranscript ? userTurnsFromTranscript(parseJsonl(raw)) : raw;
     if (fromTranscript) {
       if (text.length === 0) {
@@ -12508,7 +12560,7 @@ async function main() {
         process.exit(2);
       }
       const pct = (text.length / raw.length * 100).toFixed(1);
-      console.log(C2.grey(`  transcript: your turns only \u2014 ${text.length} of ${raw.length} characters (${pct}%)
+      if (!json) console.log(C2.grey(`  transcript: your turns only \u2014 ${text.length} of ${raw.length} characters (${pct}%)
 `));
     }
     const rulesetRules = args[2] ? parseRuleset(read(args[2]), args[2]).rules : [];
@@ -12518,7 +12570,7 @@ async function main() {
     const memory = loadMemory();
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     for (const c of found) {
-      const occurrence = createHash4("sha256").update(`${args[1]}|${c.start}|${c.quote}`).digest("hex").slice(0, 16);
+      const occurrence = createHash5("sha256").update(`${args[1]}|${c.start}|${c.quote}`).digest("hex").slice(0, 16);
       noteMention(memory, c.id, c.rule, c.quote, today, occurrence);
     }
     let enforcedIds = /* @__PURE__ */ new Set();

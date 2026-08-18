@@ -32,7 +32,7 @@ import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, verify } from 'node:crypto';
 
 /**
  * The licence verification key. Public half of an Ed25519 pair — safe to ship, and it
@@ -749,6 +749,74 @@ function runCloseGate(policy, policyPath) {
   return { results, pending };
 }
 
+/**
+ * CAPTURE WHAT THE USER SAID - the first step of the loop, and the one that was missing.
+ *
+ * Patrik, 2026-08-18: *"creates guards based on the user preference when he says something
+ * you should or shouldn't."*
+ *
+ * Enforcement and verification were both live in this file. Learning was not: `enforcee
+ * learn` only ran when a human typed it and pointed it at a file, so somebody saying "never
+ * do that again" mid-session was recorded nowhere and gone by the next session. That is the
+ * exact failure the product exists to fix, and we had it ourselves.
+ *
+ * THIS FUNCTION DOES NOT CLASSIFY. It runs on the user's keystroke path, so it decides only
+ * whether a turn is even shaped like an instruction and appends it verbatim if so.
+ * `extractPreferences` in src/lib stays the only thing that decides what a sentence MEANS.
+ *
+ * The gate is therefore allowed to be crude, because it only has to be a SUPERSET: anything
+ * the library would extract must have been captured. tests/said.test.ts checks that
+ * relationship rather than demanding the two agree word for word. Over-capture costs a line
+ * in a JSONL file; under-capture loses the sentence forever.
+ */
+const DIRECTIVE_SHAPE =
+  /\b(never|always|dont|don't|do not|stop|make sure|must|should|from now on|no longer|instead of|prefer|avoid|remember to|be sure to)\b/i;
+
+function saidIdOf(text) {
+  const norm = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return 'S-' + createHash('sha256').update(norm).digest('hex').slice(0, 10);
+}
+
+/** Too short is an approval, too long is a pasted log. Neither is somebody stating a rule. */
+function worthCapturingHere(text) {
+  const t = (text ?? '').trim();
+  if (t.length < 12 || t.length > 2000) return false;
+  return DIRECTIVE_SHAPE.test(t);
+}
+
+/**
+ * Append one row, unless this exact instruction is already the newest thing in the file.
+ *
+ * Saying it twice in one breath is emphasis, not evidence. Repetition that counts is
+ * repetition across turns, and `learned.json` is what carries that.
+ */
+function captureSaid(policyPath, text, session, at) {
+  try {
+    const path = join(dirname(policyPath), 'said.jsonl');
+    const id = saidIdOf(text);
+    let existing = '';
+    try {
+      existing = readFileSync(path, 'utf8');
+    } catch {
+      /* first thing anyone has said here */
+    }
+    const lines = existing.split('\n').filter((l) => l.trim());
+    if (lines.length) {
+      try {
+        if (JSON.parse(lines[lines.length - 1]).id === id) return null;
+      } catch {
+        /* unreadable last row is not a reason to drop this one */
+      }
+    }
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, JSON.stringify({ id, at, session: session ?? null, text: text.trim() }) + '\n');
+    return id;
+  } catch {
+    // A capture that cannot be written must never break the turn it was listening to.
+    return null;
+  }
+}
+
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
   process.exit(0);
@@ -1027,6 +1095,23 @@ function main() {
   // not to ENFORCE, which is paid. Gating it would have meant an unlicensed guard silently
   // recorded nothing while appearing installed — and 'free inspects, paid enforces' is the
   // line the whole product is priced on.
+  // -- UserPromptSubmit: hear it the moment it is said ---------------------
+  //
+  // The only event that carries the user's own words. It must be the cheapest branch in this
+  // file: one regex, one length check, one append, and never a block. Somebody typing a
+  // sentence should never wait on us, and a capture that fails must not cost them the turn.
+  if (event === 'UserPromptSubmit') {
+    const text = typeof payload.prompt === 'string' ? payload.prompt : '';
+    if (worthCapturingHere(text)) {
+      const id = captureSaid(policyPath, text, payload.session_id ?? null, now);
+      // SAID is bookkeeping, not activity: it is not something that happened TO the user, so
+      // the trace does not count it. It is here so `enforcee status` can show that the
+      // learning half is alive, and so a run can be audited afterwards.
+      if (id) log(policyPath, { ...base, decision: 'SAID', said: id });
+    }
+    allow();
+  }
+
   if (event === 'InstructionsLoaded') {
     const filePath = typeof payload.file_path === 'string' ? payload.file_path : null;
     const loadReason = typeof payload.load_reason === 'string' ? payload.load_reason : null;
