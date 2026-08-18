@@ -75,11 +75,31 @@ describe('the auto-release gate can still open', () => {
     expect(GATE).toMatch(/CONCLUSIONS.*=.*"success"|\[ "\$CONCLUSIONS" = "success" \]/s);
   });
 
+  it('blocks on an invariant REVERSED, not on the file merely existing', () => {
+    // `INVARIANTS.md` did not exist at v0.8.5. The condition asked `git diff --quiet`, which
+    // fails on ANY difference — so the file's own CREATION read as "a decision moved" and the
+    // gate would have refused every release from then on, permanently, giving a reason that
+    // was not true. A gate that blocks forever and explains itself wrongly is worse than one
+    // that is merely strict, because the wrong explanation sends the next reader somewhere
+    // else entirely.
+    //
+    // Adding an invariant tightens the contract and is always safe. REMOVING or rewriting one
+    // is the case that must not ship on a timer — and the wording of the invariant file itself
+    // agrees: "decisions that must not be silently REVERSED".
+    expect(GATE, 'the gate is back to failing on any change at all').not.toMatch(
+      /git diff --quiet "\$LAST_TAG" HEAD -- INVARIANTS\.md/
+    );
+    expect(GATE, 'the gate no longer counts removed lines').toMatch(/--numstat "\$LAST_TAG" HEAD -- INVARIANTS\.md/);
+    expect(GATE, 'deletions are not what decides it').toMatch(/DELETED/);
+    // And it must still refuse when lines really were removed.
+    expect(GATE).toMatch(/line\(s\) REMOVED since/);
+  });
+
   it('keeps every other condition that has to hold before anything publishes', () => {
     for (const [what, pattern] of [
       ['a version different from npm', /VERSION" != "\$PUBLISHED/],
       ['release notes for that exact version', /RELEASES\.md has no section/],
-      ['INVARIANTS.md unchanged since the last tag', /INVARIANTS\.md changed since/],
+      ['no invariant reversed since the last tag', /INVARIANTS\.md had \$DELETED line\(s\) REMOVED since/],
       ['our own ruleset still compiling', /npm run dogfood \|\| fail/],
     ] as [string, RegExp][]) {
       expect(pattern.test(GATE), `the gate no longer requires: ${what}`).toBe(true);

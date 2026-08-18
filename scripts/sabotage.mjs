@@ -467,6 +467,19 @@ const SABOTAGES = [
     run: 'tests/brief.test.ts',
     expect: /unrelated sentence as proof|criterion was invented/,
   },
+  {
+    name: 'release-gate-blocks-on-any-invariant-change',
+    why:
+      'INVARIANTS.md did not exist at the last tag, so `git diff --quiet` read its creation as ' +
+      'a reversal and the gate would have refused every release forever, with a reason that ' +
+      'was not true',
+    file: '.github/workflows/auto-release.yml',
+    find: '            DELETED=$(git diff --numstat "$LAST_TAG" HEAD -- INVARIANTS.md | awk \'{print $2}\')',
+    replace: '            DELETED=$(git diff --quiet "$LAST_TAG" HEAD -- INVARIANTS.md && echo 0 || echo 1)',
+    occurrences: 1,
+    run: 'tests/release-gate.test.ts',
+    expect: /invariant REVERSED, not on the file merely existing|counts removed lines/,
+  },
 ];
 
 const filter = process.argv[2];

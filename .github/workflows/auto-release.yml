@@ -74,9 +74,21 @@ jobs:
 
           # 3 · Did an invariant move? INVARIANTS.md changing is exactly the case that must not
           #     ship on a timer. A deliberate reversal is legitimate; an automatic one is not.
+          #     REVERSED, not merely CHANGED. Adding an invariant tightens the contract and is
+          #     always safe; removing or rewriting one is the case that must not ship on a timer.
+          #     This asked `git diff --quiet`, which fails on ANY difference — and INVARIANTS.md
+          #     did not exist at v0.8.5, so its creation read as a reversal and the gate would
+          #     have refused every release from then on, permanently, while reporting a reason
+          #     that was not true. A gate that blocks forever and explains itself wrongly is
+          #     worse than one that is merely strict.
           LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
-          if [ -n "$LAST_TAG" ] && ! git diff --quiet "$LAST_TAG" HEAD -- INVARIANTS.md; then
-            fail "INVARIANTS.md changed since $LAST_TAG — a decision moved, so a human releases this one"
+          if [ -n "$LAST_TAG" ] && [ -f INVARIANTS.md ]; then
+            # numstat: <added> <deleted> <path>. Deletions are the signal; pure additions are not.
+            DELETED=$(git diff --numstat "$LAST_TAG" HEAD -- INVARIANTS.md | awk '{print $2}')
+            DELETED=${DELETED:-0}
+            echo "INVARIANTS.md since $LAST_TAG: $DELETED line(s) removed"
+            [ "$DELETED" = "0" ] \
+              || fail "INVARIANTS.md had $DELETED line(s) REMOVED since $LAST_TAG — a decision was reversed, so a human releases this one"
           fi
 
           # 4 · Cooling off, measured on the VERSION BUMP rather than on HEAD.
