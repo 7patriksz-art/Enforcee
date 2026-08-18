@@ -61,6 +61,16 @@ So, binding:
   and sends `obstacles.md`. That path, not the container, is what LEARN is waiting on.
 - `learn` now **refuses** such a transcript (`exit 2`, "no human turns this build can read")
   rather than reporting a percentage of itself. If you see that refusal, it is working.
+- **`obstacles` refuses too, as of 2026-08-18** (`exit 2`, "Nothing was analysed that records
+  your work"). Until that commit the rule above lived only in this paragraph, and the binary
+  disagreed with it: over the identical file `learn` exited 2 while `obstacles` printed
+  *"Nothing recognised blocked this project. That is a real answer."* One binary, one corpus,
+  two contradictory answers, and the confident one was the false negative. A rule written in a
+  document is not a control — this one is now `negativeIsReportable`, with the CLI-level test
+  that proves the shipped bundle consults it.
+- Only the NEGATIVE is gated. Obstacles found in a machine-only transcript are still real and
+  still printed: a 403 in your own transcript is a 403. What a machine-only corpus cannot
+  support is the word "clean".
 
 The wider rule, because this is the third time the same shape has bitten: **a corpus you did
 not verify the provenance of is not a corpus.** `role: "user"` is not "the person typed
