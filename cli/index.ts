@@ -17,6 +17,9 @@ import { analyseCapabilities } from '../src/lib/transcript/findings';
 import { checkLocalLicence, setLicence, LICENCE_PATHS } from '../src/lib/licence-local';
 import { inferPreconditions, actionShaped } from '../src/lib/prevent/infer';
 import { preflight } from '../src/lib/prevent/preconditions';
+import { buildBrief } from '../src/lib/brief/extract';
+import { close } from '../src/lib/brief/close';
+import type { Brief } from '../src/lib/brief/types';
 import { checkClaims } from '../src/lib/prevent/claims';
 import { extractObstacles, mergeObstacles, toBrief, toolResultsFromRecords, PATTERNS_VERSION, type Obstacle } from '../src/lib/prevent/obstacles';
 import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, existingFromRuleset } from '../src/lib/prevent/supersede';
@@ -62,6 +65,8 @@ function help(): void {
 ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follow your rules?')}
 
   ${C.bold('enforcee audit')} <rules-file> <output-file>   audit an output against a ruleset
+  ${C.bold('enforcee brief')} <prompt-file>               read the request: what is asked, what it needs, how we will know
+  ${C.bold('enforcee close')}                             run the criteria this run committed to before it started
   ${C.bold('enforcee preflight')} <rules-file>              check what your rules assume, before you start
   ${C.bold('enforcee verify')} <output> [transcript]       did it do what it said it did?
   ${C.bold('enforcee health')} <rules-file>                 critique the ruleset itself, no output needed
@@ -223,6 +228,124 @@ async function main(): Promise<void> {
   //
   // Free, and deliberately so: this is VERIFY, not ENFORCE. It also has no model call and no
   // network, so there is nothing to meter and nothing to gate.
+  if (cmd === 'close') {
+    // STEP 6: run the acceptance criteria this run committed to BEFORE it started, and report.
+    // Red is not a failure of the report — red IS the work list.
+    const bi = args.indexOf('--brief');
+    const briefPath = bi > -1 ? args[bi + 1] : join('.enforcee', 'brief.json');
+    if (!existsSync(briefPath)) {
+      console.error(C.red(`no brief at ${briefPath}`));
+      console.error(C.grey('  run `enforcee brief <prompt-file>` first — a run with no contract cannot be closed'));
+      process.exit(2);
+    }
+    const brief: Brief = JSON.parse(read(briefPath));
+    const report = close(brief);
+
+    console.log('');
+    console.log(`  ${C.bold('Closing')} ${C.grey(brief.id)}`);
+    console.log('');
+    for (const r of report.results) {
+      const tag =
+        r.outcome === 'PASS' ? C.green('PASS   ') : r.outcome === 'FAIL' ? C.red('FAIL   ') : C.yellow('PENDING');
+      console.log(`  ${tag} ${r.requirement.slice(0, 74)}`);
+      if (r.acceptance.run) console.log(C.grey(`          ${r.acceptance.run}`));
+      if (r.outcome !== 'PASS') console.log(C.grey(`          ${r.detail.split('\n').slice(-3).join(' ').slice(0, 150)}`));
+    }
+    console.log('');
+    console.log(report.green ? `  ${C.green(C.bold(report.summary))}` : `  ${C.red(C.bold(report.summary))}`);
+    if (!report.green) {
+      console.log('');
+      console.log(C.grey('  Not green. Everything above that is not PASS is the work list — a pending'));
+      console.log(C.grey('  criterion is a check nobody wrote, which is not the same as a thing that works.'));
+    }
+    console.log('');
+    process.exit(report.green ? 0 : 1);
+  }
+
+  if (cmd === 'brief') {
+    // STEP 1-4 OF THE LOOP: read the prompt, plan in advance, enumerate the outputs, and batch
+    // every ask into one place instead of discovering them one at a time mid-run.
+    //
+    // Patrik, 2026-08-17: "read the prompt, plan with everything in advance, count with all the
+    // possible outputs, ideally leave the human labour out, avoiding back and forth". Before
+    // this, no Enforcee command took a prompt as input at all.
+    const [, promptPath] = args;
+    if (!promptPath) {
+      console.error(C.red('usage: enforcee brief <prompt-file> [--rules <ruleset>]'));
+      console.error(C.grey('       reads the request, probes what it will need, and writes .enforcee/brief.json'));
+      process.exit(2);
+    }
+    const prompt = read(promptPath);
+    const ri = args.indexOf('--rules');
+    const rulesPath = ri > -1 ? args[ri + 1] : ['CLAUDE.md', 'AGENTS.md', 'RULES.md'].find((f) => existsSync(f)) ?? null;
+
+    const brief: Brief = buildBrief({ prompt, createdAt: new Date().toISOString(), rules: rulesPath });
+    const report = preflight(brief.preconditions);
+
+    // Anything missing that no machine can resolve is a blocker, and every blocker is printed
+    // together. One batched ask is the difference between a plan and a conversation.
+    brief.blockers = report.missing
+      .filter((r) => r.precondition.kind === 'env')
+      .map((r) => ({
+        target: r.precondition.target,
+        why: r.precondition.why,
+        action: `export ${r.precondition.target}=<value> before this run, or say it is not needed`,
+      }));
+
+    console.log('');
+    console.log(`  ${C.bold('Brief')} ${C.grey(brief.id)}  ${C.grey(rulesPath ? `rules: ${rulesPath}` : 'no ruleset found')}`);
+    console.log('');
+
+    const byKind = (k: string) => brief.requirements.filter((r) => r.kind === k);
+    console.log(`  ${C.bold(String(brief.requirements.length))} thing${brief.requirements.length === 1 ? '' : 's'} asked for` +
+      C.grey(`  — ${byKind('do').length} to do, ${byKind('constraint').length} constraint(s), ${byKind('question').length} question(s)`));
+    for (const r of brief.requirements) {
+      const tag = r.kind === 'constraint' ? C.yellow('never ') : r.kind === 'question' ? C.grey('ask   ') : C.grey('do    ');
+      console.log(`    ${tag} ${r.text.slice(0, 92)}`);
+    }
+
+    console.log('');
+    if (!brief.preconditions.length) {
+      console.log(C.grey('  The prompt names no tool, key or file, so there is nothing to check before starting.'));
+    } else {
+      console.log(`  ${C.bold('Needs')}`);
+      for (const r of report.met) console.log(`    ${C.green('ok    ')} ${r.precondition.target}  ${C.grey(r.evidence)}`);
+      for (const r of report.missing) console.log(`    ${C.red('MISSING')} ${r.precondition.target}  ${C.grey(r.detail)}`);
+    }
+
+    const pending = brief.acceptance.filter((a) => !a.run);
+    console.log('');
+    console.log(`  ${C.bold('How we will know it worked')}`);
+    for (const a of brief.acceptance) {
+      const req = brief.requirements.find((r) => r.id === a.for)!;
+      if (a.run) console.log(`    ${C.green('check ')} ${C.bold(a.run)}  ${C.grey('→ ' + req.text.slice(0, 60))}`);
+      else console.log(`    ${C.yellow('PENDING')} ${C.grey('no check yet → ' + req.text.slice(0, 60))}`);
+    }
+    if (pending.length) {
+      console.log('');
+      console.log(C.grey(`  ${pending.length} criteri${pending.length === 1 ? 'on has' : 'a have'} no command yet. Write one into .enforcee/brief.json`));
+      console.log(C.grey('  before starting — a check invented afterwards gets chosen to flatter the result.'));
+    }
+
+    mkdirSync('.enforcee', { recursive: true });
+    writeFileSync(join('.enforcee', 'brief.json'), JSON.stringify(brief, null, 2) + '\n');
+    console.log('');
+    console.log(C.grey(`  Wrote .enforcee/brief.json`));
+
+    if (brief.blockers.length) {
+      console.log('');
+      console.log(`  ${C.red(C.bold('Blocked — these need you, and this is all of them:'))}`);
+      for (const b of brief.blockers) {
+        console.log(`    · ${C.bold(b.target)} — ${b.why}`);
+        console.log(`      ${C.grey(b.action)}`);
+      }
+      console.log('');
+      process.exit(3);
+    }
+    console.log('');
+    process.exit(0);
+  }
+
   if (cmd === 'preflight') {
     // args[0] is the command itself — every other branch destructures past it.
     const [, rulesPath] = args;

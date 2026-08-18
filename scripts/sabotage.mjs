@@ -432,6 +432,41 @@ const SABOTAGES = [
     run: 'tests/artefact-e2e.test.ts',
     expect: /a Builder licence was allowed to sign/,
   },
+  {
+    name: 'pending-criterion-counts-as-green',
+    why:
+      'if a criterion nobody wrote a check for counts as success, writing no checks becomes ' +
+      'the winning move and the whole contract is theatre. Six recorded instances on this ' +
+      'project of a check that silently covered nothing',
+    file: 'src/lib/brief/close.ts',
+    find: '  const green = results.length > 0 && failed === 0 && pending === 0;',
+    replace: '  const green = results.length > 0 && failed === 0;',
+    occurrences: 1,
+    run: 'tests/close.test.ts',
+    expect: /PENDING keeps the whole report from going green|pending criterion was absorbed/,
+  },
+  {
+    name: 'empty-brief-reports-green',
+    why: 'an empty checklist is the oldest way to pass an audit',
+    file: 'src/lib/brief/close.ts',
+    find: '  const green = results.length > 0 && failed === 0 && pending === 0;',
+    replace: '  const green = failed === 0 && pending === 0;',
+    occurrences: 1,
+    run: 'tests/close.test.ts',
+    expect: /no acceptance rows is not green|zero criteria reported green/,
+  },
+  {
+    name: 'brief-invents-a-check-it-cannot-derive',
+    why:
+      'an invented acceptance criterion passes and teaches nothing, which rebuilds inside the ' +
+      'tool the exact failure the tool exists to stop',
+    file: 'src/lib/brief/extract.ts',
+    find: '      const own = commands.find((c) => r.text.includes(c));',
+    replace: '      const own = commands.find((c) => r.text.includes(c)) ?? commands[0];',
+    occurrences: 1,
+    run: 'tests/brief.test.ts',
+    expect: /unrelated sentence as proof|criterion was invented/,
+  },
 ];
 
 const filter = process.argv[2];

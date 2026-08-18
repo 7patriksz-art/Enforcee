@@ -129,8 +129,8 @@ function couldBeRule(text) {
   const t = text.trim();
   for (const { re } of NOT_A_RULE) if (re.test(t)) return false;
   const STOP3 = /^(and|or|the|a|an|of|in|for|with|to|&)$/i;
-  const CONSTRAINT = /\b(no|not|never|must|shall|always|avoid|only|don't|do not|use|require[ds]?)\b/i;
-  if (CONSTRAINT.test(t)) return true;
+  const CONSTRAINT2 = /\b(no|not|never|must|shall|always|avoid|only|don't|do not|use|require[ds]?)\b/i;
+  if (CONSTRAINT2.test(t)) return true;
   const words2 = t.split(/\s+/).filter((w) => /[a-z]/i.test(w));
   if (words2.length <= 6) {
     const significant = words2.filter((w) => !STOP3.test(w.replace(/[^\w']/g, "")));
@@ -176,14 +176,14 @@ function splitRules(text, artifact = "ruleset", skipped = []) {
     }
     const item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
     if (item) {
-      let body = item[1].trim();
+      let body2 = item[1].trim();
       let end2 = i;
       while (end2 + 1 < lines.length && lines[end2 + 1].trim() !== "" && !/^\s*(?:[-*+]|\d+[.)])\s+/.test(lines[end2 + 1]) && !/^#{1,6}\s/.test(lines[end2 + 1].trim()) && /^\s{2,}/.test(lines[end2 + 1])) {
         end2++;
-        body += " " + lines[end2].trim();
+        body2 += " " + lines[end2].trim();
       }
-      if (couldBeRule(body)) out.push({ text: body, startLine: i + 1, endLine: end2 + 1, section: [...section] });
-      else skipped.push({ text: body, line: i + 1 });
+      if (couldBeRule(body2)) out.push({ text: body2, startLine: i + 1, endLine: end2 + 1, section: [...section] });
+      else skipped.push({ text: body2, line: i + 1 });
       i = end2;
       continue;
     }
@@ -536,10 +536,10 @@ function quantifiedGroupBodies(pattern) {
   }
   return bodies;
 }
-function hasInnerRepetition(body) {
+function hasInnerRepetition(body2) {
   let inClass = false;
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i];
+  for (let i = 0; i < body2.length; i++) {
+    const c = body2[i];
     if (c === "\\") {
       i++;
       continue;
@@ -553,23 +553,23 @@ function hasInnerRepetition(body) {
       continue;
     }
     if (c === "*" || c === "+") return true;
-    if (c === "{" && /^\{\d*,\d*\}/.test(body.slice(i))) return true;
+    if (c === "{" && /^\{\d*,\d*\}/.test(body2.slice(i))) return true;
     if (c === "?" && i > 0) {
-      const prev = body[i - 1];
+      const prev = body2[i - 1];
       if (prev !== "*" && prev !== "+" && prev !== "?" && prev !== "(") return true;
     }
   }
   return false;
 }
-function hasAmbiguousAlternation(body) {
+function hasAmbiguousAlternation(body2) {
   let depth = 0;
   let inClass = false;
   const branches = [];
   let current = "";
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i];
+  for (let i = 0; i < body2.length; i++) {
+    const c = body2[i];
     if (c === "\\") {
-      current += c + (body[i + 1] ?? "");
+      current += c + (body2[i + 1] ?? "");
       i++;
       continue;
     }
@@ -601,14 +601,14 @@ function checkRegexSafety(source) {
   if (source.length > 200) {
     return { safe: false, reason: "the pattern is longer than 200 characters" };
   }
-  for (const body of quantifiedGroupBodies(source)) {
-    if (hasInnerRepetition(body)) {
+  for (const body2 of quantifiedGroupBodies(source)) {
+    if (hasInnerRepetition(body2)) {
       return {
         safe: false,
         reason: "it repeats a group that already repeats \u2014 a shape that can take exponential time on ordinary input"
       };
     }
-    if (hasAmbiguousAlternation(body)) {
+    if (hasAmbiguousAlternation(body2)) {
       return {
         safe: false,
         reason: "it repeats a group whose alternatives can match the same text, which can take exponential time"
@@ -779,18 +779,18 @@ function findJsonBlock(output) {
   const fence = /```(?:json|jsonc|json5)?[ \t]*\r?\n([\s\S]*?)```/gi;
   let m;
   while (m = fence.exec(output)) {
-    const body = m[1];
-    if (parseJson(body.trim()).ok) {
-      const lead = body.length - body.trimStart().length;
-      const start = m.index + m[0].indexOf(body) + lead;
-      return { start, end: start + body.trim().length, quote: body.trim() };
+    const body2 = m[1];
+    if (parseJson(body2.trim()).ok) {
+      const lead = body2.length - body2.trimStart().length;
+      const start = m.index + m[0].indexOf(body2) + lead;
+      return { start, end: start + body2.trim().length, quote: body2.trim() };
     }
   }
   for (let i = 0; i < output.length; i++) {
     if (i > 0 && !/[\n\r]/.test(output[i - 1]) && !/^[ \t]*$/.test(output.slice(output.lastIndexOf("\n", i - 1) + 1, i))) continue;
     const open = output[i];
     if (open !== "{" && open !== "[") continue;
-    const close = open === "{" ? "}" : "]";
+    const close2 = open === "{" ? "}" : "]";
     let depth = 0;
     let inStr = false;
     let esc = false;
@@ -804,7 +804,7 @@ function findJsonBlock(output) {
       }
       if (ch === '"') inStr = true;
       else if (ch === open) depth++;
-      else if (ch === close) {
+      else if (ch === close2) {
         depth--;
         if (depth === 0) {
           const slice = output.slice(i, j + 1);
@@ -1424,12 +1424,12 @@ async function CancelReadableStream(stream) {
 }
 
 // node_modules/@anthropic-ai/sdk/internal/request-options.mjs
-var FallbackEncoder = ({ headers, body }) => {
+var FallbackEncoder = ({ headers, body: body2 }) => {
   return {
     bodyHeaders: {
       "content-type": "application/json"
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body2)
   };
 };
 
@@ -1860,7 +1860,7 @@ function partition(str, delimiter2) {
 // node_modules/@anthropic-ai/sdk/internal/parse.mjs
 async function defaultParseResponse(client, props) {
   const { response, requestLogID, retryOfRequestLogID, startTime } = props;
-  const body = await (async () => {
+  const body2 = await (async () => {
     if (props.options.stream) {
       loggerFor(client).debug("response", response.status, response.url, response.headers, response.body);
       if (props.options.__streamClass) {
@@ -1888,10 +1888,10 @@ async function defaultParseResponse(client, props) {
     retryOfRequestLogID,
     url: response.url,
     status: response.status,
-    body,
+    body: body2,
     durationMs: Date.now() - startTime
   }));
-  return body;
+  return body2;
 }
 function addRequestID(value, response) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1969,12 +1969,12 @@ _APIPromise_client = /* @__PURE__ */ new WeakMap();
 // node_modules/@anthropic-ai/sdk/core/pagination.mjs
 var _AbstractPage_client;
 var AbstractPage = class {
-  constructor(client, response, body, options) {
+  constructor(client, response, body2, options) {
     _AbstractPage_client.set(this, void 0);
     __classPrivateFieldSet(this, _AbstractPage_client, client, "f");
     this.options = options;
     this.response = response;
-    this.body = body;
+    this.body = body2;
   }
   hasNextPage() {
     const items = this.getPaginatedItems();
@@ -2024,12 +2024,12 @@ var PagePromise = class extends APIPromise {
   }
 };
 var Page = class extends AbstractPage {
-  constructor(client, response, body, options) {
-    super(client, response, body, options);
-    this.data = body.data || [];
-    this.has_more = body.has_more || false;
-    this.first_id = body.first_id || null;
-    this.last_id = body.last_id || null;
+  constructor(client, response, body2, options) {
+    super(client, response, body2, options);
+    this.data = body2.data || [];
+    this.has_more = body2.has_more || false;
+    this.first_id = body2.first_id || null;
+    this.last_id = body2.last_id || null;
   }
   getPaginatedItems() {
     return this.data ?? [];
@@ -2108,12 +2108,12 @@ function supportsFormData(fetchObject) {
   supportsFormDataMap.set(fetch2, promise);
   return promise;
 }
-var createForm = async (body, fetch2) => {
+var createForm = async (body2, fetch2) => {
   if (!await supportsFormData(fetch2)) {
     throw new TypeError("The provided fetch function does not support file uploads with the current global FormData class.");
   }
   const form = new FormData();
-  await Promise.all(Object.entries(body || {}).map(([key, value]) => addFormValue(form, key, value)));
+  await Promise.all(Object.entries(body2 || {}).map(([key, value]) => addFormValue(form, key, value)));
   return form;
 };
 var isNamedBlob = (value) => value instanceof Blob && "name" in value;
@@ -2427,9 +2427,9 @@ var Files = class extends APIResource {
    * ```
    */
   upload(params, options) {
-    const { betas, ...body } = params;
+    const { betas, ...body2 } = params;
     return this._client.post("/v1/files", multipartFormRequestOptions({
-      body,
+      body: body2,
       ...options,
       headers: buildHeaders([
         { "anthropic-beta": [...betas ?? [], "files-api-2025-04-14"].toString() },
@@ -2555,9 +2555,9 @@ var Batches = class extends APIResource {
    * ```
    */
   create(params, options) {
-    const { betas, ...body } = params;
+    const { betas, ...body2 } = params;
     return this._client.post("/v1/messages/batches?beta=true", {
-      body,
+      body: body2,
       ...options,
       headers: buildHeaders([
         { "anthropic-beta": [...betas ?? [], "message-batches-2024-09-24"].toString() },
@@ -3822,18 +3822,18 @@ var Messages = class extends APIResource {
     this.batches = new Batches(this._client);
   }
   create(params, options) {
-    const { betas, ...body } = params;
-    if (body.model in DEPRECATED_MODELS) {
-      console.warn(`The model '${body.model}' is deprecated and will reach end-of-life on ${DEPRECATED_MODELS[body.model]}
+    const { betas, ...body2 } = params;
+    if (body2.model in DEPRECATED_MODELS) {
+      console.warn(`The model '${body2.model}' is deprecated and will reach end-of-life on ${DEPRECATED_MODELS[body2.model]}
 Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.`);
     }
     let timeout = this._client._options.timeout;
-    if (!body.stream && timeout == null) {
-      const maxNonstreamingTokens = MODEL_NONSTREAMING_TOKENS[body.model] ?? void 0;
-      timeout = this._client.calculateNonstreamingTimeout(body.max_tokens, maxNonstreamingTokens);
+    if (!body2.stream && timeout == null) {
+      const maxNonstreamingTokens = MODEL_NONSTREAMING_TOKENS[body2.model] ?? void 0;
+      timeout = this._client.calculateNonstreamingTimeout(body2.max_tokens, maxNonstreamingTokens);
     }
     return this._client.post("/v1/messages?beta=true", {
-      body,
+      body: body2,
       timeout: timeout ?? 6e5,
       ...options,
       headers: buildHeaders([
@@ -3846,8 +3846,8 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
   /**
    * Create a Message stream
    */
-  stream(body, options) {
-    return BetaMessageStream.createMessage(this, body, options);
+  stream(body2, options) {
+    return BetaMessageStream.createMessage(this, body2, options);
   }
   /**
    * Count the number of tokens in a Message.
@@ -3868,9 +3868,9 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
    * ```
    */
   countTokens(params, options) {
-    const { betas, ...body } = params;
+    const { betas, ...body2 } = params;
     return this._client.post("/v1/messages/count_tokens?beta=true", {
-      body,
+      body: body2,
       ...options,
       headers: buildHeaders([
         { "anthropic-beta": [...betas ?? [], "token-counting-2024-11-01"].toString() },
@@ -3878,8 +3878,8 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
       ])
     });
   }
-  toolRunner(body, options) {
-    return new BetaToolRunner(this._client, body, options);
+  toolRunner(body2, options) {
+    return new BetaToolRunner(this._client, body2, options);
   }
 };
 Messages.Batches = Batches;
@@ -3901,9 +3901,9 @@ Beta.Files = Files;
 // node_modules/@anthropic-ai/sdk/resources/completions.mjs
 var Completions = class extends APIResource {
   create(params, options) {
-    const { betas, ...body } = params;
+    const { betas, ...body2 } = params;
     return this._client.post("/v1/complete", {
-      body,
+      body: body2,
       timeout: this._client._options.timeout ?? 6e5,
       ...options,
       headers: buildHeaders([
@@ -4526,8 +4526,8 @@ var Batches2 = class extends APIResource {
    * });
    * ```
    */
-  create(body, options) {
-    return this._client.post("/v1/messages/batches", { body, ...options });
+  create(body2, options) {
+    return this._client.post("/v1/messages/batches", { body: body2, ...options });
   }
   /**
    * This endpoint is idempotent and can be used to poll for Message Batch
@@ -4643,28 +4643,28 @@ var Messages2 = class extends APIResource {
     super(...arguments);
     this.batches = new Batches2(this._client);
   }
-  create(body, options) {
-    if (body.model in DEPRECATED_MODELS2) {
-      console.warn(`The model '${body.model}' is deprecated and will reach end-of-life on ${DEPRECATED_MODELS2[body.model]}
+  create(body2, options) {
+    if (body2.model in DEPRECATED_MODELS2) {
+      console.warn(`The model '${body2.model}' is deprecated and will reach end-of-life on ${DEPRECATED_MODELS2[body2.model]}
 Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.`);
     }
     let timeout = this._client._options.timeout;
-    if (!body.stream && timeout == null) {
-      const maxNonstreamingTokens = MODEL_NONSTREAMING_TOKENS[body.model] ?? void 0;
-      timeout = this._client.calculateNonstreamingTimeout(body.max_tokens, maxNonstreamingTokens);
+    if (!body2.stream && timeout == null) {
+      const maxNonstreamingTokens = MODEL_NONSTREAMING_TOKENS[body2.model] ?? void 0;
+      timeout = this._client.calculateNonstreamingTimeout(body2.max_tokens, maxNonstreamingTokens);
     }
     return this._client.post("/v1/messages", {
-      body,
+      body: body2,
       timeout: timeout ?? 6e5,
       ...options,
-      stream: body.stream ?? false
+      stream: body2.stream ?? false
     });
   }
   /**
    * Create a Message stream
    */
-  stream(body, options) {
-    return MessageStream.createMessage(this, body, options);
+  stream(body2, options) {
+    return MessageStream.createMessage(this, body2, options);
   }
   /**
    * Count the number of tokens in a Message.
@@ -4684,8 +4684,8 @@ Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resour
    *   });
    * ```
    */
-  countTokens(body, options) {
-    return this._client.post("/v1/messages/count_tokens", { body, ...options });
+  countTokens(body2, options) {
+    return this._client.post("/v1/messages/count_tokens", { body: body2, ...options });
   }
 };
 var DEPRECATED_MODELS2 = {
@@ -5121,14 +5121,14 @@ var BaseAnthropic = class {
     if ("timeout" in options)
       validatePositiveInteger("timeout", options.timeout);
     options.timeout = options.timeout ?? this.timeout;
-    const { bodyHeaders, body } = this.buildBody({ options });
+    const { bodyHeaders, body: body2 } = this.buildBody({ options });
     const reqHeaders = await this.buildHeaders({ options: inputOptions, method, bodyHeaders, retryCount });
     const req = {
       method,
       headers: reqHeaders,
       ...options.signal && { signal: options.signal },
-      ...globalThis.ReadableStream && body instanceof globalThis.ReadableStream && { duplex: "half" },
-      ...body && { body },
+      ...globalThis.ReadableStream && body2 instanceof globalThis.ReadableStream && { duplex: "half" },
+      ...body2 && { body: body2 },
       ...this.fetchOptions ?? {},
       ...options.fetchOptions ?? {}
     };
@@ -5160,25 +5160,25 @@ var BaseAnthropic = class {
     this.validateHeaders(headers);
     return headers.values;
   }
-  buildBody({ options: { body, headers: rawHeaders } }) {
-    if (!body) {
+  buildBody({ options: { body: body2, headers: rawHeaders } }) {
+    if (!body2) {
       return { bodyHeaders: void 0, body: void 0 };
     }
     const headers = buildHeaders([rawHeaders]);
     if (
       // Pass raw type verbatim
-      ArrayBuffer.isView(body) || body instanceof ArrayBuffer || body instanceof DataView || typeof body === "string" && // Preserve legacy string encoding behavior for now
+      ArrayBuffer.isView(body2) || body2 instanceof ArrayBuffer || body2 instanceof DataView || typeof body2 === "string" && // Preserve legacy string encoding behavior for now
       headers.values.has("content-type") || // `Blob` is superset of `File`
-      globalThis.Blob && body instanceof globalThis.Blob || // `FormData` -> `multipart/form-data`
-      body instanceof FormData || // `URLSearchParams` -> `application/x-www-form-urlencoded`
-      body instanceof URLSearchParams || // Send chunked stream (each chunk has own `length`)
-      globalThis.ReadableStream && body instanceof globalThis.ReadableStream
+      globalThis.Blob && body2 instanceof globalThis.Blob || // `FormData` -> `multipart/form-data`
+      body2 instanceof FormData || // `URLSearchParams` -> `application/x-www-form-urlencoded`
+      body2 instanceof URLSearchParams || // Send chunked stream (each chunk has own `length`)
+      globalThis.ReadableStream && body2 instanceof globalThis.ReadableStream
     ) {
-      return { bodyHeaders: void 0, body };
-    } else if (typeof body === "object" && (Symbol.asyncIterator in body || Symbol.iterator in body && "next" in body && typeof body.next === "function")) {
-      return { bodyHeaders: void 0, body: ReadableStreamFrom(body) };
+      return { bodyHeaders: void 0, body: body2 };
+    } else if (typeof body2 === "object" && (Symbol.asyncIterator in body2 || Symbol.iterator in body2 && "next" in body2 && typeof body2.next === "function")) {
+      return { bodyHeaders: void 0, body: ReadableStreamFrom(body2) };
     } else {
-      return __classPrivateFieldGet(this, _BaseAnthropic_encoder, "f").call(this, { body, headers });
+      return __classPrivateFieldGet(this, _BaseAnthropic_encoder, "f").call(this, { body: body2, headers });
     }
   }
 };
@@ -10075,12 +10075,12 @@ function proposeDenyRules(rules) {
 }
 function buildReinjectText(rules, label = "your ruleset") {
   const lines = rules.map((r, i) => `${String(i + 1).padStart(2, "0")}. [${r.id}] ${r.text}`);
-  const body = lines.join("\n");
+  const body2 = lines.join("\n");
   const header = `ENFORCEE \u2014 rules re-injected after a context boundary.
 These are the ${rules.length} rules from ${label}. Anthropic's documentation states that the skill description listing, rules with paths: frontmatter, and nested CLAUDE.md files do not survive compaction. Treat the list below as in force for the rest of this session.
 
 `;
-  const text = header + body;
+  const text = header + body2;
   return text.length > 9500 ? text.slice(0, 9400) + "\n\u2026 (truncated to fit the 10,000 character hook limit)" : text;
 }
 function compilePolicy(rulesetText, rules, chosen, warn = []) {
@@ -10559,17 +10559,17 @@ function verifyLicence(token, publicKeyPem, now = Date.now()) {
   if (!publicKeyPem) return { ok: false, reason: "no-public-key" };
   const parts = token.trim().split(".");
   if (parts.length !== 2) return { ok: false, reason: "malformed" };
-  const [body, sig] = parts;
+  const [body2, sig] = parts;
   let payload;
   try {
-    payload = JSON.parse(b64url.decode(body).toString("utf8"));
+    payload = JSON.parse(b64url.decode(body2).toString("utf8"));
   } catch {
     return { ok: false, reason: "malformed" };
   }
   if (payload?.v !== 1 || !payload.plan || !payload.exp) return { ok: false, reason: "malformed" };
   let good = false;
   try {
-    good = verify(null, Buffer.from(body, "utf8"), createPublicKey(publicKeyPem), b64url.decode(sig));
+    good = verify(null, Buffer.from(body2, "utf8"), createPublicKey(publicKeyPem), b64url.decode(sig));
   } catch {
     return { ok: false, reason: "bad-signature" };
   }
@@ -10852,6 +10852,159 @@ function preflight(preconditions, cwd = process.cwd()) {
     met,
     missing,
     summary: missing.length ? `Not ready: ${missing.length} of ${results.length} preconditions unmet. Running anyway would produce results that cannot be distinguished from real findings.` : `Ready: all ${results.length} preconditions met.`
+  };
+}
+
+// src/lib/brief/extract.ts
+import { createHash as createHash3 } from "node:crypto";
+var hash = (s, prefix) => `${prefix}-${createHash3("sha256").update(s).digest("hex").slice(0, 10)}`;
+function normalise(s) {
+  return s.toLowerCase().replace(/\s+/g, " ").replace(/[.!?;:,\s]+$/, "").trim();
+}
+var ASK = /\b(must|should|need to|needs to|have to|has to|make sure|ensure|i want|i need|please|let'?s|lets|we should|we must|you should|you must)\b/i;
+var IMPERATIVE_START2 = /^(?:re-?)?(add|build|make|create|write|fix|remove|delete|update|change|run|test|verify|check|publish|ship|deploy|install|set up|setup|wire|clean|refactor|rename|move|document|prove|find|audit|enforce|learn|plan|start|stop|continue|use|give|show|report|close|open|push|pull|merge|revert|send|generate|analyse|analyze|investigate|measure|record|track|sort|group|split|extract|replace|improve|simplify|shorten|expand|draft|design|sketch|review|compare|explain|summarise|summarize|list|count|scan|sweep|patch|bump|tag|release|rollback|restore|migrate|seed|backfill|monitor|watch|alert|notify)\b/i;
+var CONSTRAINT = /\b(never|do not|don'?t|must not|no longer|avoid|without|instead of|rather than|stop)\b/i;
+function isProse(line) {
+  const t = line.trim();
+  if (!t) return false;
+  if (/^(#{1,6}\s|```|~~~|\||-{3,}|={3,})/.test(t)) return false;
+  return true;
+}
+var LEAD = /^(?:(?:also|then|now|next|first|firstly|second(?:ly)?|third(?:ly)?|finally|lastly|additionally|furthermore|meanwhile|afterwards?|after that|so|and|but|plus|please|kindly|maybe|perhaps|ideally)[,:]?\s+)+/i;
+function body(line) {
+  return line.trim().replace(/^(?:[-*+]|\d+[.)])\s+/, "").replace(LEAD, "").trim();
+}
+function extractRequirements(prompt) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  prompt.split("\n").forEach((line, i) => {
+    if (!isProse(line)) return;
+    for (const raw of body(line).split(/(?<=[.!?])\s+(?=[A-Z"'`])/)) {
+      const text = raw.trim();
+      if (text.length < 8 || text.length > 400) continue;
+      let kind = null;
+      if (/\?\s*$/.test(text)) kind = "question";
+      else if (CONSTRAINT.test(text)) kind = "constraint";
+      else if (IMPERATIVE_START2.test(text) || ASK.test(text)) kind = "do";
+      if (!kind) continue;
+      const key = normalise(text);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: hash(key, "R"), text, kind, line: i + 1 });
+    }
+  });
+  return out;
+}
+var TOOL = /\b(npm|npx|node|git|gh|docker|vercel|supabase|python3?|pip3?|cargo|go|make|psql|curl)\b/g;
+var ENV_VAR = /\$([A-Z][A-Z0-9_]{2,})\b|\b([A-Z][A-Z0-9_]{2,}_(?:KEY|TOKEN|SECRET|URL|ID|DSN))\b/g;
+var PATH_LIKE = /\b((?:src|tests?|scripts?|docs?|cli|guard|public|app)\/[\w./-]+\.[a-z]{1,5})\b/g;
+function extractPreconditions(prompt) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const add = (p) => {
+    const k = `${p.kind}:${p.target}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(p);
+  };
+  for (const m of prompt.matchAll(TOOL)) {
+    add({ kind: "binary", target: m[1], why: `the prompt names ${m[1]}, so the run will need it` });
+  }
+  for (const m of prompt.matchAll(ENV_VAR)) {
+    const name = m[1] ?? m[2];
+    add({ kind: "env", target: name, why: `the prompt names ${name}, and a missing key stops the run dead` });
+  }
+  for (const m of prompt.matchAll(PATH_LIKE)) {
+    add({ kind: "file", target: m[1], why: `the prompt names ${m[1]}` });
+  }
+  return out;
+}
+var BACKTICK_CMD = /`([^`\n]{3,120})`/g;
+var RUNNABLE = /^(npm|npx|node|git|gh|make|cargo|go|python3?|pytest|vitest|jest|docker|vercel|supabase|curl)\b/;
+function proposeAcceptance(reqs, prompt) {
+  const commands = [];
+  for (const m of prompt.matchAll(BACKTICK_CMD)) {
+    const c = m[1].trim();
+    if (RUNNABLE.test(c) && !commands.includes(c)) commands.push(c);
+  }
+  return reqs.filter((r) => r.kind !== "question").map((r, i) => {
+    const own = commands.find((c) => r.text.includes(c));
+    const run = own ?? null;
+    return {
+      id: hash(`${r.id}:${run ?? "pending"}:${i}`, "A"),
+      for: r.id,
+      run,
+      expect: "",
+      why: run ? `the prompt names \`${run}\`, so running it settles this` : `no command in the prompt proves this \u2014 write one before close can pass`
+    };
+  });
+}
+function buildBrief(args) {
+  const requirements = extractRequirements(args.prompt);
+  return {
+    v: 1,
+    id: hash(normalise(args.prompt), "B"),
+    prompt: args.prompt,
+    createdAt: args.createdAt,
+    requirements,
+    preconditions: args.preconditions ?? extractPreconditions(args.prompt),
+    acceptance: proposeAcceptance(requirements, args.prompt),
+    blockers: [],
+    rules: args.rules
+  };
+}
+
+// src/lib/brief/close.ts
+import { execSync as execSync2 } from "node:child_process";
+var shellRunner = (cmd) => {
+  try {
+    const output = execSync2(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10 * 6e4 });
+    return { ok: true, output };
+  } catch (e) {
+    const err = e;
+    const output = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    if (!output && (err.status === void 0 || err.status === null)) {
+      return { ok: false, output: `COULD NOT RUN: ${err.message ?? String(e)}` };
+    }
+    return { ok: false, output };
+  }
+};
+function close(brief, run = shellRunner) {
+  const results = brief.acceptance.map((a) => {
+    const requirement = brief.requirements.find((r) => r.id === a.for)?.text ?? a.for;
+    if (!a.run) {
+      return {
+        acceptance: a,
+        requirement,
+        outcome: "PENDING",
+        detail: "no check was ever written for this, so nothing here proves it either way"
+      };
+    }
+    const { ok, output } = run(a.run);
+    if (!ok) {
+      return { acceptance: a, requirement, outcome: "FAIL", detail: output.trim().slice(-400) || "exited non-zero with no output" };
+    }
+    if (a.expect && !output.includes(a.expect)) {
+      return {
+        acceptance: a,
+        requirement,
+        outcome: "FAIL",
+        detail: `ran, but the output does not contain ${JSON.stringify(a.expect)}`
+      };
+    }
+    return { acceptance: a, requirement, outcome: "PASS", detail: a.expect ? `output contains ${JSON.stringify(a.expect)}` : "exited 0" };
+  });
+  const passed = results.filter((r) => r.outcome === "PASS").length;
+  const failed = results.filter((r) => r.outcome === "FAIL").length;
+  const pending = results.filter((r) => r.outcome === "PENDING").length;
+  const green = results.length > 0 && failed === 0 && pending === 0;
+  return {
+    results,
+    passed,
+    failed,
+    pending,
+    green,
+    summary: results.length === 0 ? "this brief has no acceptance criteria at all, so it cannot be closed" : `${passed}/${results.length} proved \xB7 ${failed} failed \xB7 ${pending} never had a check`
   };
 }
 
@@ -11516,7 +11669,7 @@ function alreadyDeclined(memory, id) {
 }
 
 // cli/index.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 
 // src/lib/plans.ts
 var ENTITLEMENTS = {
@@ -11575,12 +11728,12 @@ function entitlementsFor(plan) {
 import { createPrivateKey as createPrivateKey2, createPublicKey as createPublicKey2, sign as sign2, verify as verify2 } from "node:crypto";
 var ATTESTATION_VERSION = "attestation@1.0.0";
 function attest(receipt, privateKeyPem, now = /* @__PURE__ */ new Date()) {
-  const { digest: _ignored, ...body } = receipt;
-  const digest = digestOf(body);
+  const { digest: _ignored, ...body2 } = receipt;
+  const digest = digestOf(body2);
   const key = createPrivateKey2(privateKeyPem.replace(/\\n/g, "\n"));
   const signature = sign2(null, Buffer.from(digest, "utf8"), key).toString("base64url");
   return {
-    receipt: { ...body, digest },
+    receipt: { ...body2, digest },
     attestation: { version: ATTESTATION_VERSION, digest, signature, signedAt: now.toISOString() }
   };
 }
@@ -11597,8 +11750,8 @@ function verifyAttestation(signed, publicKeyPem) {
   if (typeof publicKeyPem !== "string" || !publicKeyPem.trim()) {
     return { ok: false, outcome: "UNVERIFIABLE", reason: "No public key was supplied, so there is nothing to check the signature against." };
   }
-  const { digest: claimed, ...body } = receipt;
-  const recomputed = digestOf(body);
+  const { digest: claimed, ...body2 } = receipt;
+  const recomputed = digestOf(body2);
   if (recomputed !== claimed) {
     return { ok: false, outcome: "REFUTED", reason: "The receipt body does not match its own digest \u2014 it has been altered since it was written." };
   }
@@ -11805,6 +11958,8 @@ function help() {
 ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually follow your rules?")}
 
   ${C.bold("enforcee audit")} <rules-file> <output-file>   audit an output against a ruleset
+  ${C.bold("enforcee brief")} <prompt-file>               read the request: what is asked, what it needs, how we will know
+  ${C.bold("enforcee close")}                             run the criteria this run committed to before it started
   ${C.bold("enforcee preflight")} <rules-file>              check what your rules assume, before you start
   ${C.bold("enforcee verify")} <output> [transcript]       did it do what it said it did?
   ${C.bold("enforcee health")} <rules-file>                 critique the ruleset itself, no output needed
@@ -11927,6 +12082,99 @@ async function main() {
     }
     process.exit(receipt.summary.violated > 0 ? 1 : 0);
   }
+  if (cmd === "close") {
+    const bi = args.indexOf("--brief");
+    const briefPath = bi > -1 ? args[bi + 1] : join6(".enforcee", "brief.json");
+    if (!existsSync5(briefPath)) {
+      console.error(C.red(`no brief at ${briefPath}`));
+      console.error(C.grey("  run `enforcee brief <prompt-file>` first \u2014 a run with no contract cannot be closed"));
+      process.exit(2);
+    }
+    const brief = JSON.parse(read(briefPath));
+    const report = close(brief);
+    console.log("");
+    console.log(`  ${C.bold("Closing")} ${C.grey(brief.id)}`);
+    console.log("");
+    for (const r of report.results) {
+      const tag = r.outcome === "PASS" ? C.green("PASS   ") : r.outcome === "FAIL" ? C.red("FAIL   ") : C.yellow("PENDING");
+      console.log(`  ${tag} ${r.requirement.slice(0, 74)}`);
+      if (r.acceptance.run) console.log(C.grey(`          ${r.acceptance.run}`));
+      if (r.outcome !== "PASS") console.log(C.grey(`          ${r.detail.split("\n").slice(-3).join(" ").slice(0, 150)}`));
+    }
+    console.log("");
+    console.log(report.green ? `  ${C.green(C.bold(report.summary))}` : `  ${C.red(C.bold(report.summary))}`);
+    if (!report.green) {
+      console.log("");
+      console.log(C.grey("  Not green. Everything above that is not PASS is the work list \u2014 a pending"));
+      console.log(C.grey("  criterion is a check nobody wrote, which is not the same as a thing that works."));
+    }
+    console.log("");
+    process.exit(report.green ? 0 : 1);
+  }
+  if (cmd === "brief") {
+    const [, promptPath] = args;
+    if (!promptPath) {
+      console.error(C.red("usage: enforcee brief <prompt-file> [--rules <ruleset>]"));
+      console.error(C.grey("       reads the request, probes what it will need, and writes .enforcee/brief.json"));
+      process.exit(2);
+    }
+    const prompt = read(promptPath);
+    const ri = args.indexOf("--rules");
+    const rulesPath = ri > -1 ? args[ri + 1] : ["CLAUDE.md", "AGENTS.md", "RULES.md"].find((f) => existsSync5(f)) ?? null;
+    const brief = buildBrief({ prompt, createdAt: (/* @__PURE__ */ new Date()).toISOString(), rules: rulesPath });
+    const report = preflight(brief.preconditions);
+    brief.blockers = report.missing.filter((r) => r.precondition.kind === "env").map((r) => ({
+      target: r.precondition.target,
+      why: r.precondition.why,
+      action: `export ${r.precondition.target}=<value> before this run, or say it is not needed`
+    }));
+    console.log("");
+    console.log(`  ${C.bold("Brief")} ${C.grey(brief.id)}  ${C.grey(rulesPath ? `rules: ${rulesPath}` : "no ruleset found")}`);
+    console.log("");
+    const byKind = (k) => brief.requirements.filter((r) => r.kind === k);
+    console.log(`  ${C.bold(String(brief.requirements.length))} thing${brief.requirements.length === 1 ? "" : "s"} asked for` + C.grey(`  \u2014 ${byKind("do").length} to do, ${byKind("constraint").length} constraint(s), ${byKind("question").length} question(s)`));
+    for (const r of brief.requirements) {
+      const tag = r.kind === "constraint" ? C.yellow("never ") : r.kind === "question" ? C.grey("ask   ") : C.grey("do    ");
+      console.log(`    ${tag} ${r.text.slice(0, 92)}`);
+    }
+    console.log("");
+    if (!brief.preconditions.length) {
+      console.log(C.grey("  The prompt names no tool, key or file, so there is nothing to check before starting."));
+    } else {
+      console.log(`  ${C.bold("Needs")}`);
+      for (const r of report.met) console.log(`    ${C.green("ok    ")} ${r.precondition.target}  ${C.grey(r.evidence)}`);
+      for (const r of report.missing) console.log(`    ${C.red("MISSING")} ${r.precondition.target}  ${C.grey(r.detail)}`);
+    }
+    const pending = brief.acceptance.filter((a) => !a.run);
+    console.log("");
+    console.log(`  ${C.bold("How we will know it worked")}`);
+    for (const a of brief.acceptance) {
+      const req = brief.requirements.find((r) => r.id === a.for);
+      if (a.run) console.log(`    ${C.green("check ")} ${C.bold(a.run)}  ${C.grey("\u2192 " + req.text.slice(0, 60))}`);
+      else console.log(`    ${C.yellow("PENDING")} ${C.grey("no check yet \u2192 " + req.text.slice(0, 60))}`);
+    }
+    if (pending.length) {
+      console.log("");
+      console.log(C.grey(`  ${pending.length} criteri${pending.length === 1 ? "on has" : "a have"} no command yet. Write one into .enforcee/brief.json`));
+      console.log(C.grey("  before starting \u2014 a check invented afterwards gets chosen to flatter the result."));
+    }
+    mkdirSync3(".enforcee", { recursive: true });
+    writeFileSync3(join6(".enforcee", "brief.json"), JSON.stringify(brief, null, 2) + "\n");
+    console.log("");
+    console.log(C.grey(`  Wrote .enforcee/brief.json`));
+    if (brief.blockers.length) {
+      console.log("");
+      console.log(`  ${C.red(C.bold("Blocked \u2014 these need you, and this is all of them:"))}`);
+      for (const b of brief.blockers) {
+        console.log(`    \xB7 ${C.bold(b.target)} \u2014 ${b.why}`);
+        console.log(`      ${C.grey(b.action)}`);
+      }
+      console.log("");
+      process.exit(3);
+    }
+    console.log("");
+    process.exit(0);
+  }
   if (cmd === "preflight") {
     const [, rulesPath] = args;
     if (!rulesPath) {
@@ -12026,7 +12274,7 @@ async function main() {
     const memory = loadMemory();
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     for (const c of found) {
-      const occurrence = createHash3("sha256").update(`${args[1]}|${c.start}|${c.quote}`).digest("hex").slice(0, 16);
+      const occurrence = createHash4("sha256").update(`${args[1]}|${c.start}|${c.quote}`).digest("hex").slice(0, 16);
       noteMention(memory, c.id, c.rule, c.quote, today, occurrence);
     }
     let enforcedIds = /* @__PURE__ */ new Set();
