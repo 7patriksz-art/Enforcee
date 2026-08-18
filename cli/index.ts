@@ -34,6 +34,7 @@ import {
   signDocument,
 } from '../src/lib/attest-file';
 import type { RuleResult } from '../src/lib/types';
+import { readLedger, renderTrace, renderTraceFile, summarise } from '../src/lib/trace/summary';
 
 /**
  * Injected at build time from package.json — see the --define in build:cli.
@@ -79,7 +80,7 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee check')} <signed.json> --key <pub>      check somebody's signed receipt ${C.dim('(free, offline)')}
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key> [--project]        install a licence (machine-wide, or this repo)
-  ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
+  ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee trace')}                               the one-line summary of what it did, from the ledger\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
 
   ${C.dim('--judge')}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
   ${C.dim('--json')}         emit the receipt as JSON instead of a table
@@ -739,6 +740,42 @@ async function main(): Promise<void> {
         ? `${C.green('  ok  ')} learned     ${obstacles.length} obstacles${unresolved ? `, ${C.yellow(`${unresolved} with no proven remedy`)}` : ''}`
         : `${C.grey(' none ')} learned     ${C.grey('nothing yet — the guard refreshes this in the background')}`
     );
+    console.log('');
+    return;
+  }
+
+  // -- trace: the same line the hook prints at the end of a session ---------
+  //
+  // The guard prints this unprompted; this is the on-demand version. Every number is counted
+  // from `.enforcee/ledger.jsonl`, so anyone who doubts the line can reproduce it from the
+  // same file. A summary you cannot independently reproduce is a claim, and this product does
+  // not make claims about itself that it would refuse from a model.
+  if (cmd === 'trace') {
+    // Read from `argv`, NOT `args`: `args` has every `--flag` filtered out of it, so
+    // `args.indexOf('--session')` is permanently -1 and the scope was silently ignored.
+    const si = argv.indexOf('--session');
+    const dir = join(process.cwd(), '.enforcee');
+    const ledgerPath = join(dir, 'ledger.jsonl');
+    const raw = existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8') : '';
+    const t = summarise(readLedger(raw), si > -1 ? argv[si + 1] : undefined);
+
+    if (json) return console.log(JSON.stringify(t, null, 2));
+    if (flags.has('--write')) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'summary.md'), renderTraceFile(t, new Date().toISOString()));
+    }
+    console.log('');
+    console.log(`  ${renderTrace(t)}`);
+    if (t.blockedBy.length) {
+      console.log('');
+      for (const r of t.blockedBy.slice(0, 5)) console.log(`  ${C.grey('stopped by')} ${r}`);
+      if (t.blockedBy.length > 5) console.log(`  ${C.grey(`...and ${t.blockedBy.length - 5} more`)}`);
+    }
+    if (t.empty) {
+      // An absent guard and a clean session produce identical zeros, and only one of them
+      // means anything good.
+      console.log(`  ${C.grey('Nothing has been recorded in this project. Run `enforcee status` to see why.')}`);
+    }
     console.log('');
     return;
   }

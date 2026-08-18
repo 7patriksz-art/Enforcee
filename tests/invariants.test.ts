@@ -174,11 +174,47 @@ describe('D-024 · checkout requires an account', () => {
 describe('D-007 · guard design rules that must not be relaxed', () => {
   const guard = read('guard/guard.mjs');
 
-  it('never exits non-zero', () => {
-    // A guard bug must not be able to wedge a session. `process.exit(1)` anywhere here is
-    // the single most damaging regression possible in this file.
-    const bad = guard.match(/process\.exit\(\s*[1-9]/g) ?? [];
-    expect(bad, 'the guard can now exit non-zero and wedge a session').toEqual([]);
+  it('exits non-zero in exactly one place, and that place is the close gate', () => {
+    // THE ORIGINAL RULE WAS ABSOLUTE, AND IT WAS RIGHT TO BE. A guard bug that can wedge a
+    // session is the single most damaging regression possible in this file, so for the whole
+    // life of the project the answer was: always exit 0, always speak JSON.
+    //
+    // 2026-08-18 narrows it, deliberately and once. Patrik: *"verifies for real if all is
+    // green, if not reinitiates the work."* Sending a session back is the last step of the
+    // loop this product IS, and the documented way a Stop hook does that is exit 2 with the
+    // reason on stderr. There is no version of that which exits 0.
+    //
+    // So the invariant becomes a budget rather than a ban, and the budget is one.
+    //
+    // Every exit code is read, not just the ones written as a bare digit. A first version of
+    // this matched /process\.exit\(\s*[1-9]/ and stayed green against
+    // `process.exit(ok ? 0 : 3)` — a computed code is exactly how a second wedge would
+    // arrive, and the sabotage harness caught the hole before this shipped.
+    const codes = [...guard.matchAll(/process\.exit\(([^)]*)\)/g)].map((m) => m[1].trim());
+    expect(codes.length, 'no process.exit at all — this control is scanning nothing').toBeGreaterThan(2);
+    for (const c of codes) {
+      expect(/^\d+$/.test(c), `process.exit(${c}) is computed, so its value cannot be checked here`).toBe(true);
+    }
+    const sites = codes.filter((c) => c !== '0');
+    expect(sites, `the guard exits non-zero in more than one place: ${sites.join(', ')}`).toEqual(['2']);
+
+    // Structural, not textual: the exit has to sit inside the close gate's block branch, and
+    // that branch has to be behind the cap.
+    const before = guard.slice(0, guard.search(/process\.exit\(\s*2/));
+    const opener = before.lastIndexOf('if (already < 2) {');
+    expect(opener, 'the non-zero exit is no longer inside the attempt cap').toBeGreaterThan(-1);
+    expect(before.slice(opener), 'the exit is not preceded by a VERIFY_BLOCK ledger row').toContain('VERIFY_BLOCK');
+  });
+
+  it('still always exits 0 on every path that is not the close gate', () => {
+    // The half of the old rule that has not changed. PreToolUse, SessionStart, PostCompact
+    // and the licence gate must never be able to wedge anything.
+    const beforeCloseGate = guard.slice(0, guard.indexOf('function runCloseGate'));
+    expect(beforeCloseGate.length, 'runCloseGate is gone, so this slice covers nothing').toBeGreaterThan(1000);
+    expect(
+      [...beforeCloseGate.matchAll(/process\.exit\(([^)]*)\)/g)].map((m) => m[1].trim()).filter((c) => c !== '0'),
+      'a non-zero exit appeared outside the close gate'
+    ).toEqual([]);
   });
 
   it('has a top-level catch, so an internal error still speaks JSON', () => {

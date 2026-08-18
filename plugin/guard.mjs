@@ -18,12 +18,19 @@
  *   exit 2 + text on stderr  → hard block, stdout ignored
  *   any other exit           → non-blocking error, the action proceeds
  * We always exit 0 and speak JSON, so a guard bug can never wedge a session.
+ *
+ * ONE DELIBERATE EXCEPTION, added 2026-08-18: the close gate. When a project has opted in
+ * (`closeGate: true` in policy.json) and its own brief's acceptance commands FAIL, Stop exits
+ * 2 so the session is sent back to finish the job instead of ending on a red check. That is
+ * the only path in this file that does not exit 0, it is off unless someone turns it on, it
+ * is capped at two consecutive blocks per session, and it treats every error in its own
+ * machinery as a reason NOT to block. See runCloseGate.
  */
 
 import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createPublicKey, verify } from 'node:crypto';
 
@@ -522,6 +529,226 @@ function refreshObstaclesInBackground(enforceeDir) {
   }
 }
 
+/**
+ * THE VISIBLE TRACE - counted from the ledger this guard has been writing all session.
+ *
+ * Second implementation of `src/lib/trace/summary.ts`, because the guard is standalone and
+ * dependency-free by design. tests/trace-parity.test.ts feeds the SAME ledger through both
+ * and requires identical answers, byte for byte.
+ */
+function summariseLedger(policyPath, sessionId) {
+  const t = {
+    blocked: 0, warned: 0, allowed: 0, refuted: 0, confirmed: 0,
+    unverifiable: 0, reinjected: 0, unchecked: 0, verified: 0, unmet: 0, unsettled: 0,
+    blockedBy: [], empty: true,
+  };
+  let raw = '';
+  try {
+    raw = readFileSync(join(dirname(policyPath), 'ledger.jsonl'), 'utf8');
+  } catch {
+    return t; // no ledger is not a clean session; `empty` stays true and says so
+  }
+  const seen = new Set();
+  let any = false;
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let r;
+    try { r = JSON.parse(line); } catch { continue; }
+    if (!r || typeof r !== 'object') continue;
+    if (sessionId && (r.session ?? r.sessionId) !== sessionId) continue;
+    any = true;
+    switch (r.decision) {
+      case 'DENY': {
+        t.blocked++;
+        const label = (typeof r.rule === 'string' && r.rule.trim()) || (typeof r.ruleId === 'string' ? r.ruleId : '');
+        if (label && !seen.has(label)) { seen.add(label); t.blockedBy.push(label); }
+        break;
+      }
+      case 'WARN': t.warned++; break;
+      case 'ALLOW': t.allowed++; break;
+      case 'REINJECT': t.reinjected++; break;
+      case 'UNCHECKED': t.unchecked++; break;
+      case 'VERIFY':
+        if (r.outcome === 'PASS') t.verified++;
+        else if (r.outcome === 'FAIL') t.unmet++;
+        else t.unsettled++;
+        break;
+      case 'CLAIM':
+        if (r.verdict === 'REFUTED') t.refuted++;
+        else if (r.verdict === 'CONFIRMED') t.confirmed++;
+        else t.unverifiable++;
+        break;
+      default: break; // LOADED, SESSION_MARK, CLAIM_SKIPPED are bookkeeping, not activity
+    }
+  }
+  t.empty = !any;
+  return t;
+}
+
+/**
+ * One line. Only non-zero counts. Must be byte-for-byte what `renderTrace(t, false)` produces
+ * in the library - the parity test compares the two strings directly, and string equality is
+ * a control a near-miss cannot slip through. Change one wording and you must change both.
+ */
+function renderTraceLine(t) {
+  if (t.empty) return 'Enforcee \u00b7 no decisions recorded \u2014 the guard did not run';
+  const parts = [];
+  if (t.blocked) parts.push(`${t.blocked} blocked`);
+  if (t.refuted) parts.push(`${t.refuted} refuted`);
+  if (t.unmet) parts.push(`${t.unmet} unmet`);
+  if (t.warned) parts.push(`${t.warned} warned`);
+  if (t.unchecked) parts.push(`${t.unchecked} unchecked`);
+  if (t.unsettled) parts.push(`${t.unsettled} unsettled`);
+  if (t.unverifiable) parts.push(`${t.unverifiable} unverifiable`);
+  if (t.confirmed) parts.push(`${t.confirmed} confirmed`);
+  if (t.verified) parts.push(`${t.verified} verified`);
+  parts.push(`${t.allowed} allowed`);
+  if (t.reinjected) parts.push(`${t.reinjected}x rules restored`);
+  return `Enforcee \u00b7 ${parts.join(' \u00b7 ')}`;
+}
+
+/** The persisted trace, next to the ledger. Tiny on purpose - it lands in somebody's repo. */
+function writeTraceFile(policyPath, t, at) {
+  const rows = [
+    ['blocked', t.blocked], ['refuted', t.refuted], ['unmet', t.unmet],
+    ['warned', t.warned], ['unchecked', t.unchecked], ['unsettled', t.unsettled],
+    ['unverifiable', t.unverifiable], ['confirmed', t.confirmed], ['verified', t.verified],
+    ['allowed', t.allowed], ['rules restored', t.reinjected],
+  ].filter(([, n]) => n > 0);
+  const lines = ['# Enforcee', '', `_${at}_`, ''];
+  if (t.empty) lines.push('No decisions recorded. The guard did not run in this project.');
+  else {
+    lines.push('| | |', '|---|---:|');
+    for (const [k, n] of rows) lines.push(`| ${k} | ${n} |`);
+    if (t.blockedBy.length) {
+      lines.push('', '**Stopped by**');
+      for (const r of t.blockedBy.slice(0, 5)) lines.push(`- ${r}`);
+      if (t.blockedBy.length > 5) lines.push(`- ...and ${t.blockedBy.length - 5} more`);
+    }
+  }
+  try {
+    writeFileSync(join(dirname(policyPath), 'summary.md'), lines.join('\n') + '\n');
+  } catch {
+    /* a trace that cannot be written must never break the session it is describing */
+  }
+}
+
+/**
+ * THE CLOSE GATE - verify for real, and if it is not green, send the work back.
+ *
+ * Patrik, 2026-08-18: *"verifies for real if all is green, if not reinitiates the work."*
+ *
+ * WHAT IT WILL AND WILL NOT BLOCK ON, and the distinction is the whole design:
+ *
+ *   FAIL        a command somebody wrote BEFORE the work started ran and did not pass.
+ *               The only thing that blocks.
+ *   PENDING     nobody wrote a check. Never green - but no further turn can make a missing
+ *               criterion pass, so blocking is a loop with no exit. Reported.
+ *   SLOW        did not finish inside the budget. Not a failure and NOT a pass.
+ *   UNRUNNABLE  the command never started. An absent check, not a failed one.
+ *
+ * It refuses to block on anything that went wrong in its own machinery. A verifier whose own
+ * bug can wedge somebody's session is worse than no verifier.
+ */
+function readBrief(policyPath) {
+  try {
+    const b = JSON.parse(readFileSync(join(dirname(policyPath), 'brief.json'), 'utf8'));
+    if (!b || typeof b !== 'object' || !Array.isArray(b.acceptance)) return null;
+    return b;
+  } catch {
+    return null; // no brief, or one we cannot read. Either way there is nothing to close.
+  }
+}
+
+/** How many times this session has already been sent back. The loop stop. */
+function priorCloseBlocks(policyPath, sessionId) {
+  let n = 0;
+  try {
+    const raw = readFileSync(join(dirname(policyPath), 'ledger.jsonl'), 'utf8');
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      let r;
+      try { r = JSON.parse(line); } catch { continue; }
+      if (r && r.decision === 'VERIFY_BLOCK' && (!sessionId || r.session === sessionId)) n++;
+    }
+  } catch {
+    /* no ledger yet */
+  }
+  return n;
+}
+
+/** Returns null when there is nothing to do, so a caller can tell green from never-asked. */
+function runCloseGate(policy, policyPath) {
+  if (policy?.closeGate !== true) return null; // off unless the project turned it on
+  const brief = readBrief(policyPath);
+  if (!brief) return null;
+
+  const runnable = brief.acceptance.filter((a) => a && typeof a.run === 'string' && a.run.trim());
+  const pending = brief.acceptance.length - runnable.length;
+  if (runnable.length === 0) return null;
+
+  // A hook has a deadline, and a hook that times out is treated as a NON-BLOCKING error -
+  // which would silently switch this gate off rather than fail loudly. So the budget is ours,
+  // it is small, and running out is its own reported outcome.
+  const perCommand = Number(policy.closeGateTimeoutMs) > 0 ? Number(policy.closeGateTimeoutMs) : 15_000;
+  const budget = Number(policy.closeGateBudgetMs) > 0 ? Number(policy.closeGateBudgetMs) : 45_000;
+
+  const results = [];
+  let spent = 0;
+  for (const a of runnable) {
+    const why = typeof a.why === 'string' && a.why.trim() ? a.why.trim() : a.run;
+    if (spent >= budget) {
+      results.push({ outcome: 'SLOW', run: a.run, why, detail: 'the budget for this hook ran out before this criterion started' });
+      continue;
+    }
+    const started = Date.now();
+    // shell: true so a criterion reads the way somebody would type it. The command comes from
+    // the project's own brief - the same trust as a package.json script, and no wider.
+    const r = spawnSync(a.run, {
+      shell: true,
+      encoding: 'utf8',
+      timeout: Math.min(perCommand, Math.max(1000, budget - spent)),
+      windowsHide: true,
+    });
+    spent += Date.now() - started;
+
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    if (r.error && r.error.code === 'ETIMEDOUT') {
+      results.push({ outcome: 'SLOW', run: a.run, why, detail: `did not finish inside ${perCommand}ms` });
+      continue;
+    }
+    if (r.error || r.status === null) {
+      results.push({ outcome: 'UNRUNNABLE', run: a.run, why, detail: `could not run: ${r.error ? r.error.message : 'no exit status'}` });
+      continue;
+    }
+    // COMMAND NOT FOUND IS NOT A FAILED CHECK.
+    //
+    // With shell: true the shell starts fine and exits 127 (9009 on cmd.exe), so a missing
+    // binary arrives looking exactly like a red test. Sending work back because the machine
+    // lacks a tool is the false-accusation shape this project has paid for four times.
+    //
+    // Deliberately loose about the wording: bash says "command not found", dash says "not
+    // found", cmd.exe says "is not recognized as an internal or external command". Requiring
+    // bash's phrasing is how this would silently cover nothing on Debian, where sh is dash.
+    // Where status and message disagree it errs towards NOT blocking.
+    if ((r.status === 127 || r.status === 9009) && /not found|not recognized as an internal|No such file or directory/i.test(output)) {
+      results.push({ outcome: 'UNRUNNABLE', run: a.run, why, detail: output.trim().slice(-200) || 'command not found' });
+      continue;
+    }
+    if (r.status !== 0) {
+      results.push({ outcome: 'FAIL', run: a.run, why, detail: output.trim().slice(-400) || `exited ${r.status} with no output` });
+      continue;
+    }
+    if (typeof a.expect === 'string' && a.expect && !output.includes(a.expect)) {
+      results.push({ outcome: 'FAIL', run: a.run, why, detail: `ran, but the output does not contain ${JSON.stringify(a.expect)}` });
+      continue;
+    }
+    results.push({ outcome: 'PASS', run: a.run, why, detail: a.expect ? `output contains ${JSON.stringify(a.expect)}` : 'exited 0' });
+  }
+
+  return { results, pending };
+}
+
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
   process.exit(0);
@@ -835,6 +1062,9 @@ function main() {
   if (event === 'Stop' || event === 'SessionEnd') {
     log(policyPath, { ...base, decision: 'SESSION_MARK', transcript: payload.transcript_path ?? null });
 
+    /** What the user is told at the end of the turn: refuted claims first, then the trace. */
+    const lines = [];
+
     // Check the session's claims before it ends. This is the difference between a tool you
     // remember to run and a safety net: the moment a false claim is most costly is exactly
     // the moment nobody is going to type a command.
@@ -862,16 +1092,80 @@ function main() {
         // trade: this is an evidence layer, the checks are heuristic about WHICH sentences
         // are claims, and Claude Code overrides a Stop hook after 8 consecutive blocks
         // anyway. Say it plainly and let the person decide.
-        return emit({
-          systemMessage:
-            `Enforcee checked ${claims.length} claim${claims.length === 1 ? '' : 's'} made in this session and ` +
+        lines.push(
+          `Enforcee checked ${claims.length} claim${claims.length === 1 ? '' : 's'} made in this session and ` +
             `${refuted.length} did not hold up: ` +
             refuted.map((c) => `${c.subject} (${c.kind})`).join(', ') +
-            `. Full detail in .enforcee/ledger.jsonl.`,
-        });
+            `. Full detail in .enforcee/ledger.jsonl.`
+        );
       }
     }
-    allow();
+
+    // THE VISIBLE TRACE - read last, on purpose. Every row this branch writes is already on
+    // disk, so the numbers the user reads are the numbers anyone else gets from the ledger.
+    const trace = summariseLedger(policyPath, payload.session_id ?? null);
+    const didSomething =
+      trace.blocked + trace.warned + trace.allowed + trace.refuted + trace.confirmed +
+        trace.unverifiable + trace.reinjected + trace.unchecked + trace.verified +
+        trace.unmet + trace.unsettled >
+      0;
+    if (didSomething) {
+      // Silence when every count is zero. `0 allowed` at the end of every turn is noise that
+      // trains people to stop reading the line, and the file would be churn in a real repo.
+      writeTraceFile(policyPath, trace, now);
+      lines.push(renderTraceLine(trace));
+    }
+
+    // THE CLOSE GATE - the only place in this file that can refuse to let a turn end.
+    // Stop only: SessionEnd is documented as unable to block, and a gate there would do
+    // nothing while looking like it worked.
+    if (event === 'Stop') {
+      const close = runCloseGate(policy, policyPath);
+      if (close) {
+        for (const r of close.results) {
+          log(policyPath, { ...base, decision: 'VERIFY', outcome: r.outcome, criterion: r.run, detail: r.detail });
+        }
+        const failed = close.results.filter((r) => r.outcome === 'FAIL');
+        const slow = close.results.filter((r) => r.outcome === 'SLOW' || r.outcome === 'UNRUNNABLE');
+        const passed = close.results.filter((r) => r.outcome === 'PASS').length;
+
+        if (failed.length) {
+          // THE LOOP STOP. Two goes. A gate that keeps insisting burns somebody's budget
+          // while looking diligent, so after two it says what is wrong and steps aside.
+          const already = priorCloseBlocks(policyPath, payload.session_id ?? null);
+          if (already < 2) {
+            log(policyPath, { ...base, decision: 'VERIFY_BLOCK', failed: failed.length, attempt: already + 1 });
+            const reason =
+              `Enforcee: ${failed.length} of ${close.results.length} acceptance criteri` +
+              `${close.results.length === 1 ? 'on' : 'a'} from this run's brief did not pass. ` +
+              `This work is not done yet.\n\n` +
+              failed.map((r) => `  \u00d7 ${r.why}\n    $ ${r.run}\n    ${r.detail.split('\n').join('\n    ')}`).join('\n\n') +
+              `\n\nFix these and finish. The criteria were written before the work started, ` +
+              `in .enforcee/brief.json. Attempt ${already + 1} of 2.`;
+            // exit 2 + stderr is the documented way a Stop hook prevents the session from
+            // ending and hands Claude the reason. The one narrow exception, capped above.
+            process.stderr.write(reason + '\n');
+            process.exit(2);
+          }
+          log(policyPath, { ...base, decision: 'VERIFY_GIVE_UP', failed: failed.length, attempts: already });
+          lines.push(
+            `Enforcee: ${failed.length} acceptance criteri${failed.length === 1 ? 'on is' : 'a are'} still failing ` +
+              `after ${already} attempts. Not blocking again - this needs a person. See .enforcee/ledger.jsonl.`
+          );
+        } else if (close.results.length) {
+          const notes = [];
+          if (slow.length) notes.push(`${slow.length} could not be settled in time`);
+          if (close.pending) notes.push(`${close.pending} still ha${close.pending === 1 ? 's' : 've'} no check written`);
+          lines.push(
+            `Enforcee: ${passed}/${close.results.length} acceptance criteria proved` +
+              (notes.length ? ` \u00b7 ${notes.join(' \u00b7 ')}` : '') + '.'
+          );
+        }
+      }
+    }
+
+    if (lines.length) return emitWithNotice({ systemMessage: lines.join('\n') });
+    allowWithNotice();
   }
 
   const lic = checkLicence(dirname(policyPath));

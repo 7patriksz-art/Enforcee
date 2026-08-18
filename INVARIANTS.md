@@ -56,7 +56,7 @@ same commit. What is forbidden is the quiet kind.
 
 | ID | Invariant | Status | Why |
 |---|---|---|---|
-| D-007.1 | The guard **always exits 0 and speaks JSON**. | ENFORCED | A guard bug can never wedge a session. |
+| D-007.1 | The guard **always exits 0 and speaks JSON**, with exactly one exception: the opted-in close gate exits 2 to send unfinished work back, capped at two attempts per session. | ENFORCED | A guard bug can never wedge a session. Narrowed 2026-08-18 — sending a session back is the last step of the loop, and exit 2 is the documented way a Stop hook does it. The budget is one call site and the test checks it sits inside the cap. |
 | D-007.2 | A corrupt policy degrades to a **visible warning, never a block**. | ENFORCED | Failing closed on a parse error locks people out of their own repo. |
 | D-007.3 | Nothing inferred from prose is enabled without a click. | ENFORCED | Ambiguous proposals arrive switched off. |
 | D-007.4 | `rm -rf` is split by target: a build directory warns, a filesystem root blocks. | ENFORCED | A guard that blocks ordinary work is uninstalled by Friday. |

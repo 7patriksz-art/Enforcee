@@ -147,7 +147,7 @@ export default function Install() {
         <ul className="readable mt-3 max-w-prose list-disc space-y-1.5 pl-5">
           <li>Your licence is one line of text. Put it in <code className="font-mono text-[13px]">~/.enforcee/licence</code>, or in <code className="font-mono text-[13px]">ENFORCEE_LICENCE</code> for CI.</li>
           <li>It is verified offline against a key compiled into the tool. Nothing is sent to us, ever — including the fact that you ran it.</li>
-          <li>It renews itself while you are subscribed. It stops working a few weeks after you cancel, without us having to watch you.</li>
+          <li>It carries an expiry date and stops enforcing when that date passes — so cancelling needs no watching from us. Renewing means fetching a new line from your account page; nothing renews in the background, because nothing here talks to us.</li>
           <li><code className="font-mono text-[13px]">npx enforcee licence</code> tells you what you have and when it expires.</li>
         </ul>
         <div className="mt-4 flex flex-wrap gap-3">

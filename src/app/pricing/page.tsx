@@ -143,8 +143,8 @@ const MATRIX: Row[] = [
     key: 'ciGate',
     label: 'CI gate — a violation fails the PR',
     detail:
-      'The same check that runs on your laptop runs in your pipeline and exits non-zero when a rule is violated, so a pull request fails instead of merging. This is the point where a rule stops being your personal preference and becomes something the team is actually held to — which is a different product from a thing you run when you happen to remember. Ships as a GitHub Action; the CLI exits non-zero on a violation, so any other CI runner works too.',
-    free: false,
+      'The same check that runs on your laptop runs in your pipeline and exits non-zero when a rule is violated, so a pull request fails instead of merging. This is the point where a rule stops being your personal preference and becomes something the team is actually held to — which is a different product from a thing you run when you happen to remember. Ships as a GitHub Action; the CLI exits non-zero on a violation, so any other CI runner works too. Free on every plan \u2014 the CLI is free, offline and unlicensed for auditing, so there was never anything here to wall.',
+    free: true,
     builder: true,
     founder: true,
   },
@@ -460,6 +460,19 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
+
+              {p.soon && (
+                /* Named on the plan and not built yet. Its own heading, never a tick: a
+                   feature you cannot use must not look identical to one you can. */
+                <div className="mt-4 rounded-xl border border-unknown-line bg-unknown-pale/50 px-3.5 py-3">
+                  <div className="font-mono text-[10px] uppercase tracking-wide text-unknown">not built yet</div>
+                  <ul className="mt-1.5 space-y-1 text-[12.5px] leading-relaxed text-ink-mid">
+                    {p.soon.map((l) => (
+                      <li key={l}>{l}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {p.walls && (
                 <div className="mt-4 rounded-xl border border-unknown-line bg-unknown-pale/50 px-3.5 py-3">

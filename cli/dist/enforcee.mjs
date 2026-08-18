@@ -11744,7 +11744,7 @@ var ENTITLEMENTS = {
     driftAlerts: false,
     learnLimit: 3,
     sync: false,
-    ciGate: false,
+    ciGate: true,
     attestation: false,
     projects: 0,
     api: false
@@ -11999,6 +11999,140 @@ function signDocument(raw, privateKeyPem, now = /* @__PURE__ */ new Date()) {
   };
 }
 
+// src/lib/trace/summary.ts
+var EMPTY2 = {
+  blocked: 0,
+  warned: 0,
+  allowed: 0,
+  refuted: 0,
+  confirmed: 0,
+  unverifiable: 0,
+  reinjected: 0,
+  unchecked: 0,
+  verified: 0,
+  unmet: 0,
+  unsettled: 0,
+  blockedBy: [],
+  empty: true
+};
+function readLedger(text) {
+  const rows = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const r = JSON.parse(t);
+      if (r && typeof r === "object") rows.push(r);
+    } catch {
+    }
+  }
+  return rows;
+}
+function summarise(rows, session) {
+  const mine = session ? rows.filter((r) => (r.session ?? r.sessionId) === session) : rows;
+  if (mine.length === 0) return { ...EMPTY2, blockedBy: [] };
+  const t = { ...EMPTY2, blockedBy: [], empty: false };
+  const seen = /* @__PURE__ */ new Set();
+  for (const r of mine) {
+    switch (r.decision) {
+      case "DENY": {
+        t.blocked++;
+        const label = typeof r.rule === "string" && r.rule.trim() || (typeof r.ruleId === "string" ? r.ruleId : "");
+        if (label && !seen.has(label)) {
+          seen.add(label);
+          t.blockedBy.push(label);
+        }
+        break;
+      }
+      case "WARN":
+        t.warned++;
+        break;
+      case "ALLOW":
+        t.allowed++;
+        break;
+      case "REINJECT":
+        t.reinjected++;
+        break;
+      case "UNCHECKED":
+        t.unchecked++;
+        break;
+      case "VERIFY":
+        if (r.outcome === "PASS") t.verified++;
+        else if (r.outcome === "FAIL") t.unmet++;
+        else t.unsettled++;
+        break;
+      case "CLAIM":
+        if (r.verdict === "REFUTED") t.refuted++;
+        else if (r.verdict === "CONFIRMED") t.confirmed++;
+        else t.unverifiable++;
+        break;
+      default:
+        break;
+    }
+  }
+  return t;
+}
+var ESC = "\x1B[";
+var ANSI = {
+  red: (s) => `${ESC}31m${s}${ESC}0m`,
+  amber: (s) => `${ESC}33m${s}${ESC}0m`,
+  green: (s) => `${ESC}32m${s}${ESC}0m`,
+  grey: (s) => `${ESC}90m${s}${ESC}0m`,
+  bold: (s) => `${ESC}1m${s}${ESC}0m`
+};
+var PLAIN = {
+  red: (s) => s,
+  amber: (s) => s,
+  green: (s) => s,
+  grey: (s) => s,
+  bold: (s) => s
+};
+function renderTrace(t, colour = true) {
+  const c = colour ? ANSI : PLAIN;
+  if (t.empty) return c.grey("Enforcee \xB7 no decisions recorded \u2014 the guard did not run");
+  const parts = [];
+  if (t.blocked) parts.push(c.red(`${c.bold(String(t.blocked))} blocked`));
+  if (t.refuted) parts.push(c.red(`${c.bold(String(t.refuted))} refuted`));
+  if (t.unmet) parts.push(c.red(`${c.bold(String(t.unmet))} unmet`));
+  if (t.warned) parts.push(c.amber(`${t.warned} warned`));
+  if (t.unchecked) parts.push(c.amber(`${t.unchecked} unchecked`));
+  if (t.unsettled) parts.push(c.amber(`${t.unsettled} unsettled`));
+  if (t.unverifiable) parts.push(c.grey(`${t.unverifiable} unverifiable`));
+  if (t.confirmed) parts.push(c.green(`${t.confirmed} confirmed`));
+  if (t.verified) parts.push(c.green(`${t.verified} verified`));
+  parts.push(c.grey(`${t.allowed} allowed`));
+  if (t.reinjected) parts.push(c.grey(`${t.reinjected}x rules restored`));
+  return `${c.bold("Enforcee")} ${c.grey("\xB7")} ${parts.join(c.grey(" \xB7 "))}`;
+}
+function renderTraceFile(t, at) {
+  const rows = [
+    ["blocked", t.blocked],
+    ["refuted", t.refuted],
+    ["unmet", t.unmet],
+    ["warned", t.warned],
+    ["unchecked", t.unchecked],
+    ["unsettled", t.unsettled],
+    ["unverifiable", t.unverifiable],
+    ["confirmed", t.confirmed],
+    ["verified", t.verified],
+    ["allowed", t.allowed],
+    ["rules restored", t.reinjected]
+  ].filter(([, n]) => n > 0);
+  const lines = ["# Enforcee", "", `_${at}_`, ""];
+  if (t.empty) {
+    lines.push("No decisions recorded. The guard did not run in this project.");
+    return lines.join("\n") + "\n";
+  }
+  lines.push("| | |", "|---|---:|");
+  for (const [k, n] of rows) lines.push(`| ${k} | ${n} |`);
+  if (t.blockedBy.length) {
+    lines.push("", "**Stopped by**");
+    for (const r of t.blockedBy.slice(0, 5)) lines.push(`- ${r}`);
+    if (t.blockedBy.length > 5) lines.push(`- ...and ${t.blockedBy.length - 5} more`);
+  }
+  return lines.join("\n") + "\n";
+}
+
 // cli/index.ts
 var VERSION2 = true ? "0.9.1" : "0.0.0-dev";
 var C = {
@@ -12035,6 +12169,7 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence set")} <key> [--project]        install a licence (machine-wide, or this repo)
   ${C.bold("enforcee status")}                              is it installed, and what has it actually done?
+  ${C.bold("enforcee trace")}                               the one-line summary of what it did, from the ledger
   ${C.bold("enforcee licence")}                             show the licence this machine is using
 
   ${C.dim("--judge")}        also adjudicate rules code cannot decide (needs ANTHROPIC_API_KEY)
@@ -12521,6 +12656,30 @@ async function main() {
     console.log(
       obstacles.length ? `${C.green("  ok  ")} learned     ${obstacles.length} obstacles${unresolved ? `, ${C.yellow(`${unresolved} with no proven remedy`)}` : ""}` : `${C.grey(" none ")} learned     ${C.grey("nothing yet \u2014 the guard refreshes this in the background")}`
     );
+    console.log("");
+    return;
+  }
+  if (cmd === "trace") {
+    const si = argv.indexOf("--session");
+    const dir = join6(process.cwd(), ".enforcee");
+    const ledgerPath = join6(dir, "ledger.jsonl");
+    const raw = existsSync5(ledgerPath) ? readFileSync3(ledgerPath, "utf8") : "";
+    const t = summarise(readLedger(raw), si > -1 ? argv[si + 1] : void 0);
+    if (json) return console.log(JSON.stringify(t, null, 2));
+    if (flags.has("--write")) {
+      mkdirSync3(dir, { recursive: true });
+      writeFileSync3(join6(dir, "summary.md"), renderTraceFile(t, (/* @__PURE__ */ new Date()).toISOString()));
+    }
+    console.log("");
+    console.log(`  ${renderTrace(t)}`);
+    if (t.blockedBy.length) {
+      console.log("");
+      for (const r of t.blockedBy.slice(0, 5)) console.log(`  ${C.grey("stopped by")} ${r}`);
+      if (t.blockedBy.length > 5) console.log(`  ${C.grey(`...and ${t.blockedBy.length - 5} more`)}`);
+    }
+    if (t.empty) {
+      console.log(`  ${C.grey("Nothing has been recorded in this project. Run `enforcee status` to see why.")}`);
+    }
     console.log("");
     return;
   }

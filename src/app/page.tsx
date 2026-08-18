@@ -285,7 +285,7 @@ export default function Home() {
             {[
               {
                 k: 'It won&rsquo;t guess',
-                d: 'If a verdict comes from a model, it has to quote your text, and we go and find that quote. No quote, no verdict. Across 48 verdicts on three models: zero false accusations.',
+                d: 'If a verdict comes from a model, it has to quote your text, and we go and find that quote. It has to be at least ten characters long, and we have to be able to find it in your output. No quote, no verdict — the verdict is thrown away and reported as unverifiable instead.',
               },
               {
                 k: 'It checks the claim, not the story',
