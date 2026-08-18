@@ -54,40 +54,126 @@ export function attest(receipt: Receipt, privateKeyPem: string, now = new Date()
   };
 }
 
+export type AttestationOutcome = 'VALID' | 'REFUTED' | 'UNVERIFIABLE';
+
 export type AttestationVerdict =
-  | { ok: true; digest: string }
-  | { ok: false; reason: string };
+  | { ok: true; outcome: 'VALID'; digest: string; reason: string }
+  | { ok: false; outcome: 'REFUTED'; reason: string }
+  | { ok: false; outcome: 'UNVERIFIABLE'; reason: string };
+
+/** Ed25519 signatures are exactly 64 bytes. Anything else is a malformed file, not a forgery. */
+const ED25519_SIGNATURE_BYTES = 64;
 
 /**
  * Check a signed receipt. Anyone can run this with the public key — that is the point.
  *
- * Three independent ways to fail, kept separate because they mean different things to whoever
- * is holding the receipt: the body was altered, the signature is not ours, or the file is
- * malformed. Collapsing them into "invalid" would tell a client nothing about what happened.
+ * THREE OUTCOMES, NOT TWO, and the third is the one that matters.
+ *
+ * The first cut of this returned `{ ok: false }` for everything that was not a good
+ * signature, which put four very different situations in one bucket: the body was altered,
+ * the signature is somebody else's, the receipt was never signed at all, and *we could not
+ * tell*. The first two are accusations. The last two are not, and printing an accusation for
+ * them is a false accusation of forgery against a document that may be perfectly honest —
+ * the exact defect class this project has now recorded eleven times, aimed this time at a
+ * third party who has no way to check our work.
+ *
+ * So: REFUTED means we checked and it failed. UNVERIFIABLE means we could not check.
+ * `INVARIANTS.md` H-3 — `UNVERIFIABLE` is a valid outcome and must remain reachable.
+ *
+ * What a VALID answer proves, stated exactly: this receipt has not changed by one character
+ * since it was signed, and it was signed by whoever holds the private half of the key you
+ * supplied. It does NOT prove who that person is, when it was signed (the timestamp is
+ * inside the signature, so it is only as honest as the signer), or that the audit inside was
+ * run against the code you were shipped. Those live beyond what this check can see.
  */
 export function verifyAttestation(signed: SignedReceipt, publicKeyPem: string): AttestationVerdict {
   const { receipt, attestation } = signed ?? ({} as SignedReceipt);
   if (!receipt || !attestation?.signature || !attestation?.digest) {
-    return { ok: false, reason: 'Not a signed receipt — no attestation block.' };
+    return {
+      ok: false,
+      outcome: 'UNVERIFIABLE',
+      reason: 'Not a signed receipt — no attestation block. An unsigned receipt is not a forged one; there is simply nothing here to check.',
+    };
+  }
+  if (typeof publicKeyPem !== 'string' || !publicKeyPem.trim()) {
+    return { ok: false, outcome: 'UNVERIFIABLE', reason: 'No public key was supplied, so there is nothing to check the signature against.' };
   }
 
   const { digest: claimed, ...body } = receipt;
   const recomputed = digestOf(body as Omit<Receipt, 'digest'>);
 
   if (recomputed !== claimed) {
-    return { ok: false, reason: 'The receipt body does not match its own digest — it has been altered since it was written.' };
+    return { ok: false, outcome: 'REFUTED', reason: 'The receipt body does not match its own digest — it has been altered since it was written.' };
   }
   if (recomputed !== attestation.digest) {
-    return { ok: false, reason: 'The signature covers a different receipt than the one attached to it.' };
+    return { ok: false, outcome: 'REFUTED', reason: 'The signature covers a different receipt than the one attached to it.' };
+  }
+
+  // A signature of the wrong length was never produced by Ed25519, so it is a damaged or
+  // hand-edited file rather than a forgery attempt we caught. base64url decoding never
+  // throws — it silently drops what it cannot read — so length is the only place this shows.
+  const sigBytes = Buffer.from(attestation.signature, 'base64url');
+  if (sigBytes.length !== ED25519_SIGNATURE_BYTES) {
+    return {
+      ok: false,
+      outcome: 'UNVERIFIABLE',
+      reason: `The attestation's signature is ${sigBytes.length} bytes, not the ${ED25519_SIGNATURE_BYTES} an Ed25519 signature has — the file is damaged, so it can be neither confirmed nor refuted.`,
+    };
+  }
+
+  let key;
+  try {
+    key = createPublicKey(publicKeyPem.replace(/\\n/g, '\n'));
+  } catch (err) {
+    return {
+      ok: false,
+      outcome: 'UNVERIFIABLE',
+      reason: `That public key could not be read, so nothing could be checked: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  // A key of the WRONG TYPE is not a failed check, and finding that out cost a smoke test.
+  //
+  // `verify(null, …)` with an RSA public key does not throw — it returns `false`, exactly as
+  // it does for a real forgery. So a client who was handed the right receipt and reached for
+  // the wrong key file was told, in red, that the receipt "was not signed by this key", which
+  // is the false accusation this whole three-state design exists to prevent, aimed at the one
+  // person in the transaction with no way to check our work.
+  //
+  // Asked of the key rather than inferred from the answer: charter honesty rule 8, measure the
+  // artefact and not the intent.
+  if (key.asymmetricKeyType !== 'ed25519') {
+    return {
+      ok: false,
+      outcome: 'UNVERIFIABLE',
+      reason: `That key is ${key.asymmetricKeyType ?? 'of an unknown type'}, not Ed25519, so it cannot check this signature either way. You are probably holding the wrong key file.`,
+    };
   }
 
   try {
-    const key = createPublicKey(publicKeyPem.replace(/\\n/g, '\n'));
-    const ok = verify(null, Buffer.from(recomputed, 'utf8'), key, Buffer.from(attestation.signature, 'base64url'));
+    const ok = verify(null, Buffer.from(recomputed, 'utf8'), key, sigBytes);
     return ok
-      ? { ok: true, digest: recomputed }
-      : { ok: false, reason: 'The digest is intact but the signature was not made by this key — this receipt did not come from Enforcee.' };
+      ? {
+          ok: true,
+          outcome: 'VALID',
+          digest: recomputed,
+          reason: 'The receipt has not changed since it was signed, and the signature was made by the holder of this key.',
+        }
+      : {
+          ok: false,
+          outcome: 'REFUTED',
+          // Deliberately NOT "this did not come from Enforcee". The signing key belongs to
+          // whoever ran `enforcee sign`, not to us — we hold no private key a laptop could
+          // reach — so naming ourselves here would tell a client something we cannot know.
+          reason: 'The digest is intact but the signature was not made by this key — either it was signed by somebody else, or you are holding the wrong key.',
+        };
   } catch (err) {
-    return { ok: false, reason: `Could not check the signature: ${err instanceof Error ? err.message : String(err)}` };
+    // A structurally valid key of the wrong TYPE — RSA, EC, an X25519 agreement key — lands
+    // here. We could not check; that is not the same as failing the check.
+    return {
+      ok: false,
+      outcome: 'UNVERIFIABLE',
+      reason: `Could not check the signature with this key: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }

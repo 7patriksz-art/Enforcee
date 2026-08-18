@@ -23,6 +23,13 @@ import { propose, readyToOffer, needsDecision, needsReview, selfCheckable, exist
 import { loadMemory, saveMemory, noteMention, activeRules, alreadyDeclined, samePreference, decide } from '../src/lib/prevent/memory';
 import { createHash } from 'node:crypto';
 import { licenceMessage } from '../src/lib/licence';
+import { entitlementsFor } from '../src/lib/plans';
+import {
+  ATTESTATION_KEY_PATHS,
+  checkDocument,
+  generateAttestationKeypair,
+  signDocument,
+} from '../src/lib/attest-file';
 import type { RuleResult } from '../src/lib/types';
 
 /**
@@ -63,6 +70,8 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
   ${C.bold('enforcee accept')}|${C.bold('decline')} <id>              decide on a learned preference
   ${C.bold('enforcee session')} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold('enforcee obstacles')} <dir-or-transcript…>     what already blocked you here, from what actually failed
+  ${C.bold('enforcee sign')} <receipt.json>                 sign a receipt you can hand to a client ${C.dim('(Founder)')}
+  ${C.bold('enforcee check')} <signed.json> --key <pub>      check somebody's signed receipt ${C.dim('(free, offline)')}
   ${C.bold('enforcee guard')} <rules-file>                  write .enforcee/ into this project ${C.dim('(licensed)')}
   ${C.bold('enforcee licence set')} <key> [--project]        install a licence (machine-wide, or this repo)
   ${C.bold('enforcee status')}                              is it installed, and what has it actually done?\n  ${C.bold('enforcee licence')}                             show the licence this machine is using
@@ -74,7 +83,8 @@ ${C.bold('enforcee')} ${C.dim(VERSION)}  ${C.dim('— did your AI actually follo
 Exits non-zero when a rule is VIOLATED, or when preflight finds a missing precondition,
 so both work as a CI gate.
 
-${C.dim('audit, health, learn and session need no account, no key and no network.')}
+${C.dim('audit, health, learn, session and check need no account, no key and no network.')}
+${C.dim('check exits 0 valid · 1 refuted · 4 unverifiable — a thing it could not check is never a failure.')}
 ${C.dim('guard needs a licence, checked offline against a key compiled into this binary.')}
 `);
 }
@@ -106,6 +116,39 @@ function parseJsonl(raw: string): { type?: string; isCompactSummary?: boolean; i
     } catch {
       /* ignore */
     }
+  }
+  return out;
+}
+
+/**
+ * Flags that take a value, and the positional list that survives them.
+ *
+ * `main` builds its `args` by dropping everything starting with `--`, which silently leaves
+ * the VALUE of a value-flag behind as a positional: `enforcee sign --key k receipt.json`
+ * arrived as `['sign', 'k', 'receipt.json']` and would have tried to sign the key. Every
+ * command before this one took only flags with no value, so the shape was fine until it was
+ * not. Handled here once rather than in each new branch.
+ */
+const VALUE_FLAGS = ['--key', '--out'];
+
+function flagValue(argv: string[], name: string): string | undefined {
+  const inline = argv.find((a) => a.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1) || undefined;
+  const i = argv.indexOf(name);
+  if (i === -1) return undefined;
+  const v = argv[i + 1];
+  return v && !v.startsWith('--') ? v : undefined;
+}
+
+function positionalsOf(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--')) {
+      if (VALUE_FLAGS.includes(a)) i++;
+      continue;
+    }
+    out.push(a);
   }
   return out;
 }
@@ -812,6 +855,192 @@ async function main(): Promise<void> {
     console.log(C.grey('  audit, health, learn and session work regardless — they always will.'));
     console.log('');
     return;
+  }
+
+  /**
+   * SIGN — the Founder promise, finally reachable from a keyboard.
+   *
+   * `enforcee sign keygen` makes an Ed25519 keypair on this machine. `enforcee sign
+   * <receipt.json>` signs a receipt with the private half. The public half is yours to
+   * publish; anyone holding it can run `enforcee check` and needs no licence, no account and
+   * no network to do it — which is the only arrangement under which a receipt is worth
+   * handing to a client at all.
+   *
+   * The key is generated locally and never leaves the machine. We hold no private key that a
+   * laptop could reach, so we cannot sign on your behalf and do not claim to: what the
+   * signature proves is that the holder of YOUR key signed it. Every line this command prints
+   * says so, because a client reading "signed" will otherwise supply the rest themselves.
+   */
+  if (cmd === 'sign') {
+    const pos = positionalsOf(argv);
+    const keyFlag = flagValue(argv, '--key');
+    const outFlag = flagValue(argv, '--out');
+
+    if (pos[1] === 'keygen') {
+      const dir = outFlag ?? dirname(ATTESTATION_KEY_PATHS.privateKey);
+      const priv = outFlag ? join(dir, 'attestation-key') : ATTESTATION_KEY_PATHS.privateKey;
+      const pub = `${priv}.pub`;
+      // Never silently overwrite a signing key: every receipt ever signed with the old one
+      // becomes uncheckable, and the person finding out is the client, months later.
+      for (const p of [priv, pub]) {
+        if (existsSync(p)) {
+          console.error(C.red(`  ${p} already exists — refusing to overwrite a signing key.`));
+          console.error(C.grey('  Every receipt signed with the old key becomes uncheckable. Move it aside first.'));
+          process.exit(2);
+        }
+      }
+      const pair = generateAttestationKeypair();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(priv, pair.privateKey, 'utf8');
+      writeFileSync(pub, pair.publicKey, 'utf8');
+
+      // 0600 where the OS honours it. Windows does not, and saying nothing there would let a
+      // Windows user believe the key is protected when it is readable by every process they
+      // run. Report the mode we actually achieved, read back from disk (charter rule 10).
+      let restricted = false;
+      try {
+        chmodSync(priv, 0o600);
+        restricted = (statSync(priv).mode & 0o077) === 0;
+      } catch {
+        restricted = false;
+      }
+
+      console.log('');
+      console.log(`  ${C.green('✓')} Signing key written — ${C.bold(priv)}`);
+      console.log(`    Public half — ${C.bold(pub)}  ${C.grey('publish this; it is what your client checks against')}`);
+      if (!restricted) {
+        console.log(C.yellow('    Could not restrict permissions on this platform — anyone with access to this machine can sign as you.'));
+      }
+      console.log('');
+      console.log(C.grey('  Next:  enforcee audit CLAUDE.md output.md --json > receipt.json'));
+      console.log(C.grey('         enforcee sign receipt.json'));
+      console.log('');
+      return;
+    }
+
+    const receiptPath = pos[1];
+    if (!receiptPath) {
+      console.error(C.red('usage: enforcee sign <receipt.json> [--key <private-key>] [--out <file>]'));
+      console.error(C.grey('       enforcee sign keygen        create the signing key, once'));
+      process.exit(2);
+    }
+
+    // Founder, and checked offline against the key compiled into this binary. `check` is
+    // deliberately NOT gated: a client who has to buy a licence to read the receipt you gave
+    // them is not being handed evidence, they are being handed an advert.
+    const lic = checkLocalLicence();
+    const entitled = lic.ok && entitlementsFor(lic.payload.plan).attestation;
+    if (!entitled) {
+      console.log('');
+      console.log(`  ${C.yellow('Signed receipts are the part we charge for.')} ${C.grey('(Founder)')}`);
+      console.log(`  ${C.grey(lic.ok ? `Licensed to ${lic.payload.sub} · ${lic.payload.plan} — signing is on Founder.` : licenceMessage(lic))}`);
+      console.log('');
+      console.log(C.grey('  Free and unlimited without it:'));
+      console.log(C.grey(`    enforcee audit <rules> <output> --json    the receipt itself, with every verdict`));
+      console.log(C.grey(`    enforcee check <signed-receipt> --key <k>  checking somebody else's signed receipt`));
+      console.log('');
+      console.log(C.grey('  Already subscribed?  enforcee licence set <your licence>'));
+      console.log('');
+      process.exit(3);
+    }
+
+    const keyPath = keyFlag ?? ATTESTATION_KEY_PATHS.privateKey;
+    const keyFromEnv = process.env.ENFORCEE_SIGNING_KEY?.trim();
+    if (!keyFromEnv && !existsSync(keyPath)) {
+      console.error(C.red(`  No signing key at ${keyPath}.`));
+      console.error(C.grey('  Make one:  enforcee sign keygen'));
+      process.exit(2);
+    }
+    const privateKeyPem = keyFromEnv || readFileSync(keyPath, 'utf8');
+
+    const result = signDocument(read(receiptPath), privateKeyPem);
+    if (!result.ok) {
+      console.error(C.red(`  ${result.reason}`));
+      process.exit(2);
+    }
+
+    const outPath = outFlag ?? receiptPath.replace(/(\.json)?$/i, '.signed.json');
+    writeFileSync(outPath, result.json, 'utf8');
+
+    if (json) {
+      console.log(JSON.stringify({ signed: outPath, digest: result.digest, covers: result.covers }, null, 2));
+      return;
+    }
+    console.log('');
+    console.log(`  ${C.green('✓')} Signed — ${C.bold(outPath)}`);
+    console.log(
+      C.grey(
+        `  Covers ${result.covers.rules} rule verdict${result.covers.rules === 1 ? '' : 's'} · ${result.covers.violated} violated · digest ${result.digest.slice(0, 16)}`
+      )
+    );
+    if (result.covers.rules === 0) {
+      console.log(C.yellow('  This receipt grades zero rules. The signature is real and it is evidence of nothing.'));
+    }
+    console.log('');
+    console.log(C.grey('  Give your client the signed file and your public key, and tell them:'));
+    console.log(C.grey(`    npx enforcee check ${outPath} --key <your-public-key.pub>`));
+    console.log('');
+    return;
+  }
+
+  /**
+   * CHECK — the other end, run by somebody who has never heard of us.
+   *
+   * Free, offline, no licence, no account. Exit codes are the interface, because this is
+   * going in somebody's CI: 0 valid, 1 refuted, 4 unverifiable, 2 you held it wrong.
+   *
+   * 4 exists on purpose. Collapsing "I could not check this" into the failure code would make
+   * a missing key look identical to a forgery, and a false accusation of forgery aimed at a
+   * supplier is a worse outcome than no answer at all.
+   */
+  if (cmd === 'check') {
+    const target = positionalsOf(argv)[1];
+    const keyPath = flagValue(argv, '--key');
+    if (!target) {
+      console.error(C.red('usage: enforcee check <signed-receipt.json> --key <public-key.pub>'));
+      process.exit(2);
+    }
+    if (!keyPath) {
+      console.error(C.red('  --key is required: a check with nothing to check against is not a check.'));
+      console.error(C.grey('  Ask whoever gave you the receipt for their public key.'));
+      process.exit(2);
+    }
+    if (!existsSync(keyPath)) {
+      console.error(C.red(`  No such key file: ${keyPath}`));
+      process.exit(2);
+    }
+
+    const report = checkDocument(read(target), readFileSync(keyPath, 'utf8'));
+    const code = report.outcome === 'VALID' ? 0 : report.outcome === 'REFUTED' ? 1 : 4;
+
+    if (json) {
+      console.log(JSON.stringify(report, null, 2));
+      process.exit(code);
+    }
+    if (!quiet) {
+      const mark = report.outcome === 'VALID' ? C.green('✓ VALID') : report.outcome === 'REFUTED' ? C.red('✕ REFUTED') : C.yellow('• UNVERIFIABLE');
+      console.log('');
+      console.log(`  ${C.bold(mark)}  ${target}`);
+      console.log(`  ${report.reason}`);
+      if (report.covers) {
+        console.log(
+          C.grey(
+            `  Covers ${report.covers.rules} rule verdict${report.covers.rules === 1 ? '' : 's'} · ${report.covers.followed} followed · ${report.covers.violated} violated · ${report.covers.unverifiable} unverifiable`
+          )
+        );
+      }
+      if (report.signedAt) console.log(C.grey(`  Signed at ${report.signedAt} (self-reported)`));
+      if (report.proves.length) {
+        console.log('');
+        console.log(C.grey('  This proves:'));
+        for (const p of report.proves) console.log(C.grey(`    · ${p}`));
+      }
+      console.log('');
+      console.log(C.grey('  It does NOT prove:'));
+      for (const p of report.doesNotProve) console.log(C.grey(`    · ${p}`));
+      console.log('');
+    }
+    process.exit(code);
   }
 
   if (cmd === 'guard') {

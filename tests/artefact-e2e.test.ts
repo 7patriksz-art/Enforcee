@@ -56,6 +56,17 @@ let committedBundle: Buffer | null = null;
 
 let project: string;
 let guard: string;
+/** The throwaway signing key behind the test licence, so a second plan can be minted below. */
+let testLicenceKey: string;
+/**
+ * HOME for the signing tests, shared with the stranger tests below.
+ *
+ * Module scope on purpose. The first version had each describe make its own temp directory
+ * and the stranger block went looking for the signer's by scanning `tmpdir()` for a prefix,
+ * which found nothing and failed on a path of `undefined` — a test harness inventing a
+ * discovery problem it had already been handed the answer to.
+ */
+let signerHome: string;
 
 const RULES = `# Team rules
 
@@ -92,6 +103,7 @@ beforeAll(() => {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const pub = publicKey.export({ type: 'spki', format: 'pem' }).toString();
   const priv = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  testLicenceKey = priv;
 
   for (const f of [CLI, join(DIST, 'guard', 'guard.mjs')]) {
     const src = readFileSync(f, 'utf8');
@@ -233,6 +245,184 @@ describe('and it is honest about what it has not done', () => {
       );
     } finally {
       rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * THE FOUNDER CLAIM, WALKED FROM BOTH ENDS.
+ *
+ * `enforcee.com/pricing` has sold *"Signed receipts you can hand to a client"* on the $290/year
+ * tier since 11 August. `src/lib/attest.ts` and fourteen green tests existed the whole time and
+ * the only importer of `attest()` in the repository was its own test file — a mirror, not a
+ * control. This is the half a unit test cannot reach: the shipped bytes, a real licence, and
+ * then the same bytes run by somebody with no licence at all, which is what a client is.
+ */
+describe('signed receipts: the Founder tier can produce one', () => {
+  const receiptPath = () => join(project, 'receipt.json');
+  const signedPath = () => join(project, 'receipt.signed.json');
+  const pubKeyPath = () => join(signerHome, '.enforcee', 'attestation-key.pub');
+
+  beforeAll(() => {
+    signerHome = mkdtempSync(join(tmpdir(), 'enforcee-signhome-'));
+  });
+
+  /** Same as cli(), with HOME redirected so the test never touches the real ~/.enforcee. */
+  const signCli = (...args: string[]): { out: string; code: number } => {
+    try {
+      return {
+        out: execFileSync(process.execPath, [CLI, ...args], {
+          cwd: project,
+          encoding: 'utf8',
+          env: { ...process.env, HOME: signerHome, USERPROFILE: signerHome },
+        }),
+        code: 0,
+      };
+    } catch (e) {
+      const h = harvest(e);
+      return { out: h.output, code: h.code ?? -1 };
+    }
+  };
+
+  it('produces a receipt to sign', () => {
+    writeFileSync(join(project, 'answer.md'), 'I shipped it.\n');
+    const { out } = signCli('audit', 'RULES.md', 'answer.md', '--json');
+    writeFileSync(receiptPath(), out);
+    expect(JSON.parse(out).results.length, 'the audit graded nothing, so the rest of this file proves nothing').toBeGreaterThan(0);
+  });
+
+  it('makes a signing key, and refuses to overwrite it', () => {
+    expect(signCli('sign', 'keygen').out).toMatch(/Signing key written/);
+    expect(existsSync(pubKeyPath()), 'no public key was written to publish').toBe(true);
+    const again = signCli('sign', 'keygen');
+    expect(again.code, 'a second keygen silently destroyed every receipt ever signed').not.toBe(0);
+    expect(again.out).toMatch(/refusing to overwrite/);
+  });
+
+  it('signs the receipt', () => {
+    const { out, code } = signCli('sign', 'receipt.json');
+    expect(code, `signing failed: ${out}`).toBe(0);
+    expect(out).toMatch(/Signed —/);
+    expect(existsSync(signedPath()), 'nothing was written').toBe(true);
+    expect(JSON.parse(readFileSync(signedPath(), 'utf8')).attestation.signature).toBeTruthy();
+  });
+});
+
+/**
+ * The other end. No licence, no account, no network — a stranger with a file and a key.
+ *
+ * `check` is deliberately ungated. A client who must buy a subscription to read the receipt you
+ * handed them has not been given evidence, they have been given an advert.
+ */
+describe('signed receipts: a stranger with no licence can check one', () => {
+  let stranger: string;
+  let home: string;
+
+  beforeAll(() => {
+    stranger = mkdtempSync(join(tmpdir(), 'enforcee-stranger-'));
+    home = mkdtempSync(join(tmpdir(), 'enforcee-strangerhome-'));
+    // Everything they were given, and nothing else.
+    cpSync(join(project, 'receipt.signed.json'), join(stranger, 'receipt.signed.json'));
+    cpSync(join(signerHome, '.enforcee', 'attestation-key.pub'), join(stranger, 'supplier.pub'));
+    expect(existsSync(join(stranger, '.enforcee')), 'the stranger has a licence, which defeats the point').toBe(false);
+  });
+  afterAll(() => {
+    for (const d of [stranger, home, signerHome]) if (d) rmSync(d, { recursive: true, force: true });
+  });
+
+  const check = (...args: string[]): { out: string; code: number } => {
+    try {
+      return {
+        out: execFileSync(process.execPath, [CLI, 'check', ...args], {
+          cwd: stranger,
+          encoding: 'utf8',
+          // ENFORCEE_LICENCE is stripped: inheriting one from the environment would make an
+          // ungated command look ungated while actually being licensed.
+          env: { ...process.env, HOME: home, USERPROFILE: home, ENFORCEE_LICENCE: '' },
+        }),
+        code: 0,
+      };
+    } catch (e) {
+      const h = harvest(e);
+      return { out: h.output, code: h.code ?? -1 };
+    }
+  };
+
+  it('says VALID, and exits 0, with no licence anywhere', () => {
+    const { out, code } = check('receipt.signed.json', '--key', 'supplier.pub');
+    expect(out, 'the free check demanded a licence').not.toMatch(/part we charge for|licence/i);
+    expect(out).toMatch(/VALID/);
+    expect(code, `a genuine receipt did not pass: ${out}`).toBe(0);
+  });
+
+  it('prints what it does NOT prove, every time', () => {
+    expect(check('receipt.signed.json', '--key', 'supplier.pub').out).toMatch(/ran against the code you were shipped/);
+  });
+
+  it('REFUTES a receipt with one character changed, and exits 1', () => {
+    // The observable this whole feature was specified against: fail on a body edited by one
+    // character. Everything else here is satisfied by a command that always says VALID.
+    const doc = JSON.parse(readFileSync(join(stranger, 'receipt.signed.json'), 'utf8'));
+    const target = doc.receipt.results[0];
+    target.verdict = target.verdict === 'FOLLOWED' ? 'VIOLATED' : 'FOLLOWED';
+    writeFileSync(join(stranger, 'tampered.json'), JSON.stringify(doc));
+
+    const { out, code } = check('tampered.json', '--key', 'supplier.pub');
+    expect(out, 'an edited receipt was accepted').toMatch(/REFUTED/);
+    expect(out).toMatch(/altered since it was written/);
+    expect(code, 'an edited receipt did not fail the exit code').toBe(1);
+  });
+
+  it('says UNVERIFIABLE — not REFUTED — when it is handed the wrong kind of key, and exits 4', () => {
+    const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    writeFileSync(join(stranger, 'wrong-kind.pub'), publicKey.export({ type: 'spki', format: 'pem' }).toString());
+    const { out, code } = check('receipt.signed.json', '--key', 'wrong-kind.pub');
+    expect(out, 'a client holding the wrong key file was told the supplier forged the receipt').not.toMatch(/REFUTED/);
+    expect(out).toMatch(/UNVERIFIABLE/);
+    expect(code).toBe(4);
+  });
+
+  it('refuses to answer at all without a key', () => {
+    const { out, code } = check('receipt.signed.json');
+    expect(out).toMatch(/--key is required/);
+    expect(code).toBe(2);
+  });
+});
+
+/** The gate itself, proved able to refuse. */
+describe('signed receipts: signing is Founder, and the wall is real', () => {
+  it('a Builder licence cannot sign', () => {
+    const builderProject = mkdtempSync(join(tmpdir(), 'enforcee-builder-'));
+    const home = mkdtempSync(join(tmpdir(), 'enforcee-builderhome-'));
+    try {
+      mkdirSync(join(builderProject, '.enforcee'), { recursive: true });
+      writeFileSync(
+        join(builderProject, '.enforcee', 'licence'),
+        issueLicence(
+          { jti: 'builder-e2e', sub: 'builder-test', plan: 'builder', exp: Math.floor(Date.now() / 1000) + 3600 },
+          testLicenceKey
+        )
+      );
+      cpSync(join(project, 'receipt.json'), join(builderProject, 'receipt.json'));
+
+      let out = '';
+      let code = 0;
+      try {
+        out = execFileSync(process.execPath, [CLI, 'sign', 'receipt.json'], {
+          cwd: builderProject,
+          encoding: 'utf8',
+          env: { ...process.env, HOME: home, USERPROFILE: home, ENFORCEE_LICENCE: '' },
+        });
+      } catch (e) {
+        const h = harvest(e);
+        out = h.output;
+        code = h.code ?? -1;
+      }
+      expect(code, 'a Builder licence was allowed to sign, which gives away the Founder tier').toBe(3);
+      expect(out, 'the refusal did not say which plan is needed').toMatch(/Founder/);
+      expect(existsSync(join(builderProject, 'receipt.signed.json')), 'it refused and signed anyway').toBe(false);
+    } finally {
+      for (const d of [builderProject, home]) rmSync(d, { recursive: true, force: true });
     }
   });
 });

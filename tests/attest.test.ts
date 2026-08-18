@@ -47,7 +47,15 @@ describe('a client can check a receipt came from us', () => {
     const forged = attest(receipt(), other.privateKey);
     const v = verifyAttestation(forged, publicKey);
     expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toMatch(/did not come from Enforcee/);
+    if (!v.ok) {
+      expect(v.outcome).toBe('REFUTED');
+      // The wording used to be "this receipt did not come from Enforcee", which is a claim we
+      // cannot support: the signing key is generated on the user's machine by `enforcee sign
+      // keygen` and we never hold the private half, so all we know is that it was not this
+      // key. Naming ourselves told a client something no code here can check. 2026-08-18.
+      expect(v.reason).not.toMatch(/from Enforcee/i);
+      expect(v.reason).toMatch(/not made by this key/);
+    }
   });
 
   it('REFUSES a signature lifted from a different receipt', () => {
@@ -62,7 +70,27 @@ describe('a client can check a receipt came from us', () => {
   it('says plainly when the thing is not a signed receipt at all', () => {
     const v = verifyAttestation({ receipt: receipt() } as never, publicKey);
     expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toMatch(/no attestation block/);
+    // UNVERIFIABLE, not REFUTED: an unsigned receipt has not failed a check, it has not had
+    // one. INVARIANTS H-3, and the difference a client acts on.
+    if (!v.ok) {
+      expect(v.outcome).toBe('UNVERIFIABLE');
+      expect(v.reason).toMatch(/no attestation block/);
+    }
+  });
+
+  it('separates "we checked and it failed" from "we could not check"', () => {
+    // The two outcomes that must never collapse into one another. An accusation of forgery
+    // aimed at a supplier because the client picked up the wrong file would be worse than
+    // returning no answer at all.
+    const genuine = attest(receipt(), privateKey);
+    const refuted = verifyAttestation(attest(receipt(), other.privateKey), publicKey);
+    const cannotTell = verifyAttestation(genuine, 'not a key at all');
+
+    expect(refuted.ok).toBe(false);
+    expect(cannotTell.ok).toBe(false);
+    if (!refuted.ok) expect(refuted.outcome).toBe('REFUTED');
+    if (!cannotTell.ok) expect(cannotTell.outcome).toBe('UNVERIFIABLE');
+    expect(verifyAttestation(genuine, publicKey).outcome).toBe('VALID');
   });
 
   it('does not sign a wrong digest into legitimacy', () => {

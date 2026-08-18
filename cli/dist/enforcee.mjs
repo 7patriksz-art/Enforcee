@@ -7,7 +7,7 @@ var __export = (target, all) => {
 
 // cli/index.ts
 import { readFileSync as readFileSync3, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, existsSync as existsSync5, copyFileSync, chmodSync as chmodSync2, statSync as statSync3, readdirSync as readdirSync2 } from "node:fs";
-import { join as join5, dirname as dirname2 } from "node:path";
+import { join as join6, dirname as dirname2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/lib/rules/parse.ts
@@ -10579,6 +10579,13 @@ function verifyLicence(token, publicKeyPem, now = Date.now()) {
   }
   return { ok: true, payload };
 }
+function generateLicenceKeypair() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  return {
+    publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString()
+  };
+}
 function licenceMessage(check) {
   if (check.ok) return `Licensed to ${check.payload.sub} \xB7 ${check.payload.plan}`;
   switch (check.reason) {
@@ -11510,6 +11517,274 @@ function alreadyDeclined(memory, id) {
 
 // cli/index.ts
 import { createHash as createHash3 } from "node:crypto";
+
+// src/lib/plans.ts
+var ENTITLEMENTS = {
+  free: {
+    audit: true,
+    guard: false,
+    hostedJudge: false,
+    historyDays: 0,
+    ruleHistory: false,
+    driftAlerts: false,
+    learnLimit: 3,
+    sync: false,
+    ciGate: false,
+    attestation: false,
+    projects: 0,
+    api: false
+  },
+  builder: {
+    audit: true,
+    guard: true,
+    hostedJudge: true,
+    historyDays: 3650,
+    ruleHistory: true,
+    driftAlerts: true,
+    learnLimit: Infinity,
+    sync: true,
+    // The CI gate is here, not on Founder. It was the other way round, which was backwards:
+    // this category's money has consolidated at the pull-request boundary — CodeRabbit and
+    // Greptile both monetise there and nobody has monetised at the session boundary — so the
+    // gate was sitting behind our highest wall instead of being the reason to pay at all.
+    ciGate: true,
+    attestation: false,
+    projects: 3,
+    api: false
+  },
+  founder: {
+    audit: true,
+    guard: true,
+    hostedJudge: true,
+    historyDays: 3650,
+    ruleHistory: true,
+    driftAlerts: true,
+    learnLimit: Infinity,
+    sync: true,
+    ciGate: true,
+    attestation: true,
+    projects: Infinity,
+    api: true
+  }
+};
+function entitlementsFor(plan) {
+  return ENTITLEMENTS[plan] ?? ENTITLEMENTS.free;
+}
+
+// src/lib/attest.ts
+import { createPrivateKey as createPrivateKey2, createPublicKey as createPublicKey2, sign as sign2, verify as verify2 } from "node:crypto";
+var ATTESTATION_VERSION = "attestation@1.0.0";
+function attest(receipt, privateKeyPem, now = /* @__PURE__ */ new Date()) {
+  const { digest: _ignored, ...body } = receipt;
+  const digest = digestOf(body);
+  const key = createPrivateKey2(privateKeyPem.replace(/\\n/g, "\n"));
+  const signature = sign2(null, Buffer.from(digest, "utf8"), key).toString("base64url");
+  return {
+    receipt: { ...body, digest },
+    attestation: { version: ATTESTATION_VERSION, digest, signature, signedAt: now.toISOString() }
+  };
+}
+var ED25519_SIGNATURE_BYTES = 64;
+function verifyAttestation(signed, publicKeyPem) {
+  const { receipt, attestation } = signed ?? {};
+  if (!receipt || !attestation?.signature || !attestation?.digest) {
+    return {
+      ok: false,
+      outcome: "UNVERIFIABLE",
+      reason: "Not a signed receipt \u2014 no attestation block. An unsigned receipt is not a forged one; there is simply nothing here to check."
+    };
+  }
+  if (typeof publicKeyPem !== "string" || !publicKeyPem.trim()) {
+    return { ok: false, outcome: "UNVERIFIABLE", reason: "No public key was supplied, so there is nothing to check the signature against." };
+  }
+  const { digest: claimed, ...body } = receipt;
+  const recomputed = digestOf(body);
+  if (recomputed !== claimed) {
+    return { ok: false, outcome: "REFUTED", reason: "The receipt body does not match its own digest \u2014 it has been altered since it was written." };
+  }
+  if (recomputed !== attestation.digest) {
+    return { ok: false, outcome: "REFUTED", reason: "The signature covers a different receipt than the one attached to it." };
+  }
+  const sigBytes = Buffer.from(attestation.signature, "base64url");
+  if (sigBytes.length !== ED25519_SIGNATURE_BYTES) {
+    return {
+      ok: false,
+      outcome: "UNVERIFIABLE",
+      reason: `The attestation's signature is ${sigBytes.length} bytes, not the ${ED25519_SIGNATURE_BYTES} an Ed25519 signature has \u2014 the file is damaged, so it can be neither confirmed nor refuted.`
+    };
+  }
+  let key;
+  try {
+    key = createPublicKey2(publicKeyPem.replace(/\\n/g, "\n"));
+  } catch (err) {
+    return {
+      ok: false,
+      outcome: "UNVERIFIABLE",
+      reason: `That public key could not be read, so nothing could be checked: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+  if (key.asymmetricKeyType !== "ed25519") {
+    return {
+      ok: false,
+      outcome: "UNVERIFIABLE",
+      reason: `That key is ${key.asymmetricKeyType ?? "of an unknown type"}, not Ed25519, so it cannot check this signature either way. You are probably holding the wrong key file.`
+    };
+  }
+  try {
+    const ok = verify2(null, Buffer.from(recomputed, "utf8"), key, sigBytes);
+    return ok ? {
+      ok: true,
+      outcome: "VALID",
+      digest: recomputed,
+      reason: "The receipt has not changed since it was signed, and the signature was made by the holder of this key."
+    } : {
+      ok: false,
+      outcome: "REFUTED",
+      // Deliberately NOT "this did not come from Enforcee". The signing key belongs to
+      // whoever ran `enforcee sign`, not to us — we hold no private key a laptop could
+      // reach — so naming ourselves here would tell a client something we cannot know.
+      reason: "The digest is intact but the signature was not made by this key \u2014 either it was signed by somebody else, or you are holding the wrong key."
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      outcome: "UNVERIFIABLE",
+      reason: `Could not check the signature with this key: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+}
+
+// src/lib/attest-file.ts
+import { homedir as homedir2 } from "node:os";
+import { join as join5 } from "node:path";
+var ATTESTATION_KEY_PATHS = {
+  privateKey: join5(homedir2(), ".enforcee", "attestation-key"),
+  publicKey: join5(homedir2(), ".enforcee", "attestation-key.pub")
+};
+function generateAttestationKeypair() {
+  return generateLicenceKeypair();
+}
+function parseReceiptDocument(raw) {
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (err) {
+    return { kind: "unreadable", reason: `That file is not JSON: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { kind: "unreadable", reason: "That file holds JSON, but not an object \u2014 a receipt is a JSON object." };
+  }
+  const obj = value;
+  if (obj.attestation && obj.receipt && typeof obj.receipt === "object") {
+    return { kind: "signed", signed: obj };
+  }
+  if (looksLikeReceipt(obj)) return { kind: "receipt", receipt: obj };
+  return {
+    kind: "unreadable",
+    reason: "That JSON object is not an Enforcee receipt \u2014 it has no `results` array and no `digest`. Produce one with `enforcee audit <rules> <output> --json`."
+  };
+}
+function looksLikeReceipt(obj) {
+  return Array.isArray(obj.results) && typeof obj.digest === "string";
+}
+function coversOf(receipt) {
+  const results = Array.isArray(receipt?.results) ? receipt.results : [];
+  const count = (v) => results.filter((r) => r?.verdict === v).length;
+  return {
+    rules: results.length,
+    followed: count("FOLLOWED"),
+    violated: count("VIOLATED"),
+    unverifiable: count("UNVERIFIABLE"),
+    notApplicable: count("NOT_APPLICABLE")
+  };
+}
+var DOES_NOT_PROVE = [
+  "who holds the signing key \u2014 only that whoever does, signed this",
+  "that the audit ran against the code you were shipped",
+  "when it was signed: the timestamp is inside the signature, so it is only as honest as the signer"
+];
+function checkDocument(raw, publicKeyPem) {
+  const empty = { digest: null, signedAt: null, covers: null, proves: [], doesNotProve: DOES_NOT_PROVE };
+  const parsed = parseReceiptDocument(raw);
+  if (parsed.kind === "unreadable") {
+    return { outcome: "UNVERIFIABLE", signature: "UNVERIFIABLE", reason: parsed.reason, ...empty };
+  }
+  if (parsed.kind === "receipt") {
+    return {
+      outcome: "UNVERIFIABLE",
+      signature: "UNVERIFIABLE",
+      reason: "This is a receipt, but nobody signed it. Its digest still proves it is internally consistent; it proves nothing about who produced it.",
+      ...empty,
+      covers: coversOf(parsed.receipt)
+    };
+  }
+  const verdict = verifyAttestation(parsed.signed, publicKeyPem);
+  const covers = coversOf(parsed.signed.receipt);
+  const signedAt = typeof parsed.signed.attestation?.signedAt === "string" ? parsed.signed.attestation.signedAt : null;
+  if (!verdict.ok) {
+    return {
+      outcome: verdict.outcome,
+      signature: verdict.outcome,
+      reason: verdict.reason,
+      digest: null,
+      signedAt,
+      covers,
+      proves: [],
+      doesNotProve: DOES_NOT_PROVE
+    };
+  }
+  if (covers.rules === 0) {
+    return {
+      outcome: "UNVERIFIABLE",
+      signature: "VALID",
+      reason: "The signature is good, but this receipt grades zero rules \u2014 there is nothing here for it to be evidence of.",
+      digest: verdict.digest,
+      signedAt,
+      covers,
+      proves: ["the file has not changed since it was signed"],
+      doesNotProve: DOES_NOT_PROVE
+    };
+  }
+  return {
+    outcome: "VALID",
+    signature: "VALID",
+    reason: verdict.reason,
+    digest: verdict.digest,
+    signedAt,
+    covers,
+    proves: [
+      "the file has not changed by one character since it was signed",
+      "it was signed by the holder of the private half of this key",
+      `it grades ${covers.rules} rule${covers.rules === 1 ? "" : "s"}: ${covers.followed} followed, ${covers.violated} violated, ${covers.unverifiable} unverifiable`
+    ],
+    doesNotProve: DOES_NOT_PROVE
+  };
+}
+function signDocument(raw, privateKeyPem, now = /* @__PURE__ */ new Date()) {
+  const parsed = parseReceiptDocument(raw);
+  if (parsed.kind === "unreadable") return { ok: false, reason: parsed.reason };
+  const receipt = parsed.kind === "signed" ? parsed.signed.receipt : parsed.receipt;
+  if (!receipt || !Array.isArray(receipt.results)) {
+    return { ok: false, reason: "That signed document has no receipt inside it." };
+  }
+  let signed;
+  try {
+    signed = attest(receipt, privateKeyPem, now);
+  } catch (err) {
+    return { ok: false, reason: `That private key could not be used to sign: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  return {
+    ok: true,
+    // No second copy of the version at the top level: it already lives inside the
+    // attestation block, and one idea in two places is INVARIANTS E-1 and twelve bugs.
+    json: `${JSON.stringify(signed, null, 2)}
+`,
+    digest: signed.attestation.digest,
+    covers: coversOf(signed.receipt)
+  };
+}
+
+// cli/index.ts
 var VERSION2 = true ? "0.9.1" : "0.0.0-dev";
 var C = {
   dim: (s) => `\x1B[2m${s}\x1B[0m`,
@@ -11538,6 +11813,8 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
   ${C.bold("enforcee accept")}|${C.bold("decline")} <id>              decide on a learned preference
   ${C.bold("enforcee session")} <transcript.jsonl>          what the model could actually see in a session
   ${C.bold("enforcee obstacles")} <dir-or-transcript\u2026>     what already blocked you here, from what actually failed
+  ${C.bold("enforcee sign")} <receipt.json>                 sign a receipt you can hand to a client ${C.dim("(Founder)")}
+  ${C.bold("enforcee check")} <signed.json> --key <pub>      check somebody's signed receipt ${C.dim("(free, offline)")}
   ${C.bold("enforcee guard")} <rules-file>                  write .enforcee/ into this project ${C.dim("(licensed)")}
   ${C.bold("enforcee licence set")} <key> [--project]        install a licence (machine-wide, or this repo)
   ${C.bold("enforcee status")}                              is it installed, and what has it actually done?
@@ -11550,7 +11827,8 @@ ${C.bold("enforcee")} ${C.dim(VERSION2)}  ${C.dim("\u2014 did your AI actually f
 Exits non-zero when a rule is VIOLATED, or when preflight finds a missing precondition,
 so both work as a CI gate.
 
-${C.dim("audit, health, learn and session need no account, no key and no network.")}
+${C.dim("audit, health, learn, session and check need no account, no key and no network.")}
+${C.dim("check exits 0 valid \xB7 1 refuted \xB7 4 unverifiable \u2014 a thing it could not check is never a failure.")}
 ${C.dim("guard needs a licence, checked offline against a key compiled into this binary.")}
 `);
 }
@@ -11572,6 +11850,27 @@ function parseJsonl(raw) {
       out.push(JSON.parse(line));
     } catch {
     }
+  }
+  return out;
+}
+var VALUE_FLAGS = ["--key", "--out"];
+function flagValue(argv, name) {
+  const inline = argv.find((a) => a.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1) || void 0;
+  const i = argv.indexOf(name);
+  if (i === -1) return void 0;
+  const v = argv[i + 1];
+  return v && !v.startsWith("--") ? v : void 0;
+}
+function positionalsOf(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      if (VALUE_FLAGS.includes(a)) i++;
+      continue;
+    }
+    out.push(a);
   }
   return out;
 }
@@ -11731,7 +12030,7 @@ async function main() {
       noteMention(memory, c.id, c.rule, c.quote, today, occurrence);
     }
     let enforcedIds = /* @__PURE__ */ new Set();
-    const policyFile = join5(process.cwd(), ".enforcee", "policy.json");
+    const policyFile = join6(process.cwd(), ".enforcee", "policy.json");
     if (existsSync5(policyFile)) {
       try {
         const policy = JSON.parse(readFileSync3(policyFile, "utf8"));
@@ -11830,10 +12129,10 @@ async function main() {
     return;
   }
   if (cmd === "status") {
-    const dir = join5(process.cwd(), ".enforcee");
-    const has = (f) => existsSync5(join5(dir, f));
-    const read1 = (f) => has(f) ? readFileSync3(join5(dir, f), "utf8") : null;
-    const settingsPath = join5(process.cwd(), ".claude", "settings.json");
+    const dir = join6(process.cwd(), ".enforcee");
+    const has = (f) => existsSync5(join6(dir, f));
+    const read1 = (f) => has(f) ? readFileSync3(join6(dir, f), "utf8") : null;
+    const settingsPath = join6(process.cwd(), ".claude", "settings.json");
     let hooks = [];
     if (existsSync5(settingsPath)) {
       try {
@@ -11934,7 +12233,7 @@ async function main() {
         return;
       }
       if (!st.isDirectory()) return;
-      for (const e of readdirSync2(p)) walk(join5(p, e), depth + 1);
+      for (const e of readdirSync2(p)) walk(join6(p, e), depth + 1);
     };
     for (const a of args.slice(1).filter((x) => !x.startsWith("-"))) {
       if (!existsSync5(a)) {
@@ -11949,8 +12248,8 @@ async function main() {
       process.exit(2);
     }
     let results = 0;
-    const dir = join5(process.cwd(), ".enforcee");
-    const store = join5(dir, "obstacles.json");
+    const dir = join6(process.cwd(), ".enforcee");
+    const store = join6(dir, "obstacles.json");
     let prior = [];
     let priorFiles = {};
     if (existsSync5(store)) {
@@ -12014,7 +12313,7 @@ async function main() {
     }
     const brief = toBrief(merged);
     if (brief) {
-      writeFileSync3(join5(dir, "obstacles.md"), brief);
+      writeFileSync3(join6(dir, "obstacles.md"), brief);
       console.log(C.grey(`
   Brief for reinjection written to .enforcee/obstacles.md
 `));
@@ -12039,7 +12338,7 @@ async function main() {
   if (cmd === "licence" || cmd === "license") {
     if (args[1] === "set") {
       const token = args.slice(2).join(" ");
-      const scope = flags.has("--project") ? join5(process.cwd(), LICENCE_PATHS.project) : LICENCE_PATHS.home;
+      const scope = flags.has("--project") ? join6(process.cwd(), LICENCE_PATHS.project) : LICENCE_PATHS.home;
       const res2 = setLicence(token, { path: scope });
       console.log("");
       if (!res2.ok) {
@@ -12077,6 +12376,147 @@ async function main() {
     console.log("");
     return;
   }
+  if (cmd === "sign") {
+    const pos = positionalsOf(argv);
+    const keyFlag = flagValue(argv, "--key");
+    const outFlag = flagValue(argv, "--out");
+    if (pos[1] === "keygen") {
+      const dir = outFlag ?? dirname2(ATTESTATION_KEY_PATHS.privateKey);
+      const priv = outFlag ? join6(dir, "attestation-key") : ATTESTATION_KEY_PATHS.privateKey;
+      const pub = `${priv}.pub`;
+      for (const p of [priv, pub]) {
+        if (existsSync5(p)) {
+          console.error(C.red(`  ${p} already exists \u2014 refusing to overwrite a signing key.`));
+          console.error(C.grey("  Every receipt signed with the old key becomes uncheckable. Move it aside first."));
+          process.exit(2);
+        }
+      }
+      const pair = generateAttestationKeypair();
+      mkdirSync3(dir, { recursive: true });
+      writeFileSync3(priv, pair.privateKey, "utf8");
+      writeFileSync3(pub, pair.publicKey, "utf8");
+      let restricted = false;
+      try {
+        chmodSync2(priv, 384);
+        restricted = (statSync3(priv).mode & 63) === 0;
+      } catch {
+        restricted = false;
+      }
+      console.log("");
+      console.log(`  ${C.green("\u2713")} Signing key written \u2014 ${C.bold(priv)}`);
+      console.log(`    Public half \u2014 ${C.bold(pub)}  ${C.grey("publish this; it is what your client checks against")}`);
+      if (!restricted) {
+        console.log(C.yellow("    Could not restrict permissions on this platform \u2014 anyone with access to this machine can sign as you."));
+      }
+      console.log("");
+      console.log(C.grey("  Next:  enforcee audit CLAUDE.md output.md --json > receipt.json"));
+      console.log(C.grey("         enforcee sign receipt.json"));
+      console.log("");
+      return;
+    }
+    const receiptPath = pos[1];
+    if (!receiptPath) {
+      console.error(C.red("usage: enforcee sign <receipt.json> [--key <private-key>] [--out <file>]"));
+      console.error(C.grey("       enforcee sign keygen        create the signing key, once"));
+      process.exit(2);
+    }
+    const lic = checkLocalLicence();
+    const entitled = lic.ok && entitlementsFor(lic.payload.plan).attestation;
+    if (!entitled) {
+      console.log("");
+      console.log(`  ${C.yellow("Signed receipts are the part we charge for.")} ${C.grey("(Founder)")}`);
+      console.log(`  ${C.grey(lic.ok ? `Licensed to ${lic.payload.sub} \xB7 ${lic.payload.plan} \u2014 signing is on Founder.` : licenceMessage(lic))}`);
+      console.log("");
+      console.log(C.grey("  Free and unlimited without it:"));
+      console.log(C.grey(`    enforcee audit <rules> <output> --json    the receipt itself, with every verdict`));
+      console.log(C.grey(`    enforcee check <signed-receipt> --key <k>  checking somebody else's signed receipt`));
+      console.log("");
+      console.log(C.grey("  Already subscribed?  enforcee licence set <your licence>"));
+      console.log("");
+      process.exit(3);
+    }
+    const keyPath = keyFlag ?? ATTESTATION_KEY_PATHS.privateKey;
+    const keyFromEnv = process.env.ENFORCEE_SIGNING_KEY?.trim();
+    if (!keyFromEnv && !existsSync5(keyPath)) {
+      console.error(C.red(`  No signing key at ${keyPath}.`));
+      console.error(C.grey("  Make one:  enforcee sign keygen"));
+      process.exit(2);
+    }
+    const privateKeyPem = keyFromEnv || readFileSync3(keyPath, "utf8");
+    const result = signDocument(read(receiptPath), privateKeyPem);
+    if (!result.ok) {
+      console.error(C.red(`  ${result.reason}`));
+      process.exit(2);
+    }
+    const outPath = outFlag ?? receiptPath.replace(/(\.json)?$/i, ".signed.json");
+    writeFileSync3(outPath, result.json, "utf8");
+    if (json) {
+      console.log(JSON.stringify({ signed: outPath, digest: result.digest, covers: result.covers }, null, 2));
+      return;
+    }
+    console.log("");
+    console.log(`  ${C.green("\u2713")} Signed \u2014 ${C.bold(outPath)}`);
+    console.log(
+      C.grey(
+        `  Covers ${result.covers.rules} rule verdict${result.covers.rules === 1 ? "" : "s"} \xB7 ${result.covers.violated} violated \xB7 digest ${result.digest.slice(0, 16)}`
+      )
+    );
+    if (result.covers.rules === 0) {
+      console.log(C.yellow("  This receipt grades zero rules. The signature is real and it is evidence of nothing."));
+    }
+    console.log("");
+    console.log(C.grey("  Give your client the signed file and your public key, and tell them:"));
+    console.log(C.grey(`    npx enforcee check ${outPath} --key <your-public-key.pub>`));
+    console.log("");
+    return;
+  }
+  if (cmd === "check") {
+    const target = positionalsOf(argv)[1];
+    const keyPath = flagValue(argv, "--key");
+    if (!target) {
+      console.error(C.red("usage: enforcee check <signed-receipt.json> --key <public-key.pub>"));
+      process.exit(2);
+    }
+    if (!keyPath) {
+      console.error(C.red("  --key is required: a check with nothing to check against is not a check."));
+      console.error(C.grey("  Ask whoever gave you the receipt for their public key."));
+      process.exit(2);
+    }
+    if (!existsSync5(keyPath)) {
+      console.error(C.red(`  No such key file: ${keyPath}`));
+      process.exit(2);
+    }
+    const report = checkDocument(read(target), readFileSync3(keyPath, "utf8"));
+    const code = report.outcome === "VALID" ? 0 : report.outcome === "REFUTED" ? 1 : 4;
+    if (json) {
+      console.log(JSON.stringify(report, null, 2));
+      process.exit(code);
+    }
+    if (!quiet) {
+      const mark = report.outcome === "VALID" ? C.green("\u2713 VALID") : report.outcome === "REFUTED" ? C.red("\u2715 REFUTED") : C.yellow("\u2022 UNVERIFIABLE");
+      console.log("");
+      console.log(`  ${C.bold(mark)}  ${target}`);
+      console.log(`  ${report.reason}`);
+      if (report.covers) {
+        console.log(
+          C.grey(
+            `  Covers ${report.covers.rules} rule verdict${report.covers.rules === 1 ? "" : "s"} \xB7 ${report.covers.followed} followed \xB7 ${report.covers.violated} violated \xB7 ${report.covers.unverifiable} unverifiable`
+          )
+        );
+      }
+      if (report.signedAt) console.log(C.grey(`  Signed at ${report.signedAt} (self-reported)`));
+      if (report.proves.length) {
+        console.log("");
+        console.log(C.grey("  This proves:"));
+        for (const p of report.proves) console.log(C.grey(`    \xB7 ${p}`));
+      }
+      console.log("");
+      console.log(C.grey("  It does NOT prove:"));
+      for (const p of report.doesNotProve) console.log(C.grey(`    \xB7 ${p}`));
+      console.log("");
+    }
+    process.exit(code);
+  }
   if (cmd === "guard") {
     const rulesPath = args[1];
     if (!rulesPath) return help();
@@ -12106,14 +12546,14 @@ async function main() {
       on.filter((p) => p.severity === "warn").map(toDenyRule)
     );
     mkdirSync3(".enforcee", { recursive: true });
-    writeFileSync3(join5(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
+    writeFileSync3(join6(".enforcee", "policy.json"), JSON.stringify(policy, null, 2));
     let runner = false;
     try {
       const here = dirname2(fileURLToPath(import.meta.url));
-      for (const candidate of [join5(here, "..", "guard", "guard.mjs"), join5(here, "..", "..", "guard", "guard.mjs")]) {
+      for (const candidate of [join6(here, "..", "guard", "guard.mjs"), join6(here, "..", "..", "guard", "guard.mjs")]) {
         if (existsSync5(candidate)) {
-          copyFileSync(candidate, join5(".enforcee", "guard.mjs"));
-          chmodSync2(join5(".enforcee", "guard.mjs"), 493);
+          copyFileSync(candidate, join6(".enforcee", "guard.mjs"));
+          chmodSync2(join6(".enforcee", "guard.mjs"), 493);
           runner = true;
           break;
         }

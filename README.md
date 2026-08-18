@@ -164,6 +164,38 @@ One audit tells you what happened once. The record tells you which rule is quiet
 Every rule carries a content-addressed ID that survives rewording, so history can say
 *"rule `7c425b30` was broken in 6 of your last 40 audits."*
 
+### 4. Attest — a receipt somebody else can check
+
+A receipt carries a sha256 digest, which proves it is internally consistent and nothing about
+where it came from: anyone can author a receipt saying whatever they like and compute a perfectly
+valid digest for it. That is fine while a receipt is something you read yourself, and a lie the
+moment you hand it to a client as evidence.
+
+So a receipt can be signed, and **anyone can check the signature with no licence, no account and
+no network**:
+
+```bash
+enforcee sign keygen                             # once — an Ed25519 key, generated on your machine
+enforcee audit CLAUDE.md answer.md --json > receipt.json
+enforcee sign receipt.json                       # writes receipt.signed.json
+
+# your client, holding only the file and your published public key:
+npx enforcee check receipt.signed.json --key supplier.pub
+```
+
+`check` exits **0 valid · 1 refuted · 4 unverifiable**, and the third code is deliberate: a check
+that could not run is not a failed check, and telling somebody their supplier forged a receipt
+because they picked up the wrong key file would be the worst answer this command can give.
+
+What a `VALID` answer proves: the file has not changed by one character since it was signed, and it
+was signed by the holder of that key. What it does **not** prove — printed under every answer, not
+buried here — is who holds the key, that the audit ran against the code you were shipped, or when
+it was signed. The private half never leaves the machine that made it; we hold no key that could
+sign on your behalf, and we do not claim to.
+
+Signing is the Founder tier. Checking is free forever, because a client who has to buy a
+subscription to read the receipt you gave them has not been handed evidence.
+
 ---
 
 ## What this cannot do
@@ -179,6 +211,9 @@ Stated up front, because the audience for this product is right to be skeptical.
 - **Absence of a violation is weaker evidence than presence of one.** Enforcee distinguishes the two
   rather than averaging them into a single reassuring number.
 - **The guard sees tool calls, not intentions.** It can stop an action, not a plan.
+- **A signature proves custody, not honesty.** `enforcee check` establishes that a receipt is
+  unaltered and was signed by a particular key. It cannot tell you that the audit inside it was run
+  against the code you were shipped, and it says so on every answer it gives.
 
 ---
 

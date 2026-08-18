@@ -370,6 +370,68 @@ const SABOTAGES = [
     run: 'tests/artefact-e2e.test.ts',
     expect: /accuses prose of a commit-message violation|does NOT accuse prose/,
   },
+  {
+    name: 'attestation-accepts-a-tampered-body',
+    why:
+      'the whole attack: take a real signed receipt, turn a VIOLATED into a FOLLOWED, hand it ' +
+      'to a client. Signing the digest we were GIVEN rather than the one we recompute makes ' +
+      'that work, and every other assertion about the signature still passes',
+    file: 'src/lib/attest.ts',
+    find: '  const recomputed = digestOf(body as Omit<Receipt, \'digest\'>);\n\n  if (recomputed !== claimed) {',
+    replace: '  const recomputed = attestation.digest;\n\n  if (recomputed !== claimed) {',
+    occurrences: 1,
+    run: 'tests/artefact-e2e.test.ts',
+    expect: /an edited receipt was accepted/,
+  },
+  {
+    name: 'wrong-key-type-read-as-forgery',
+    why:
+      'node returns false rather than throwing when an RSA key is handed to an Ed25519 verify, ' +
+      'so without asking the key its type a client holding the wrong file is told, in red, that ' +
+      'their supplier forged the receipt — a false accusation aimed at the one party who cannot ' +
+      'check our work',
+    file: 'src/lib/attest.ts',
+    find: "  if (key.asymmetricKeyType !== 'ed25519') {",
+    replace: '  if (false) {',
+    occurrences: 1,
+    run: 'tests/attest-file.test.ts',
+    expect: /a key of the wrong TYPE is unverifiable/,
+  },
+  {
+    name: 'unsigned-receipt-called-forged',
+    why: 'an unsigned receipt has not failed a check, it has not had one. INVARIANTS H-3',
+    file: 'src/lib/attest-file.ts',
+    find: "    return {\n      outcome: 'UNVERIFIABLE',\n      signature: 'UNVERIFIABLE',\n      reason: 'This is a receipt, but nobody signed it.",
+    replace: "    return {\n      outcome: 'REFUTED',\n      signature: 'REFUTED',\n      reason: 'This is a receipt, but nobody signed it.",
+    occurrences: 1,
+    run: 'tests/attest-file.test.ts',
+    expect: /an unsigned receipt is unverifiable, not forged/,
+  },
+  {
+    name: 'empty-receipt-signed-off-as-good',
+    why:
+      'a signature over a receipt that grades zero rules is cryptographically perfect and ' +
+      'evidentially empty. INVARIANTS E-3: scanned === 0 is never a pass',
+    file: 'src/lib/attest-file.ts',
+    find: '  if (covers.rules === 0) {',
+    replace: '  if (false) {',
+    occurrences: 1,
+    run: 'tests/attest-file.test.ts',
+    expect: /an empty receipt was reported as good evidence|covering ZERO rules is UNVERIFIABLE/,
+  },
+  {
+    name: 'founder-signing-given-away',
+    why:
+      'signed receipts are the Founder entitlement in src/lib/plans.ts. A licence check that ' +
+      'stops at "is there a licence" hands the $290 tier to every $19 subscriber, and nothing ' +
+      'about the output would look wrong',
+    file: 'cli/index.ts',
+    find: '    const entitled = lic.ok && entitlementsFor(lic.payload.plan).attestation;',
+    replace: '    const entitled = lic.ok;',
+    occurrences: 1,
+    run: 'tests/artefact-e2e.test.ts',
+    expect: /a Builder licence was allowed to sign/,
+  },
 ];
 
 const filter = process.argv[2];
